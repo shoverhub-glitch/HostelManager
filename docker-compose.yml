@@ -9,10 +9,6 @@ services:
       - "8000"
     env_file:
       - ./api/.env
-    environment:
-      - MONGO_URL=${MONGO_URL:-mongodb://mongodb:27017/hostelmanager}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
     depends_on:
       - redis
       - mongodb

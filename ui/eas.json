@@ -11,13 +11,13 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://portfolio-2zxo.onrender.com/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://hostel.shoverhub.com/api/v1"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://portfolio-2zxo.onrender.com/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://hostel.shoverhub.com/api/v1"
       }
     }
   },

@@ -9,6 +9,7 @@ from app.services.subscription_service import SubscriptionService
 from app.database.mongodb import db
 from bson import ObjectId
 from typing import Literal
+from datetime import datetime, timezone
 from app.utils.ownership import build_owner_query, property_belongs_to_owner
 import logging
 

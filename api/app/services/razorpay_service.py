@@ -15,7 +15,13 @@ class RazorpayService:
             "amount": amount,
             "currency": currency,
             "receipt": receipt,
-            "payment_capture": 1
+            "payment_capture": 1,
+            "notes": {
+                "owner_id": user_id,
+                "plan": plan,
+                "period": str(period),
+                "coupon_code": coupon_code or ""
+            }
         }
         order = RazorpayService.client.order.create(order_data)
         now = datetime.now().isoformat()

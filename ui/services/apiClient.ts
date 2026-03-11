@@ -232,7 +232,7 @@ function getCacheKey(method: HttpMethod, endpoint: string): string {
   return `api:${endpoint}`;
 }
 
-async function refreshAccessToken() {
+export async function refreshAccessToken() {
   const refreshToken = await encryptedTokenStorage.getRefreshToken();
   if (!refreshToken) return null;
   

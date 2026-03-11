@@ -15,19 +15,20 @@ class BedService:
         doc["createdAt"] = now
         doc["updatedAt"] = now
         doc["id"] = str(uuid.uuid4())
+        doc["isDeleted"] = False
         await self.db["beds"].insert_one(doc)
         return BedOut(**doc)
 
     async def get_bed(self, bed_id: str) -> Optional[BedOut]:
         from bson import ObjectId
         try:
-            doc = await self.db["beds"].find_one({"_id": ObjectId(bed_id)})
+            doc = await self.db["beds"].find_one({"_id": ObjectId(bed_id), "isDeleted": {"$ne": True}})
             if doc:
                 doc["id"] = str(doc["_id"])
                 return BedOut(**doc)
         except:
             # If ObjectId conversion fails, try looking by id field
-            doc = await self.db["beds"].find_one({"id": bed_id})
+            doc = await self.db["beds"].find_one({"id": bed_id, "isDeleted": {"$ne": True}})
             if doc:
                 return BedOut(**doc)
         return None
@@ -38,9 +39,13 @@ class BedService:
         if not update_data:
             return await self.get_bed(bed_id)
         update_data["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        
+        for protected_key in ["isDeleted"]:
+            update_data.pop(protected_key, None)
+
         try:
             result = await self.db["beds"].find_one_and_update(
-                {"_id": ObjectId(bed_id)},
+                {"_id": ObjectId(bed_id), "isDeleted": {"$ne": True}},
                 {"$set": update_data},
                 return_document=True
             )
@@ -50,7 +55,7 @@ class BedService:
         except:
             # If ObjectId conversion fails, try by id field
             result = await self.db["beds"].find_one_and_update(
-                {"id": bed_id},
+                {"id": bed_id, "isDeleted": {"$ne": True}},
                 {"$set": update_data},
                 return_document=True
             )
@@ -60,20 +65,28 @@ class BedService:
 
     async def delete_bed(self, bed_id: str) -> bool:
         from bson import ObjectId
+        now = datetime.now(timezone.utc).isoformat()
         try:
-            result = await self.db["beds"].delete_one({"_id": ObjectId(bed_id)})
-            return result.deleted_count == 1
+            result = await self.db["beds"].update_one(
+                {"_id": ObjectId(bed_id), "isDeleted": {"$ne": True}},
+                {"$set": {"isDeleted": True, "updatedAt": now}}
+            )
+            return result.modified_count == 1
         except:
             # If ObjectId conversion fails, try by id field
-            result = await self.db["beds"].delete_one({"id": bed_id})
-            return result.deleted_count == 1
+            result = await self.db["beds"].update_one(
+                {"id": bed_id, "isDeleted": {"$ne": True}},
+                {"$set": {"isDeleted": True, "updatedAt": now}}
+            )
+            return result.modified_count == 1
 
     async def get_available_beds_with_rooms(self, property_id: str) -> List[dict]:
         """Get all available beds for a property, grouped by rooms with room information"""
         # Get all available beds for the property
         beds_cursor = self.db["beds"].find({
             "propertyId": property_id,
-            "status": "available"
+            "status": "available",
+            "isDeleted": {"$ne": True}
         })
         beds = []
         async for doc in beds_cursor:
@@ -101,6 +114,7 @@ class BedService:
         # Fetch room details by _id or include rooms where active is true OR active field doesn't exist
         rooms_cursor = self.db["rooms"].find({
             "_id": {"$in": object_ids},
+            "isDeleted": {"$ne": True},
             "$or": [
                 {"active": True},
                 {"active": {"$exists": False}}
@@ -145,7 +159,8 @@ class BedService:
         """Get ALL beds (available, occupied, maintenance) for a property, grouped by rooms with room information"""
         # Get all beds for the property (no status filter)
         beds_cursor = self.db["beds"].find({
-            "propertyId": property_id
+            "propertyId": property_id,
+            "isDeleted": {"$ne": True}
         })
         beds = []
         async for doc in beds_cursor:
@@ -173,6 +188,7 @@ class BedService:
         # Fetch room details by _id or include rooms where active is true OR active field doesn't exist
         rooms_cursor = self.db["rooms"].find({
             "_id": {"$in": object_ids},
+            "isDeleted": {"$ne": True},
             "$or": [
                 {"active": True},
                 {"active": {"$exists": False}}

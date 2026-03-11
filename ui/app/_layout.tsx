@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { PropertyProvider } from '@/context/PropertyContext';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { spacing, typography, radius, shadows } from '@/theme';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const PLAY_STORE_URL = process.env.EXPO_PUBLIC_PLAYSTORE_URL || 'https://play.google.com/store/apps/details?id=com.lohilit101.boltexponativewind';
 
@@ -126,13 +127,15 @@ function RootLayoutContent() {
   const { colors } = useTheme();
   
   return (
-    <View style={[styles.rootContainer, { backgroundColor: colors.background.primary }]}>
-      <AuthProvider>
-        <PropertyProvider>
-          <RootNavigator />
-        </PropertyProvider>
-      </AuthProvider>
-    </View>
+    <ErrorBoundary>
+      <View style={[styles.rootContainer, { backgroundColor: colors.background.primary }]}>
+        <AuthProvider>
+          <PropertyProvider>
+            <RootNavigator />
+          </PropertyProvider>
+        </AuthProvider>
+      </View>
+    </ErrorBoundary>
   );
 }
 

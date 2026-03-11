@@ -217,35 +217,21 @@ class RazorpaySubscriptionService:
                     order = razorpay_client.order.create({
                         'amount': price,
                         'currency': 'INR',
-                        'customer_id': user['razorpayCustomerId'],
-                        'description': f'Auto-renewal: {sub["plan"].title()} ({sub["period"]} months)',
+                        'receipt': f"renew_{sub['ownerId'][:10]}_{datetime.now().strftime('%Y%m%d')}",
                         'notes': {
                             'owner_id': sub['ownerId'],
                             'plan': sub['plan'],
-                            'period': sub['period'],
-                            'renewal': 'true'
+                            'period': str(sub['period']),
+                            'renewal': 'true',
+                            'subscription_id': str(sub['_id'])
                         }
                     })
                     
-                    # Update subscription with new order
-                    new_period_start = datetime.fromisoformat(sub['currentPeriodEnd'])
-                    new_period_end = new_period_start + timedelta(days=sub['period'] * 30)
-                    
-                    await db.subscriptions.update_one(
-                        {'_id': sub['_id']},
-                        {
-                            '$set': {
-                                'currentPeriodStart': new_period_start.isoformat(),
-                                'currentPeriodEnd': new_period_end.isoformat(),
-                                'renewalError': None,
-                                'updatedAt': datetime.now().isoformat()
-                            }
-                        }
-                    )
-                    
                     # Store renewal order for payment verification
+                    # Extension will happen in handle_subscription_payment_success when this order is paid
                     await db.renewal_orders.insert_one({
                         'ownerId': sub['ownerId'],
+                        'subscriptionId': sub['_id'],
                         'orderId': order['id'],
                         'plan': sub['plan'],
                         'period': sub['period'],
@@ -255,7 +241,7 @@ class RazorpaySubscriptionService:
                     })
                     
                     stats['renewed'] += 1
-                    logger.info(f"✓ Auto-renewal initiated for user {sub['ownerId']}: order {order['id']}")
+                    logger.info(f"✓ Auto-renewal order created for user {sub['ownerId']}: order {order['id']}")
                     
                 except Exception as e:
                     stats['failed'] += 1
@@ -312,6 +298,31 @@ class RazorpaySubscriptionService:
                     }
                 }
             )
+            
+            # Extend the subscription
+            sub = await db.subscriptions.find_one({'_id': renewal['subscriptionId']})
+            if sub:
+                # Calculate new period end
+                # If current period end is in the past (late renewal), start from now
+                # If current period end is in the future (early renewal), extend it
+                current_end = datetime.fromisoformat(sub['currentPeriodEnd'])
+                now = datetime.now()
+                
+                base_date = max(current_end, now)
+                new_end = base_date + timedelta(days=renewal['period'] * 30)
+                
+                await db.subscriptions.update_one(
+                    {'_id': sub['_id']},
+                    {
+                        '$set': {
+                            'currentPeriodStart': base_date.isoformat(),
+                            'currentPeriodEnd': new_end.isoformat(),
+                            'renewalError': None,
+                            'updatedAt': datetime.now().isoformat()
+                        }
+                    }
+                )
+                logger.info(f"✓ Subscription extended for user {renewal['ownerId']} until {new_end.isoformat()}")
             
             logger.info(f"✓ Auto-renewal payment successful: {order_id}")
             return True

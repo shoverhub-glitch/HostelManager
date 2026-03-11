@@ -1,0 +1,54 @@
+services:
+  backend:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: fast-api-backend
+    restart: always
+    expose:
+      - "8000"
+    env_file:
+      - ./api/.env
+    environment:
+      - MONGO_URL=${MONGO_URL:-mongodb://mongodb:27017/hostelmanager}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+    depends_on:
+      - redis
+      - mongodb
+    volumes:
+      - ./api/app/static:/app/app/static
+
+  redis:
+    image: redis:alpine
+    container_name: api-redis
+    ports:
+      - "6379:6379"
+    restart: always
+    command: redis-server --appendonly yes
+
+  mongodb:
+    image: mongo:latest
+    container_name: api-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    restart: always
+    environment:
+      MONGO_INITDB_DATABASE: hostelmanager
+
+  nginx:
+    image: nginx:alpine
+    container_name: api-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./api/app/static:/usr/share/nginx/html/static:ro
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  mongo-data:

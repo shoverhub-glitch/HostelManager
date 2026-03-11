@@ -13,7 +13,7 @@ class RoomService:
         self.collection = getCollection("rooms")
 
     async def get_rooms(self, property_id: str = None):
-        query = {}
+        query = {"isDeleted": {"$ne": True}}
         if property_id:
             query["propertyId"] = property_id
         cursor = self.collection.find(query)
@@ -24,7 +24,7 @@ class RoomService:
         return rooms
 
     async def get_room(self, room_id: str):
-        doc = await self.collection.find_one({"_id": ObjectId(room_id)})
+        doc = await self.collection.find_one({"_id": ObjectId(room_id), "isDeleted": {"$ne": True}})
         if doc:
             doc["id"] = str(doc["_id"])
             return Room(**doc)
@@ -40,10 +40,13 @@ class RoomService:
         if "active" not in room_data:
             room_data["active"] = True
         
+        room_data["isDeleted"] = False
+
         # Check if room number already exists for this property
         existing = await self.collection.find_one({
             "propertyId": room_data["propertyId"],
-            "roomNumber": room_data["roomNumber"]
+            "roomNumber": room_data["roomNumber"],
+            "isDeleted": {"$ne": True}
         })
         if existing:
             raise ValueError(f"Room number '{room_data['roomNumber']}' already exists for this property")
@@ -68,13 +71,16 @@ class RoomService:
     async def update_room(self, room_id: str, room_data: dict):
         from bson import ObjectId
         room_data["updatedAt"] = datetime.now(timezone.utc).isoformat()
-        
+        for protected_key in ["isDeleted"]:
+            room_data.pop(protected_key, None)
+
         # If roomNumber is being updated, check for duplicates
         if "roomNumber" in room_data:
             existing = await self.collection.find_one({
                 "propertyId": room_data["propertyId"],
                 "roomNumber": room_data["roomNumber"],
-                "_id": {"$ne": ObjectId(room_id)}
+                "_id": {"$ne": ObjectId(room_id)},
+                "isDeleted": {"$ne": True}
             })
             if existing:
                 raise ValueError(f"Room number '{room_data['roomNumber']}' already exists for this property")
@@ -96,7 +102,7 @@ class RoomService:
         tenants_collection = getCollection("tenants")
         
         # Get current room to compare
-        current_room = await self.collection.find_one({"_id": ObjectId(room_id)})
+        current_room = await self.collection.find_one({"_id": ObjectId(room_id), "isDeleted": {"$ne": True}})
         if not current_room:
             return
         
@@ -109,9 +115,12 @@ class RoomService:
             # Get beds that will be removed (bed numbers > new_bed_count)
             beds_to_remove = await beds_collection.find({
                 "roomId": room_id,
-                "bedNumber": {"$gt": str(new_bed_count)}
+                "bedNumber": {"$gt": str(new_bed_count)},
+                "isDeleted": {"$ne": True}
             }).to_list(None)
             
+            now = datetime.now(timezone.utc).isoformat()
+
             for bed in beds_to_remove:
                 tenant_id = bed.get("tenantId")
                 if tenant_id:
@@ -120,7 +129,8 @@ class RoomService:
                         "roomId": room_id,
                         "status": "available",
                         "bedNumber": {"$lte": str(new_bed_count)},
-                        "_id": {"$ne": bed["_id"]}
+                        "_id": {"$ne": bed["_id"]},
+                        "isDeleted": {"$ne": True}
                     })
                     
                     # If no available bed in same room, try same property
@@ -129,7 +139,8 @@ class RoomService:
                             "propertyId": property_id,
                             "roomId": {"$ne": room_id},
                             "status": "available",
-                            "_id": {"$ne": bed["_id"]}
+                            "_id": {"$ne": bed["_id"]},
+                            "isDeleted": {"$ne": True}
                         })
                     
                     if available_bed:
@@ -140,14 +151,14 @@ class RoomService:
                                 "$set": {
                                     "status": "occupied",
                                     "tenantId": tenant_id,
-                                    "updatedAt": datetime.now(timezone.utc).isoformat()
+                                    "updatedAt": now
                                 }
                             }
                         )
                         # Update tenant's bedId and roomId if relocated to different room
                         update_data = {
                             "bedId": str(available_bed["_id"]),
-                            "updatedAt": datetime.now(timezone.utc).isoformat()
+                            "updatedAt": now
                         }
                         if str(available_bed.get("roomId")) != room_id:
                             update_data["roomId"] = str(available_bed["roomId"])
@@ -163,15 +174,18 @@ class RoomService:
                             {
                                 "$set": {
                                     "tenantStatus": "vacated",
-                                    "checkoutDate": datetime.now(timezone.utc).isoformat(),
+                                    "checkoutDate": now,
                                     "billingConfig": None,
-                                    "updatedAt": datetime.now(timezone.utc).isoformat()
+                                    "updatedAt": now
                                 }
                             }
                         )
                 
-                # Delete the bed
-                await beds_collection.delete_one({"_id": bed["_id"]})
+                # Soft delete the bed
+                await beds_collection.update_one(
+                    {"_id": bed["_id"]},
+                    {"$set": {"isDeleted": True, "updatedAt": now}}
+                )
         
         elif new_bed_count > current_bed_count:
             # Increasing beds - create new beds
@@ -191,7 +205,7 @@ class RoomService:
         beds_collection = getCollection("beds")
         tenants_collection = getCollection("tenants")
         
-        current_room = await self.collection.find_one({"_id": ObjectId(room_id)})
+        current_room = await self.collection.find_one({"_id": ObjectId(room_id), "isDeleted": {"$ne": True}})
         if not current_room:
             return None
         
@@ -210,14 +224,16 @@ class RoomService:
             available_beds_same_room = await beds_collection.count_documents({
                 "roomId": room_id,
                 "status": "available",
-                "bedNumber": {"$lte": str(new_bed_count)}
+                "bedNumber": {"$lte": str(new_bed_count)},
+                "isDeleted": {"$ne": True}
             })
             
             # Count available beds in other rooms of same property
             available_beds_other_rooms = await beds_collection.count_documents({
                 "propertyId": property_id,
                 "status": "available",
-                "roomId": {"$ne": room_id}
+                "roomId": {"$ne": room_id},
+                "isDeleted": {"$ne": True}
             })
             
             result["availableBedsInSameRoom"] = available_beds_same_room
@@ -226,7 +242,8 @@ class RoomService:
             # Get beds that will be removed
             beds_to_remove = await beds_collection.find({
                 "roomId": room_id,
-                "bedNumber": {"$gt": str(new_bed_count)}
+                "bedNumber": {"$gt": str(new_bed_count)},
+                "isDeleted": {"$ne": True}
             }).to_list(None)
             
             available_same_room_index = 0
@@ -235,7 +252,7 @@ class RoomService:
             for bed in beds_to_remove:
                 tenant_id = bed.get("tenantId")
                 if tenant_id:
-                    tenant = await tenants_collection.find_one({"_id": ObjectId(tenant_id)})
+                    tenant = await tenants_collection.find_one({"_id": ObjectId(tenant_id), "isDeleted": {"$ne": True}})
                     if tenant:
                         # Determine action: try same room first, then other rooms
                         will_relocate_same_room = available_same_room_index < available_beds_same_room
@@ -268,9 +285,11 @@ class RoomService:
         beds_collection = getCollection("beds")
         tenants_collection = getCollection("tenants")
         
-        beds_cursor = beds_collection.find({"roomId": room_id})
+        beds_cursor = beds_collection.find({"roomId": room_id, "isDeleted": {"$ne": True}})
         beds = await beds_cursor.to_list(None)
         
+        now = datetime.now(timezone.utc).isoformat()
+
         # For each bed, update associated tenant to "vacated" status
         for bed in beds:
             bed_id = str(bed["_id"])
@@ -283,25 +302,29 @@ class RoomService:
                     {
                         "$set": {
                             "tenantStatus": "vacated",
-                            "checkoutDate": datetime.now(timezone.utc).isoformat(),
+                            "checkoutDate": now,
                             "billingConfig": None,
-                            "updatedAt": datetime.now(timezone.utc).isoformat()
+                            "updatedAt": now
                         }
                     }
                 )
             
-            # Set bed to available and clear tenantId
+            # Soft delete the bed instead of just making it available
             await beds_collection.update_one(
                 {"_id": bed["_id"]},
                 {
                     "$set": {
+                        "isDeleted": True,
                         "status": "available",
                         "tenantId": None,
-                        "updatedAt": datetime.now(timezone.utc).isoformat()
+                        "updatedAt": now
                     }
                 }
             )
         
-        # Delete the room
-        await self.collection.delete_one({"_id": ObjectId(room_id)})
+        # Soft delete the room
+        await self.collection.update_one(
+            {"_id": ObjectId(room_id)}, 
+            {"$set": {"isDeleted": True, "updatedAt": now}}
+        )
         return {"success": True, "roomId": room_id}

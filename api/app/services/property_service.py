@@ -16,6 +16,7 @@ class PropertyService:
         doc = dict(property_data)
         doc["ownerIds"] = [owner_id]
         doc["ownerId"] = owner_id
+        doc["isDeleted"] = False
         doc["createdAt"] = now
         doc["updatedAt"] = now
         result = await self.db["properties"].insert_one(doc)
@@ -35,7 +36,7 @@ class PropertyService:
     
     async def _list_properties_paginated(self, user_id: str, skip: int = 0, limit: int = 50):
         """Internal method with pagination support"""
-        query = build_owner_query(user_id)
+        query = {"$and": [build_owner_query(user_id), {"isDeleted": {"$ne": True}}]}
         
         # Get total count
         total = await self.db["properties"].count_documents(query)
@@ -66,16 +67,16 @@ class PropertyService:
 
             properties.append(PropertyOut(**doc))
         
-            return properties, total
+        return properties, total
 
     async def update_property(self, property_id: str, owner_id: str, property_update: dict) -> PropertyOut | None:
         now = datetime.now(timezone.utc).isoformat()
         updates = dict(property_update)
-        for protected_key in ["_id", "id", "ownerId", "ownerIds", "createdAt"]:
+        for protected_key in ["_id", "id", "ownerId", "ownerIds", "createdAt", "isDeleted"]:
             updates.pop(protected_key, None)
         updates["updatedAt"] = now
 
-        match_query = {"_id": ObjectId(property_id), **build_owner_query(owner_id)}
+        match_query = {"_id": ObjectId(property_id), "isDeleted": {"$ne": True}, **build_owner_query(owner_id)}
         existing = await self.db["properties"].find_one(match_query)
         if not existing:
             return None
@@ -89,29 +90,49 @@ class PropertyService:
         return PropertyOut(**doc)
 
     async def delete_property(self, property_id: str, owner_id: str) -> dict:
-        match_query = {"_id": ObjectId(property_id), **build_owner_query(owner_id)}
+        match_query = {"_id": ObjectId(property_id), "isDeleted": {"$ne": True}, **build_owner_query(owner_id)}
         existing = await self.db["properties"].find_one(match_query)
         if not existing:
             return {"success": False, "propertyId": property_id}
 
-        # Delete all related data
-        # 1. Delete all tenants for this property
-        await self.db["tenants"].delete_many({"propertyId": property_id})
-        
-        # 2. Delete all payments for this property
-        await self.db["payments"].delete_many({"propertyId": property_id})
-        
-        # 3. Delete all beds for this property
-        await self.db["beds"].delete_many({"propertyId": property_id})
-        
-        # 4. Delete all rooms for this property
-        await self.db["rooms"].delete_many({"propertyId": property_id})
-        
-        # 5. Delete all staff for this property
-        await self.db["staff"].delete_many({"propertyId": property_id})
+        now = datetime.now(timezone.utc).isoformat()
 
-        # Delete the property itself
-        await self.db["properties"].delete_one({"_id": ObjectId(property_id)})
+        # Soft delete all related data
+        # 1. Soft delete all tenants for this property
+        await self.db["tenants"].update_many(
+            {"propertyId": property_id}, 
+            {"$set": {"isDeleted": True, "updatedAt": now}}
+        )
+        
+        # 2. Soft delete all payments for this property
+        await self.db["payments"].update_many(
+            {"propertyId": property_id}, 
+            {"$set": {"isDeleted": True, "updatedAt": now}}
+        )
+        
+        # 3. Soft delete all beds for this property
+        await self.db["beds"].update_many(
+            {"propertyId": property_id}, 
+            {"$set": {"isDeleted": True, "updatedAt": now}}
+        )
+        
+        # 4. Soft delete all rooms for this property
+        await self.db["rooms"].update_many(
+            {"propertyId": property_id}, 
+            {"$set": {"isDeleted": True, "updatedAt": now}}
+        )
+        
+        # 5. Soft delete all staff for this property
+        await self.db["staff"].update_many(
+            {"propertyId": property_id}, 
+            {"$set": {"isDeleted": True, "updatedAt": now}}
+        )
+
+        # Soft delete the property itself
+        await self.db["properties"].update_one(
+            {"_id": ObjectId(property_id)}, 
+            {"$set": {"isDeleted": True, "updatedAt": now}}
+        )
         
         # Remove property ID from all users
         await self.db["users"].update_many({}, {"$pull": {"propertyIds": property_id}})

@@ -288,6 +288,7 @@ export default function TenantDetailScreen() {
   };
 
   const calculateFinancialSummary = () => {
+    // 1. Total amount actually paid
     const totalPaid = payments
       .filter(p => p.status === 'paid')
       .reduce((sum, p) => {
@@ -299,11 +300,57 @@ export default function TenantDetailScreen() {
 
     const latestPayment = payments[0] || null;
 
-    const outstanding = latestPayment && latestPayment.status !== 'paid'
-      ? typeof latestPayment.amount === 'string'
-        ? parseFloat(latestPayment.amount.replace(/[^0-9]/g, ''))
-        : latestPayment.amount
-      : 0;
+    // 2. Outstanding amount from EXISTING "due" records
+    let outstanding = payments
+      .filter(p => p.status === 'due')
+      .reduce((sum, p) => {
+        const amount = typeof p.amount === 'string'
+          ? parseFloat(p.amount.replace(/[^0-9]/g, ''))
+          : p.amount;
+        return sum + amount;
+      }, 0);
+
+    // 3. Catch-up logic for "expected" payments not yet generated in DB
+    // This provides 100% reliability even if the API hasn't run its cron yet.
+    if (tenant?.billingConfig && tenant?.tenantStatus === 'active') {
+      try {
+        const anchorDay = tenant.billingConfig.anchorDay;
+        const rentAmount = typeof tenant.rent === 'string' 
+          ? parseFloat(tenant.rent.replace(/[^0-9]/g, '')) 
+          : parseFloat(tenant.rent || '0');
+        
+        const today = new Date();
+        
+        // Find the "target" due date for the current period
+        let targetDueDate = new Date(today.getFullYear(), today.getMonth(), anchorDay);
+        if (targetDueDate > today) {
+          targetDueDate.setMonth(targetDueDate.getMonth() - 1);
+        }
+
+        // Determine where to start checking for gaps
+        let currentCheckDate: Date;
+        if (latestPayment) {
+          const lastDue = new Date(latestPayment.dueDate);
+          currentCheckDate = new Date(lastDue.getFullYear(), lastDue.getMonth() + 1, anchorDay);
+        } else if (tenant.joinDate) {
+          const joinDate = new Date(tenant.joinDate);
+          currentCheckDate = new Date(joinDate.getFullYear(), joinDate.getMonth(), anchorDay);
+          if (currentCheckDate < joinDate) {
+            currentCheckDate.setMonth(currentCheckDate.getMonth() + 1);
+          }
+        } else {
+          currentCheckDate = new Date(targetDueDate.getTime() + 86400000); // Skip check
+        }
+
+        // Add missing months to outstanding
+        while (currentCheckDate <= targetDueDate) {
+          outstanding += rentAmount;
+          currentCheckDate.setMonth(currentCheckDate.getMonth() + 1);
+        }
+      } catch (err) {
+        console.warn('Financial catch-up calculation failed:', err);
+      }
+    }
 
     return {
       totalPaid,

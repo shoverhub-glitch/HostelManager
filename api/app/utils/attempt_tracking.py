@@ -9,7 +9,7 @@ login_attempts_collection = db["login_attempts"]
 otp_attempts_collection = db["otp_attempts"]
 
 MAX_LOGIN_ATTEMPTS = 5
-MAX_OTP_ATTEMPTS = 20
+MAX_OTP_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 10
 
 
@@ -54,6 +54,25 @@ async def increment_login_attempts(email: str) -> int:
     normalized_email = email.strip().lower()
     now = datetime.now(timezone.utc)
     
+    # 1. Fetch current attempt status
+    attempt_doc = await login_attempts_collection.find_one({"email": normalized_email})
+    
+    # 2. Determine if we should reset the counter
+    # If last attempt was more than 10 minutes ago, restart from 1
+    if attempt_doc and attempt_doc.get("updatedAt"):
+        last_attempt = attempt_doc.get("updatedAt")
+        if last_attempt.tzinfo is None:
+            last_attempt = last_attempt.replace(tzinfo=timezone.utc)
+        
+        if now - last_attempt > timedelta(minutes=LOCKOUT_DURATION_MINUTES):
+            # Window expired, reset to 1
+            await login_attempts_collection.update_one(
+                {"email": normalized_email},
+                {"$set": {"failedAttempts": 1, "updatedAt": now, "lockedUntil": None}}
+            )
+            return 1
+
+    # 3. Normal increment within the window
     result = await login_attempts_collection.find_one_and_update(
         {"email": normalized_email},
         {
@@ -82,7 +101,7 @@ async def reset_login_attempts(email: str):
     normalized_email = email.strip().lower()
     await login_attempts_collection.update_one(
         {"email": normalized_email},
-        {"$set": {"failedAttempts": 0, "lockedUntil": None}}
+        {"$set": {"failedAttempts": 0, "lockedUntil": None, "updatedAt": datetime.now(timezone.utc)}}
     )
 
 
@@ -126,6 +145,23 @@ async def increment_otp_attempts(email: str) -> int:
     """
     normalized_email = email.strip().lower()
     now = datetime.now(timezone.utc)
+
+    # 1. Fetch current attempt status
+    attempt_doc = await otp_attempts_collection.find_one({"email": normalized_email})
+    
+    # 2. Determine if we should reset the counter
+    if attempt_doc and attempt_doc.get("updatedAt"):
+        last_attempt = attempt_doc.get("updatedAt")
+        if last_attempt.tzinfo is None:
+            last_attempt = last_attempt.replace(tzinfo=timezone.utc)
+        
+        if now - last_attempt > timedelta(minutes=LOCKOUT_DURATION_MINUTES):
+            # Window expired, reset to 1
+            await otp_attempts_collection.update_one(
+                {"email": normalized_email},
+                {"$set": {"failedAttempts": 1, "updatedAt": now, "lockedUntil": None}}
+            )
+            return 1
     
     result = await otp_attempts_collection.find_one_and_update(
         {"email": normalized_email},

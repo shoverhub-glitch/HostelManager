@@ -45,11 +45,16 @@ class SubscriptionEnforcement:
             # Get subscription
             sub = await SubscriptionService.get_subscription(owner_id)
 
-            # Check subscription status
-            if sub.status == "expired":
+            # Check subscription status and date
+            now = datetime.now(timezone.utc)
+            expiry = datetime.fromisoformat(sub.currentPeriodEnd.replace('Z', '+00:00'))
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+
+            if sub.status == "expired" or expiry < now:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    detail=f"Subscription expired on {sub.currentPeriodEnd}. Please renew to create properties."
+                    detail=f"Subscription expired on {sub.currentPeriodEnd}. Please renew to proceed."
                 )
 
             # Get plan limits

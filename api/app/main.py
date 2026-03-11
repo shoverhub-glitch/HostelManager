@@ -10,6 +10,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from datetime import datetime, timezone, timedelta
 import logging
 from pymongo.errors import OperationFailure
 
@@ -193,6 +194,25 @@ async def lifespan(app):
         result = await RazorpaySubscriptionService.check_and_renew_subscriptions()
         return result
     
+    # Wrapper for database cleanup job
+    async def db_cleanup_job():
+        """Cleanup expired OTPs and old attempt records."""
+        logger = logging.getLogger(__name__)
+        now = datetime.now(timezone.utc)
+        
+        # 1. Cleanup expired OTPs (older than 10 minutes)
+        otp_expiry = now - timedelta(minutes=10)
+        # Assuming collections exist based on PRODUCTION_TODOS.md
+        await db["email_otps"].delete_many({"createdAt": {"$lt": otp_expiry}})
+        await db["password_reset_otps"].delete_many({"createdAt": {"$lt": otp_expiry}})
+        
+        # 2. Cleanup old attempt records (older than 24 hours)
+        attempt_expiry = now - timedelta(hours=24)
+        await db["login_attempts"].delete_many({"updatedAt": {"$lt": attempt_expiry}})
+        await db["otp_attempts"].delete_many({"updatedAt": {"$lt": attempt_expiry}})
+        
+        logger.info(f"✓ Database cleanup completed at {now}")
+
     # Job 1: Generate monthly payments daily at 00:05 UTC
     # This ensures all tenants get their monthly payment created on the same day
     scheduler.add_job(
@@ -218,12 +238,24 @@ async def lifespan(app):
         coalesce=True,
         misfire_grace_time=300
     )
+
+    # Job 3: Database cleanup every hour
+    scheduler.add_job(
+        db_cleanup_job,
+        trigger="interval",
+        hours=1,
+        id="db_cleanup",
+        name="Cleanup expired OTPs and old attempt records",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True
+    )
     
     scheduler.start()
     app.state.scheduler = scheduler
     
     logger.info("✓ Background scheduler initialized")
-    logger.info("✓ Jobs registered: generate_monthly_payments (daily at 00:05 UTC), auto_renewal_subscriptions (daily at 01:00 UTC)")
+    logger.info("✓ Jobs registered: generate_monthly_payments, auto_renewal_subscriptions, db_cleanup")
     
     yield
     

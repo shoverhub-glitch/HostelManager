@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from app.utils.helpers import get_current_user
 from app.services.subscription_service import SubscriptionService
 from app.services.plan_service import PlanService
@@ -6,8 +6,38 @@ from app.services.subscription_enforcement import SubscriptionEnforcement
 from app.services.subscription_lifecycle import SubscriptionLifecycle
 from app.services.razorpay_service import RazorpayService
 from app.services.coupon_service import CouponService
+from app.services.razorpay_webhook_service import RazorpayWebhookService
 
 router = APIRouter(prefix="/subscription", tags=["subscription"])
+
+
+@router.post("/webhook")
+async def razorpay_webhook(request: Request):
+    """
+    Handle Razorpay webhooks for payment notifications.
+    Critical for 100% reliability in case of network/app failure.
+    """
+    try:
+        signature = request.headers.get("X-Razorpay-Signature")
+        if not signature:
+            raise HTTPException(status_code=400, detail="Missing signature")
+            
+        body = await request.body()
+        
+        # Verify webhook signature
+        if not RazorpayWebhookService.verify_signature(body, signature):
+            raise HTTPException(status_code=400, detail="Invalid signature")
+            
+        event_data = await request.json()
+        result = await RazorpayWebhookService.process_webhook(event_data)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Webhook error: {str(e)}")
+        # Always return 200 to Razorpay to prevent retries of invalid/failing events
+        return {"status": "error", "message": str(e)}
 
 
 @router.get("")

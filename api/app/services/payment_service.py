@@ -9,7 +9,7 @@ class PaymentService:
         self.collection = getCollection("payments")
 
     async def get_payment_by_id(self, payment_id: str) -> Optional[Payment]:
-        payment = await self.collection.find_one({"_id": ObjectId(payment_id)})
+        payment = await self.collection.find_one({"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}})
         if payment:
             payment["id"] = str(payment["_id"])
             return Payment(**payment)
@@ -29,6 +29,7 @@ class PaymentService:
         if payment_dict.get("status") == "paid" and not payment_dict.get("paidDate"):
             payment_dict["paidDate"] = now.date().isoformat()
         
+        payment_dict["isDeleted"] = False
         payment_dict["createdAt"] = now
         payment_dict["updatedAt"] = now
         
@@ -41,7 +42,8 @@ class PaymentService:
             # Return existing payment instead of raising error
             existing = await self.collection.find_one({
                 "tenantId": payment_dict.get("tenantId"),
-                "dueDate": payment_dict.get("dueDate")
+                "dueDate": payment_dict.get("dueDate"),
+                "isDeleted": {"$ne": True}
             })
             if existing:
                 existing["id"] = str(existing["_id"])
@@ -49,7 +51,7 @@ class PaymentService:
             raise
 
     async def get_payment_stats(self):
-        payments = await self.collection.find().to_list(length=100)
+        payments = await self.collection.find({"isDeleted": {"$ne": True}}).to_list(length=1000)
         
         def parse_amount(amount_str):
             """Parse amount string that may contain currency symbols and commas"""
@@ -78,7 +80,7 @@ class PaymentService:
     async def update_payment(self, payment_id: str, payment_update) -> Optional[Payment]:
         from datetime import date as date_type
         
-        payment = await self.collection.find_one({"_id": ObjectId(payment_id)})
+        payment = await self.collection.find_one({"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}})
         if not payment:
             return None
         update_data = {k: v for k, v in payment_update.model_dump().items() if v is not None}
@@ -99,6 +101,8 @@ class PaymentService:
         if update_data.get("paidDate") and hasattr(update_data["paidDate"], 'isoformat'):
             update_data["paidDate"] = update_data["paidDate"].isoformat()
         
+        for protected_key in ["isDeleted"]:
+            update_data.pop(protected_key, None)
 
         update_data["updatedAt"] = datetime.now(timezone.utc)
         await self.collection.update_one({"_id": ObjectId(payment_id)}, {"$set": update_data})
@@ -108,10 +112,18 @@ class PaymentService:
 
     async def delete_payment(self, payment_id: str) -> bool:
         """Delete a single payment by ID"""
-        result = await self.collection.delete_one({"_id": ObjectId(payment_id)})
-        return result.deleted_count > 0
+        now = datetime.now(timezone.utc).isoformat()
+        result = await self.collection.update_one(
+            {"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}},
+            {"$set": {"isDeleted": True, "updatedAt": now}}
+        )
+        return result.modified_count > 0
 
     async def delete_payments_by_tenant(self, tenant_id: str) -> int:
         """Delete all payments for a specific tenant. Returns count of deleted payments."""
-        result = await self.collection.delete_many({"tenantId": tenant_id})
-        return result.deleted_count
+        now = datetime.now(timezone.utc).isoformat()
+        result = await self.collection.update_many(
+            {"tenantId": tenant_id, "isDeleted": {"$ne": True}},
+            {"$set": {"isDeleted": True, "updatedAt": now}}
+        )
+        return result.modified_count

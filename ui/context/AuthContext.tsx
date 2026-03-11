@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useRef } fro
 import { AppState, AppStateStatus } from 'react-native';
 import { encryptedTokenStorage } from '@/services/encryptedTokenStorage';
 import { deviceIdService } from '@/services/deviceId';
-import { authService } from '@/services/apiClient';
+import { authService, refreshAccessToken } from '@/services/apiClient';
 import type { Owner } from '@/services/apiTypes';
 import { clearScreenCache } from '@/services/screenCache';
 import { propertyStorage } from '@/services/propertyStorage';
@@ -134,56 +134,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const refreshAccessToken = async (): Promise<boolean> => {
-    try {
-      const refreshToken = await encryptedTokenStorage.getRefreshToken();
-      if (!refreshToken) {
-        return false;
-      }
-
-      // Use the API client's refreshAccessToken function directly
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          await encryptedTokenStorage.clearTokens();
-          setIsAuthenticated(false);
-          setUser(null);
-        }
-        return false;
-      }
-
-      const responseData = await response.json();
-      const data = responseData?.data;
-
-      if (data?.tokens?.accessToken && data?.tokens?.refreshToken && data?.tokens?.expiresAt) {
-        // Update tokens with token rotation (new refresh token on each refresh)
-        await encryptedTokenStorage.setAccessToken(data.tokens.accessToken);
-        await encryptedTokenStorage.setRefreshToken(data.tokens.refreshToken);
-        await encryptedTokenStorage.setTokenExpiry(data.tokens.expiresAt);
-
-        // Update user data if provided (in case user properties changed on server)
-        if (data.user) {
-          setUser(data.user);
-        }
-
-        return true;
-      }
-
-      return false;
-    } catch (error: any) {
-      // Don't logout on network error - user might be offline
-      return false;
-    }
-  };
-
   const scheduleTokenRefresh = async () => {
     try {
       const expiry = await encryptedTokenStorage.getTokenExpiry();
@@ -209,8 +159,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       tokenRefreshTimerRef.current = setTimeout(async () => {
-        const success = await refreshAccessToken();
-        if (success) {
+        const result = await refreshAccessToken();
+        if (result) {
+          if (result.user) setUser(result.user);
           scheduleTokenRefresh(); // Reschedule for next refresh
         } else {
           await encryptedTokenStorage.clearTokens();
@@ -232,7 +183,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (isAuthenticated) {
         const isValid = await encryptedTokenStorage.isTokenValid();
         if (!isValid) {
-          await refreshAccessToken();
+          const result = await refreshAccessToken();
+          if (result && result.user) setUser(result.user);
           scheduleTokenRefresh();
         }
       }

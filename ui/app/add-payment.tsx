@@ -67,6 +67,7 @@ export default function AddPaymentScreen() {
   const [showAnchorDayPicker, setShowAnchorDayPicker] = useState(false);
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [statusAutoUpdateNotice, setStatusAutoUpdateNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (joinDate) {
@@ -79,6 +80,9 @@ export default function AddPaymentScreen() {
   const handleStatusChange = (newStatus: 'paid' | 'due') => {
     if (newStatus === 'paid' || newStatus === 'due') {
       setStatus(newStatus);
+      if (newStatus === 'paid') {
+        setStatusAutoUpdateNotice(null);
+      }
       
       // If status is 'due', set anchor day to today
       if (newStatus === 'due') {
@@ -317,6 +321,18 @@ export default function AddPaymentScreen() {
                     Same day each month
                   </Text>
                 )}
+
+                {status === 'due' && (
+                  <Text style={[styles.helperText, { color: colors.text.secondary, marginTop: spacing.sm }]}>
+                    A due payment record is created immediately for this cycle.
+                  </Text>
+                )}
+
+                {statusAutoUpdateNotice && (
+                  <Text style={[styles.helperText, { color: colors.warning[700], marginTop: spacing.sm }]}>
+                    {statusAutoUpdateNotice}
+                  </Text>
+                )}
               </View>
               </>
             )}
@@ -444,7 +460,18 @@ export default function AddPaymentScreen() {
                     key={day}
                     style={[styles.modalOption, { borderBottomColor: colors.border.light }]}
                     onPress={() => {
-                      setAnchorDay(day);
+                      const todayDay = new Date().getDate();
+                      const selectedFutureAnchor = day > todayDay;
+
+                      if (autoGeneratePayments && status === 'paid' && selectedFutureAnchor) {
+                        handleStatusChange('due');
+                        setStatusAutoUpdateNotice(
+                          `Future date selected (Day ${day}). Status changed to Due and anchor reset to today.`
+                        );
+                      } else {
+                        setAnchorDay(day);
+                        setStatusAutoUpdateNotice(null);
+                      }
                       setShowAnchorDayPicker(false);
                     }}
                     activeOpacity={0.7}>

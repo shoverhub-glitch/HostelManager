@@ -7,6 +7,7 @@ import {
   TextInput,
   TouchableOpacity,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -50,6 +51,7 @@ export default function TenantsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(initialTotal);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showStatusFilterModal, setShowStatusFilterModal] = useState(false);
   
   // Filter & Pagination
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,7 +69,7 @@ export default function TenantsScreen() {
     tenantsCountRef.current = tenants.length;
   }, [tenants.length]);
 
-  const fetchTenants = useCallback(async (page: number = 1, search: string = '', status: string = 'all') => {
+  const fetchTenants = useCallback(async (page: number = 1, search: string = '', status: string = 'all', forceNetwork: boolean = false) => {
     if (!selectedPropertyId) {
       setLoading(false);
       return;
@@ -79,12 +81,14 @@ export default function TenantsScreen() {
     }
 
     const cacheKey = cacheKeys.tenants(selectedPropertyId, page, search, status);
-    const cachedResponse = getScreenCache<PaginatedResponse<Tenant>>(cacheKey, TENANTS_CACHE_STALE_MS);
-    if (cachedResponse) {
-      setTenants(cachedResponse.data || []);
-      setTotal(cachedResponse.meta?.total || 0);
-      setError(null);
-      return;
+    if (!forceNetwork) {
+      const cachedResponse = getScreenCache<PaginatedResponse<Tenant>>(cacheKey, TENANTS_CACHE_STALE_MS);
+      if (cachedResponse) {
+        setTenants(cachedResponse.data || []);
+        setTotal(cachedResponse.meta?.total || 0);
+        setError(null);
+        return;
+      }
     }
 
     try {
@@ -192,20 +196,23 @@ export default function TenantsScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!propertyLoading && selectedPropertyId) {
+        const cacheKey = cacheKeys.tenants(selectedPropertyId, currentPage, searchQuery, selectedStatus);
+        const hasFreshCache = !!getScreenCache<PaginatedResponse<Tenant>>(cacheKey, TENANTS_CACHE_STALE_MS);
         const now = Date.now();
         const timeSinceLastRefresh = now - lastFocusRefreshRef.current;
-        const shouldRefresh = timeSinceLastRefresh > TENANTS_CACHE_STALE_MS;
+        const shouldRefreshBecauseCacheMissing = !hasFreshCache;
+        const shouldRefreshByThrottle = timeSinceLastRefresh > TENANTS_CACHE_STALE_MS;
 
-        if (shouldRefresh) {
+        if (shouldRefreshBecauseCacheMissing || shouldRefreshByThrottle) {
           lastFocusRefreshRef.current = now;
-          fetchTenants(currentPage, searchQuery, selectedStatus);
+          fetchTenants(currentPage, searchQuery, selectedStatus, shouldRefreshBecauseCacheMissing);
         }
       }
     }, [propertyLoading, selectedPropertyId, currentPage, searchQuery, selectedStatus, fetchTenants])
   );
 
   const handleRetry = () => {
-    fetchTenants();
+    fetchTenants(currentPage, searchQuery, selectedStatus, true);
   };
 
   const handleRefresh = useCallback(async () => {
@@ -228,7 +235,7 @@ export default function TenantsScreen() {
     // Re-fetch tenants
     if (selectedPropertyId) {
       try {
-        await fetchTenants(1, '', 'all');
+        await fetchTenants(1, '', 'all', true);
       } finally {
         setRefreshing(false);
       }
@@ -239,6 +246,12 @@ export default function TenantsScreen() {
 
   const handleFabPress = () => {
     router.push('/add-tenant');
+  };
+
+  const handleSelectStatusFilter = (status: 'all' | 'paid' | 'due') => {
+    setShowStatusFilterModal(false);
+    setCurrentPage(1);
+    setSelectedStatus(status);
   };
 
   const handleAddRoom = () => {
@@ -285,16 +298,7 @@ export default function TenantsScreen() {
             }
           ]}
           activeOpacity={0.7}
-          onPress={() => {
-            // Show status filter menu
-            const statusOptions = [
-              { label: 'All', value: 'all' },
-              { label: 'Paid', value: 'paid' },
-              { label: 'Due', value: 'due' }
-            ];
-            // You can use Alert for this or a custom modal
-            alert('Filter by payment status - Consider adding a modal for better UX');
-          }}
+          onPress={() => setShowStatusFilterModal(true)}
           disabled={loading || !selectedProperty || !!error}>
           <Filter size={20} color={selectedStatus !== 'all' ? colors.primary[700] : colors.primary[500]} />
         </TouchableOpacity>
@@ -454,6 +458,57 @@ export default function TenantsScreen() {
         onClose={() => setShowUpgradeModal(false)}
         onSelectPlan={() => setShowUpgradeModal(false)}
       />
+
+      <Modal
+        visible={showStatusFilterModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowStatusFilterModal(false)}>
+        <View style={styles.filterModalOverlay}>
+          <View style={[styles.filterModalContainer, { backgroundColor: colors.background.secondary }]}> 
+            <Text style={[styles.filterModalTitle, { color: colors.text.primary }]}>Filter by Payment Status</Text>
+
+            {[
+              { label: 'All', value: 'all' as const },
+              { label: 'Paid', value: 'paid' as const },
+              { label: 'Due', value: 'due' as const },
+            ].map((option) => {
+              const selected = selectedStatus === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.filterOption,
+                    {
+                      borderColor: selected ? colors.primary[500] : colors.border.medium,
+                      backgroundColor: selected ? colors.primary[50] : colors.background.primary,
+                    },
+                  ]}
+                  onPress={() => handleSelectStatusFilter(option.value)}
+                  activeOpacity={0.7}>
+                  <Text
+                    style={[
+                      styles.filterOptionText,
+                      {
+                        color: selected ? colors.primary[700] : colors.text.primary,
+                        fontWeight: selected ? typography.fontWeight.semibold : typography.fontWeight.regular,
+                      },
+                    ]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity
+              style={[styles.filterModalCloseButton, { borderTopColor: colors.border.light }]}
+              onPress={() => setShowStatusFilterModal(false)}
+              activeOpacity={0.7}>
+              <Text style={[styles.filterModalCloseText, { color: colors.text.secondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -608,6 +663,43 @@ const styles = StyleSheet.create({
   archivedBadgeText: {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.semibold,
+  },
+  filterModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  filterModalContainer: {
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  filterModalTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
+    marginBottom: spacing.sm,
+  },
+  filterOption: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  filterOptionText: {
+    fontSize: typography.fontSize.md,
+  },
+  filterModalCloseButton: {
+    marginTop: spacing.sm,
+    borderTopWidth: 1,
+    alignItems: 'center',
+    paddingTop: spacing.md,
+  },
+  filterModalCloseText: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.medium,
   },
 });
 

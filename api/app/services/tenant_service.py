@@ -3,12 +3,13 @@ from app.models.bed_schema import BedUpdate, BedStatus
 from app.models.payment_schema import PaymentMethod
 from app.services.bed_service import BedService
 from app.database.mongodb import getCollection
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, date
 from dateutil.relativedelta import relativedelta
 from bson import ObjectId
 from app.models.payment_schema import PaymentCreate
 from app.services.payment_service import PaymentService
 from app.models.tenant_schema import BillingConfig
+from typing import Optional, List, Tuple
 
 
 
@@ -19,9 +20,57 @@ class TenantService:
     def __init__(self):
         self.collection = getCollection("tenants")
 
-    async def get_tenants(self, property_id: str = None, search: str = None, status: str = None, skip: int = 0, limit: int = 50, include_room_bed: bool = True):
+    @staticmethod
+    def _coerce_to_date(value: str) -> date:
+        """Parse either YYYY-MM-DD or full ISO datetime into a date."""
+        try:
+            return date.fromisoformat(value)
+        except Exception:
+            return datetime.fromisoformat(value.replace('Z', '+00:00')).date()
+
+    @staticmethod
+    def _get_current_month_anchor(anchor_day: int, today: date) -> date:
+        """Return the anchor date in the current month (clamped by calendar)."""
+        return today + relativedelta(day=anchor_day)
+
+    @classmethod
+    def _calculate_initial_payment_plan(cls, anchor_day: int, billing_status: str, today: date) -> Tuple[bool, date]:
+        """
+        Decide whether to create an initial payment now and what dueDate to use.
+
+        Rules:
+        - `paid` + past/today anchor: create now as `paid` for current month's anchor.
+        - `paid` + future anchor: do not create now; first auto-generated payment should happen on anchor day.
+        - `due`: create now as `due` for current month's anchor (past, today, or future).
+        """
+        current_month_anchor = cls._get_current_month_anchor(anchor_day, today)
+        is_future_anchor = current_month_anchor > today
+
+        if billing_status == BillingStatus.PAID.value and is_future_anchor:
+            return False, current_month_anchor
+
+        return True, current_month_anchor
+
+    async def get_tenants(
+        self,
+        property_id: str = None,
+        search: str = None,
+        status: str = None,
+        skip: int = 0,
+        limit: int = 50,
+        include_room_bed: bool = True,
+        property_ids: Optional[List[str]] = None,
+    ):
         query = {"isDeleted": {"$ne": True}}
+
+        if property_ids is not None:
+            if not property_ids:
+                return [], 0
+            query["propertyId"] = {"$in": property_ids}
+
         if property_id:
+            if property_ids is not None and property_id not in property_ids:
+                return [], 0
             query["propertyId"] = property_id
         if search:
             # Search in name, phone, documentId
@@ -174,28 +223,25 @@ class TenantService:
 
         # Create payment only if autoGeneratePayments is True and billingConfig exists
         if auto_generate and billing_config:
-            # Calculate dueDate from anchorDay and billingCycle
-            # anchorDay is just the day of month (e.g., 2 means the 2nd of every month)
             anchor_day = billing_config.anchorDay
-            today = datetime.now(timezone.utc)
-            
-            # Set dueDate to anchorDay of current or next month
-            # Use relativedelta to handle months with fewer days (e.g., Feb 30 becomes Feb 28)
-            due_date = today + relativedelta(day=anchor_day)
-            # If the anchor day has already passed this month, use next month
-            if due_date < today:
-                due_date = due_date + relativedelta(months=1)
-            
-            payment = PaymentCreate(
-                tenantId=tenant_data["id"],
-                propertyId=tenant_data["propertyId"],
-                bed=tenant_data.get("bedId", ""),
-                amount=tenant_data["rent"],
-                status=billing_config.status,
-                dueDate=due_date.date(),
-                method=billing_config.method or PaymentMethod.CASH.value
+            today_date = datetime.now(timezone.utc).date()
+            should_create_initial_payment, due_date = self._calculate_initial_payment_plan(
+                anchor_day=anchor_day,
+                billing_status=billing_config.status,
+                today=today_date,
             )
-            await payment_service.create_payment(payment)
+
+            if should_create_initial_payment:
+                payment = PaymentCreate(
+                    tenantId=tenant_data["id"],
+                    propertyId=tenant_data["propertyId"],
+                    bed=tenant_data.get("bedId", ""),
+                    amount=tenant_data["rent"],
+                    status=billing_config.status,
+                    dueDate=due_date,
+                    method=billing_config.method or PaymentMethod.CASH.value
+                )
+                await payment_service.create_payment(payment)
 
         return Tenant(**tenant_data)
 
@@ -213,8 +259,10 @@ class TenantService:
         orig_room_id = orig_doc.get("roomId")
         orig_status = orig_doc.get("tenantStatus", "active")
         
-        new_bed_id = tenant_data.get("bedId")
-        new_room_id = tenant_data.get("roomId")
+        # For PATCH semantics, keep existing room/bed when fields are omitted.
+        # This avoids false validation failures on partial updates (e.g. billing-only edits).
+        new_bed_id = tenant_data.get("bedId", orig_bed_id)
+        new_room_id = tenant_data.get("roomId", orig_room_id)
         new_status = tenant_data.get("tenantStatus", orig_status)
         
         # Validate new bed is available (if different from current bed)
@@ -304,10 +352,20 @@ class TenantService:
             {"$set": {"isDeleted": True, "updatedAt": now}}
         )
         
-        # Soft delete the tenant
+        # Soft delete the tenant and normalize status fields for consistency
         await self.collection.update_one(
             {"_id": ObjectId(tenant_id)},
-            {"$set": {"isDeleted": True, "updatedAt": now}}
+            {
+                "$set": {
+                    "isDeleted": True,
+                    "updatedAt": now,
+                    "tenantStatus": "vacated",
+                    "checkoutDate": doc.get("checkoutDate") or now,
+                    "billingConfig": None,
+                    "roomId": None,
+                    "bedId": None,
+                }
+            }
         )
         return {
             "success": True, 
@@ -366,7 +424,7 @@ class TenantService:
                     # 3. Determine the start date for generating missing payments
                     if latest_payment:
                         # Start from the month after the latest payment
-                        last_due_date = date.fromisoformat(latest_payment["dueDate"])
+                        last_due_date = self._coerce_to_date(latest_payment["dueDate"])
                         # Move to the same anchor day in the next month
                         current_due_date = last_due_date + relativedelta(months=1, day=anchor_day)
                     else:
@@ -375,7 +433,7 @@ class TenantService:
                         if not join_date_str:
                             continue # Cannot determine start date
                         
-                        join_date = date.fromisoformat(join_date_str)
+                        join_date = self._coerce_to_date(join_date_str)
                         # First payment is on the anchorDay of the joining month OR next month
                         current_due_date = join_date + relativedelta(day=anchor_day)
                         if current_due_date < join_date:
@@ -399,13 +457,30 @@ class TenantService:
                     checkout_limit = None
                     checkout_date_str = tenant_doc.get("checkoutDate")
                     if checkout_date_str:
-                        checkout_limit = date.fromisoformat(checkout_date_str)
+                        checkout_limit = self._coerce_to_date(checkout_date_str)
 
                     # 6. Generate all missing payments in the gap
                     while current_due_date <= target_due_date:
                         # Stop if we pass the checkout date
                         if checkout_limit and current_due_date > checkout_limit:
                             break
+
+                        # Guardrail: never generate more than one payment for the same tenant in a month
+                        month_start = current_due_date.replace(day=1)
+                        month_end = month_start + relativedelta(months=1, days=-1)
+                        monthly_exists = await payments_collection.find_one({
+                            "tenantId": tenant_id,
+                            "isDeleted": {"$ne": True},
+                            "dueDate": {
+                                "$gte": month_start.isoformat(),
+                                "$lte": month_end.isoformat(),
+                            },
+                        })
+
+                        if monthly_exists:
+                            result["skipped"] += 1
+                            current_due_date = current_due_date + relativedelta(months=1, day=anchor_day)
+                            continue
                             
                         # Build payment data
                         payment_data = {

@@ -18,6 +18,23 @@ async def get_tenants(
     page = max(1, page)
     page_size = min(100, max(1, page_size))  # Cap at 100 per page
     skip = (page - 1) * page_size
+
+    property_ids = getattr(request.state, "property_ids", [])
+    if not property_ids:
+        return {
+            "data": [],
+            "meta": {
+                "total": 0,
+                "page": page,
+                "pageSize": page_size,
+                "hasMore": False
+            }
+        }
+
+    if property_id and property_id not in property_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    scoped_property_ids = [property_id] if property_id else property_ids
     
     tenants, total = await tenant_service.get_tenants(
         property_id=property_id,
@@ -25,14 +42,12 @@ async def get_tenants(
         status=status,
         skip=skip,
         limit=page_size,
-        include_room_bed=True  # Enrich with room/bed data
+        include_room_bed=True,  # Enrich with room/bed data
+        property_ids=scoped_property_ids,
     )
-    
-    property_ids = getattr(request.state, "property_ids", [])
-    filtered = [t for t in tenants if t.propertyId and t.propertyId in property_ids]
-    
+
     return {
-        "data": [tenant.model_dump(exclude_none=True) for tenant in filtered],
+        "data": [tenant.model_dump(exclude_none=True) for tenant in tenants],
         "meta": {
             "total": total,
             "page": page,

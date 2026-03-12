@@ -91,21 +91,23 @@ export default function TenantDetailScreen() {
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTenantFocusRefreshRef = useRef<number>(0);
 
-  const fetchTenantData = async () => {
+  const fetchTenantData = async (forceNetwork: boolean = false) => {
     if (!tenantId) {
       setLoading(false);
       return;
     }
 
     const cacheKey = cacheKeys.tenantDetail(tenantId);
-    const cachedData = getScreenCache<TenantDetailCachePayload>(cacheKey, TENANT_DETAIL_CACHE_STALE_MS);
-    if (cachedData) {
-      setTenant(cachedData.tenant);
-      setPayments(cachedData.payments);
-      setRoom(cachedData.room);
-      setError(null);
-      setLoading(false);
-      return;
+    if (!forceNetwork) {
+      const cachedData = getScreenCache<TenantDetailCachePayload>(cacheKey, TENANT_DETAIL_CACHE_STALE_MS);
+      if (cachedData) {
+        setTenant(cachedData.tenant);
+        setPayments(cachedData.payments);
+        setRoom(cachedData.room);
+        setError(null);
+        setLoading(false);
+        return;
+      }
     }
 
     try {
@@ -171,10 +173,19 @@ export default function TenantDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (!tenantId) return;
+
+      const cacheKey = cacheKeys.tenantDetail(tenantId);
+      const hasFreshCache = !!getScreenCache<TenantDetailCachePayload>(cacheKey, TENANT_DETAIL_CACHE_STALE_MS);
       const now = Date.now();
-      if (lastTenantFocusRefreshRef.current === 0 || (now - lastTenantFocusRefreshRef.current) > TENANT_DETAIL_FOCUS_THROTTLE_MS) {
+      const shouldRefreshBecauseCacheMissing = !hasFreshCache;
+      const shouldRefreshByThrottle =
+        lastTenantFocusRefreshRef.current === 0 ||
+        (now - lastTenantFocusRefreshRef.current) > TENANT_DETAIL_FOCUS_THROTTLE_MS;
+
+      if (shouldRefreshBecauseCacheMissing || shouldRefreshByThrottle) {
         lastTenantFocusRefreshRef.current = now;
-        fetchTenantData();
+        fetchTenantData(shouldRefreshBecauseCacheMissing);
       }
     }, [tenantId])
   );
@@ -216,13 +227,13 @@ export default function TenantDetailScreen() {
   }, [editTenantRoom, editRoomsWithBeds, tenant?.bedId, tenant?.roomId, editTenantBed]);
 
   const handleRetry = () => {
-    fetchTenantData();
+    fetchTenantData(true);
   };
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchTenantData();
+      await fetchTenantData(true);
     } finally {
       setRefreshing(false);
     }
@@ -329,8 +340,9 @@ export default function TenantDetailScreen() {
 
         // Determine where to start checking for gaps
         let currentCheckDate: Date;
-        if (latestPayment) {
-          const lastDue = new Date(latestPayment.dueDate);
+        const latestDueDate = latestPayment?.dueDate;
+        if (latestDueDate) {
+          const lastDue = new Date(latestDueDate);
           currentCheckDate = new Date(lastDue.getFullYear(), lastDue.getMonth() + 1, anchorDay);
         } else if (tenant.joinDate) {
           const joinDate = new Date(tenant.joinDate);
@@ -405,6 +417,14 @@ export default function TenantDetailScreen() {
   };
 
   const handleGenerateDue = () => {
+    if (tenant?.autoGeneratePayments) {
+      Alert.alert(
+        'Billing Enabled',
+        'This tenant uses auto-generated billing. Manual payment is available only when auto-generate is disabled.'
+      );
+      return;
+    }
+
     router.push(`/manual-payment?tenantId=${tenantId}`);
   };
 
@@ -796,7 +816,7 @@ export default function TenantDetailScreen() {
                       Mark as Paid
                     </Text>
                   </TouchableOpacity>
-                ) : !latestPayment ? (
+                ) : !latestPayment && !tenant.autoGeneratePayments ? (
                   <TouchableOpacity
                     style={[styles.actionButton, { backgroundColor: colors.primary[500] }]}
                     onPress={handleGenerateDue}
@@ -814,7 +834,9 @@ export default function TenantDetailScreen() {
                   <EmptyState
                     icon={Wallet}
                     title="No Payments Yet"
-                    subtitle="Payment history will appear here"
+                    subtitle={tenant.autoGeneratePayments
+                      ? 'Payments will be auto-generated from this tenant billing setup.'
+                      : 'Payment history will appear here'}
                   />
                 </Card>
               ) : (

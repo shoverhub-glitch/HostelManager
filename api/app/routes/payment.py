@@ -25,7 +25,10 @@ async def create_payment(request: Request, payment_create: PaymentCreate = Body(
         raise HTTPException(status_code=400, detail=f"Invalid payment method. Allowed: {[m.value for m in PaymentMethod]}")
 
     try:
-        tenant_doc = await getCollection("tenants").find_one({"_id": ObjectId(payment_create.tenantId)})
+        tenant_doc = await getCollection("tenants").find_one({
+            "_id": ObjectId(payment_create.tenantId),
+            "isDeleted": {"$ne": True}
+        })
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid tenantId")
 
@@ -42,6 +45,12 @@ async def create_payment(request: Request, payment_create: PaymentCreate = Body(
             detail="Manual payment is only allowed for tenants with auto-generate disabled"
         )
 
+    if tenant_doc.get("tenantStatus") == "vacated":
+        raise HTTPException(
+            status_code=400,
+            detail="Manual payment is not allowed for vacated tenants"
+        )
+
     created_payment = await payment_service.create_payment(payment_create)
     return created_payment
 
@@ -50,11 +59,18 @@ async def update_payment(request: Request, payment_id: str, payment_update: Paym
     # Validate payment method if provided
     if payment_update.method and not validate_payment_method(payment_update.method):
         raise HTTPException(status_code=400, detail=f"Invalid payment method. Allowed: {[m.value for m in PaymentMethod]}")
-    
-    updated_payment = await payment_service.update_payment(payment_id, payment_update)
+
     property_ids = getattr(request.state, "property_ids", [])
-    if not updated_payment or updated_payment.propertyId not in property_ids:
+
+    # Authorize access before mutating the payment record
+    existing_payment = await payment_service.get_payment_by_id(payment_id)
+    if not existing_payment or existing_payment.propertyId not in property_ids:
         raise HTTPException(status_code=404, detail="Payment not found or forbidden")
+
+    updated_payment = await payment_service.update_payment(payment_id, payment_update)
+    if not updated_payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
     return updated_payment
 
 @router.delete("/{payment_id}")
@@ -84,7 +100,8 @@ async def get_payment_methods():
 @router.get("/stats", response_model=dict)
 async def payment_stats(request: Request):
     """Get payment statistics for the user's properties."""
-    return await payment_service.get_payment_stats()
+    property_ids = getattr(request.state, "property_ids", [])
+    return await payment_service.get_payment_stats(property_ids=property_ids)
 
 @router.get("", response_model=dict)
 async def list_payments(
@@ -98,15 +115,32 @@ async def list_payments(
     endDate: str = None,
 ):
     from datetime import datetime
+
+    page = max(1, page)
+    page_size = min(max(1, page_size), 200)
     
     property_ids = getattr(request.state, "property_ids", [])
+
+    if not property_ids:
+        return {
+            "data": [],
+            "meta": {
+                "total": 0,
+                "page": page,
+                "pageSize": page_size,
+                "hasMore": False
+            }
+        }
     
     # Build match stage
-    match_stage = {"propertyId": {"$in": property_ids}} if property_ids else {}
+    match_stage = {
+        "propertyId": {"$in": property_ids},
+        "isDeleted": {"$ne": True}
+    }
     
     if propertyId:
         if propertyId in property_ids:
-            match_stage = {"propertyId": propertyId}
+            match_stage["propertyId"] = propertyId
         else:
             raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -127,8 +161,6 @@ async def list_payments(
         if date_query:
             match_stage["dueDate"] = date_query
 
-    page = max(1, page)
-    page_size = min(max(1, page_size), 200)
     skip = (page - 1) * page_size
     
     # Get total count

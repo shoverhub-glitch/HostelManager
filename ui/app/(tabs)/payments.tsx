@@ -98,7 +98,7 @@ export default function PaymentsScreen() {
   const isFetchingRef = useRef(false);
   const lastFocusRefreshRef = useRef<number>(Date.now());
 
-  const fetchPayments = async () => {
+  const fetchPayments = useCallback(async (forceNetwork: boolean = false) => {
     if (!selectedPropertyId) {
       setPayments([]);
       setTotal(0);
@@ -113,14 +113,16 @@ export default function PaymentsScreen() {
     }
 
     const cacheKey = cacheKeys.payments(selectedPropertyId, monthKey);
-    const cachedResponse = getScreenCache<PaginatedResponse<Payment>>(cacheKey, PAYMENTS_CACHE_STALE_MS);
-    if (cachedResponse) {
-      const cachedData = cachedResponse.data || [];
-      setPayments(cachedData);
-      setTotal(cachedResponse.meta?.total || cachedData.length);
-      setError(null);
-      setIsRefreshing(false);
-      return;
+    if (!forceNetwork) {
+      const cachedResponse = getScreenCache<PaginatedResponse<Payment>>(cacheKey, PAYMENTS_CACHE_STALE_MS);
+      if (cachedResponse) {
+        const cachedData = cachedResponse.data || [];
+        setPayments(cachedData);
+        setTotal(cachedResponse.meta?.total || cachedData.length);
+        setError(null);
+        setIsRefreshing(false);
+        return;
+      }
     }
 
     try {
@@ -155,21 +157,24 @@ export default function PaymentsScreen() {
       setIsRefreshing(false);
       isFetchingRef.current = false;
     }
-  };
+  }, [selectedPropertyId, monthKey, dateRange.startDate, dateRange.endDate, currentPage, payments.length]);
 
   useFocusEffect(
     useCallback(() => {
       if (!propertyLoading && selectedPropertyId) {
+        const cacheKey = cacheKeys.payments(selectedPropertyId, monthKey);
+        const hasFreshCache = !!getScreenCache<PaginatedResponse<Payment>>(cacheKey, PAYMENTS_CACHE_STALE_MS);
         const now = Date.now();
         const timeSinceLastRefresh = now - lastFocusRefreshRef.current;
-        const shouldRefresh = timeSinceLastRefresh > PAYMENTS_CACHE_STALE_MS;
+        const shouldRefreshBecauseCacheMissing = !hasFreshCache;
+        const shouldRefreshByThrottle = timeSinceLastRefresh > PAYMENTS_CACHE_STALE_MS;
 
-        if (shouldRefresh) {
+        if (shouldRefreshBecauseCacheMissing || shouldRefreshByThrottle) {
           lastFocusRefreshRef.current = now;
-          fetchPayments();
+          fetchPayments(shouldRefreshBecauseCacheMissing);
         }
       }
-    }, [selectedPropertyId, propertyLoading, monthKey, currentPage])
+    }, [selectedPropertyId, propertyLoading, monthKey, fetchPayments])
   );
 
   // Refetch payments when month changes
@@ -185,10 +190,12 @@ export default function PaymentsScreen() {
         setTotal(cachedResponse.meta?.total || 0);
         setError(null);
         setIsRefreshing(false);
-      } else if (!payments.length) {
-        // Only show skeleton if we have no data yet
-        setIsRefreshing(true);
-        fetchPayments();
+      } else {
+        // Fetch latest data for selected month when cache is missing
+        if (!payments.length) {
+          setIsRefreshing(true);
+        }
+        fetchPayments(true);
       }
     } else if (!selectedPropertyId && !propertyLoading) {
       setPayments([]);
@@ -196,7 +203,7 @@ export default function PaymentsScreen() {
       setError(null);
       setIsRefreshing(false);
     }
-  }, [monthKey, selectedPropertyId, propertyLoading]);
+  }, [monthKey, selectedPropertyId, propertyLoading, payments.length, fetchPayments]);
 
   const handlePreviousMonth = () => {
     clearScreenCache('payments:');
@@ -211,7 +218,7 @@ export default function PaymentsScreen() {
   };
 
   const handleRetry = () => {
-    fetchPayments();
+    fetchPayments(true);
   };
 
   const handleRefresh = useCallback(async () => {
@@ -234,12 +241,12 @@ export default function PaymentsScreen() {
     try {
       // Avoid duplicate network calls when month/page state changes will trigger fetch via effect
       if (isAlreadyCurrentMonth && isAlreadyFirstPage) {
-        await fetchPayments();
+        await fetchPayments(true);
       }
     } finally {
       setIsRefreshing(false);
     }
-  }, [selectedDate, currentPage]);
+  }, [selectedDate, currentPage, fetchPayments]);
 
   const handleFabPress = () => {
     router.push('/manual-payment');

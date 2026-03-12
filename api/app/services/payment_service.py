@@ -50,8 +50,18 @@ class PaymentService:
                 return Payment(**existing)
             raise
 
-    async def get_payment_stats(self):
-        payments = await self.collection.find({"isDeleted": {"$ne": True}}).to_list(length=1000)
+    async def get_payment_stats(self, property_ids: Optional[List[str]] = None):
+        query = {"isDeleted": {"$ne": True}}
+
+        if property_ids is not None:
+            if not property_ids:
+                return {
+                    'collected': '₹0',
+                    'pending': '₹0',
+                }
+            query["propertyId"] = {"$in": property_ids}
+
+        payments = await self.collection.find(query).to_list(length=1000)
         
         def parse_amount(amount_str):
             """Parse amount string that may contain currency symbols and commas"""

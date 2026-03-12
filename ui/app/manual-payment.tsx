@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -25,7 +25,6 @@ import DatePicker from '@/components/DatePicker';
 import ApiErrorCard from '@/components/ApiErrorCard';
 import { clearScreenCache } from '@/services/screenCache';
 
-const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Online', 'Cheque'];
 const PAYMENT_STATUSES = [
   { value: 'paid', label: 'Paid' },
   { value: 'due', label: 'Due' },
@@ -41,25 +40,23 @@ export default function ManualPaymentScreen() {
   const isOnline = useNetworkStatus();
 
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const [selectedTenantId, setSelectedTenantId] = useState('');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState(new Date().toISOString());
   const [status, setStatus] = useState<PaymentStatus>('due');
-  const [method, setMethod] = useState('Cash');
+  const [method, setMethod] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [fetchingTenants, setFetchingTenants] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [showTenantPicker, setShowTenantPicker] = useState(false);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [showMethodPicker, setShowMethodPicker] = useState(false);
 
-  useEffect(() => {
-    fetchManualTenants();
-  }, [selectedPropertyId]);
-
-  const fetchManualTenants = async () => {
+  const fetchManualTenants = useCallback(async () => {
     if (!selectedPropertyId) {
       setTenants([]);
       setFetchingTenants(false);
@@ -68,10 +65,29 @@ export default function ManualPaymentScreen() {
 
     try {
       setFetchingTenants(true);
-      setError(null);
+      setFetchError(null);
 
-      const res = await tenantService.getTenants(selectedPropertyId, undefined, undefined, 1, 200);
-      const tenantList = (res.data || []).filter((tenant) => !tenant.autoGeneratePayments && !tenant.archived);
+      const allTenants: Tenant[] = [];
+      let page = 1;
+      const pageSize = 100;
+      let hasMore = true;
+
+      while (hasMore) {
+        const res = await tenantService.getTenants(selectedPropertyId, undefined, undefined, page, pageSize);
+        allTenants.push(...(res.data || []));
+        hasMore = !!res.meta?.hasMore;
+        page += 1;
+      }
+
+      const tenantList = allTenants
+        .filter(
+        (tenant) =>
+          !tenant.autoGeneratePayments &&
+          !tenant.archived &&
+          tenant.tenantStatus !== 'vacated'
+        )
+        .sort((left, right) => left.name.localeCompare(right.name));
+
       setTenants(tenantList);
 
       const requestedTenantId = typeof params.tenantId === 'string' ? params.tenantId : '';
@@ -82,13 +98,46 @@ export default function ManualPaymentScreen() {
         if (!isNaN(rentAmount) && rentAmount > 0) {
           setAmount(String(rentAmount));
         }
+      } else if (requestedTenantId) {
+        setSubmitError('Selected tenant is not eligible for manual payments. Manual payment is available only for active tenants with auto-generate disabled.');
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to load tenants');
+      setFetchError(err?.message || 'Failed to load tenants');
     } finally {
       setFetchingTenants(false);
     }
-  };
+  }, [params.tenantId, selectedPropertyId]);
+
+  const fetchPaymentMethods = useCallback(async () => {
+    const res = await paymentService.getPaymentMethods();
+    const methods = Array.isArray(res.data) ? res.data : [];
+    setPaymentMethods(methods);
+    setMethod((currentMethod) => {
+      if (currentMethod && methods.includes(currentMethod)) {
+        return currentMethod;
+      }
+      return methods[0] || '';
+    });
+  }, []);
+
+  const fetchFormData = useCallback(async () => {
+    if (!selectedPropertyId) {
+      setTenants([]);
+      setPaymentMethods([]);
+      return;
+    }
+
+    try {
+      setSubmitError(null);
+      await Promise.all([fetchManualTenants(), fetchPaymentMethods()]);
+    } catch (err: any) {
+      setFetchError(err?.message || 'Failed to load payment form data');
+    }
+  }, [fetchManualTenants, fetchPaymentMethods, selectedPropertyId]);
+
+  useEffect(() => {
+    fetchFormData();
+  }, [fetchFormData]);
 
   const selectedTenant = useMemo(
     () => tenants.find((tenant) => tenant.id === selectedTenantId) || null,
@@ -97,6 +146,7 @@ export default function ManualPaymentScreen() {
 
   const handleTenantSelect = (tenant: Tenant) => {
     setSelectedTenantId(tenant.id);
+    setSubmitError(null);
     const rentAmount = parseFloat((tenant.rent || '').replace(/[^0-9.]/g, ''));
     if (!isNaN(rentAmount) && rentAmount > 0) {
       setAmount(String(rentAmount));
@@ -111,39 +161,39 @@ export default function ManualPaymentScreen() {
 
   const handleSubmit = async () => {
     if (!selectedTenant || !selectedPropertyId) {
-      setError('Please select a tenant');
+      setSubmitError('Please select a tenant');
       return;
     }
 
     if (!selectedTenant.bedId) {
-      setError('Selected tenant does not have an assigned bed');
+      setSubmitError('Selected tenant does not have an assigned bed');
       return;
     }
 
     const amountNum = parseFloat(amount);
     if (isNaN(amountNum) || amountNum <= 0) {
-      setError('Please enter a valid amount greater than 0');
+      setSubmitError('Please enter a valid amount greater than 0');
       return;
     }
 
-    const dueDateOnly = dueDate.split('T')[0];
+    const selectedDateOnly = dueDate.split('T')[0];
     const payload: any = {
       tenantId: selectedTenant.id,
       propertyId: selectedPropertyId,
       bed: selectedTenant.bedId,
       amount: `₹${amountNum.toLocaleString('en-IN')}`,
       status,
-      dueDate: dueDateOnly,
+      dueDate: selectedDateOnly,
       method,
     };
 
     if (status === 'paid') {
-      payload.paidDate = new Date().toISOString().split('T')[0];
+      payload.paidDate = selectedDateOnly;
     }
 
     try {
       setLoading(true);
-      setError(null);
+      setSubmitError(null);
 
       await paymentService.recordPayment(payload);
 
@@ -153,7 +203,7 @@ export default function ManualPaymentScreen() {
 
       router.back();
     } catch (err: any) {
-      setError(err?.message || 'Failed to create manual payment');
+      setSubmitError(err?.message || 'Failed to create manual payment');
     } finally {
       setLoading(false);
     }
@@ -238,13 +288,26 @@ export default function ManualPaymentScreen() {
           </View>
 
           <View style={styles.formContainer}>
-            {error && <ApiErrorCard error={error} onRetry={fetchManualTenants} />}
+            {fetchError && <ApiErrorCard error={fetchError} onRetry={fetchFormData} />}
+
+            {submitError && (
+              <View
+                style={[
+                  styles.errorContainer,
+                  {
+                    backgroundColor: colors.danger[50],
+                    borderColor: colors.danger[200],
+                  },
+                ]}>
+                <Text style={[styles.errorText, { color: colors.danger[700] }]}>{submitError}</Text>
+              </View>
+            )}
 
             {tenants.length === 0 ? (
               <EmptyState
                 icon={Wallet}
                 title="No Eligible Tenants"
-                subtitle="Manual payment is available only for tenants with auto-generate disabled"
+                subtitle="Manual payment is available only for active tenants with auto-generate disabled"
               />
             ) : (
               <>
@@ -285,10 +348,18 @@ export default function ManualPaymentScreen() {
                 <DatePicker
                   value={dueDate}
                   onChange={setDueDate}
-                  label="Due Date"
+                  label={status === 'paid' ? 'Paid Date' : 'Due Date'}
                   disabled={loading}
                   required
+                  restrictToLast30Days={status === 'paid'}
+                  restrictToNext30Days={status === 'due'}
                 />
+
+                <Text style={[styles.helperText, { color: colors.text.secondary }]}> 
+                  {status === 'paid'
+                    ? 'Paid date is saved as the payment date for this entry.'
+                    : 'Due date can be set from today up to the next 30 days.'}
+                </Text>
 
                 <View style={styles.inputContainer}>
                   <Text style={[styles.label, { color: colors.text.primary }]}>Status *</Text>
@@ -406,6 +477,7 @@ export default function ManualPaymentScreen() {
                   style={[styles.modalOption, { borderBottomColor: colors.border.light }]}
                   onPress={() => {
                     setStatus(item.value);
+                    setSubmitError(null);
                     setShowStatusPicker(false);
                   }}
                   activeOpacity={0.7}>
@@ -446,7 +518,7 @@ export default function ManualPaymentScreen() {
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Select Payment Method</Text>
             </View>
             <ScrollView style={styles.modalScrollView}>
-              {PAYMENT_METHODS.map((item) => (
+              {paymentMethods.map((item) => (
                 <TouchableOpacity
                   key={item}
                   style={[styles.modalOption, { borderBottomColor: colors.border.light }]}
@@ -544,6 +616,17 @@ const styles = StyleSheet.create({
   formContainer: {
     width: '100%',
   },
+  errorContainer: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  errorText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+  },
   inputContainer: {
     marginBottom: spacing.xl,
   },
@@ -572,6 +655,11 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.md,
     flex: 1,
     marginRight: spacing.sm,
+  },
+  helperText: {
+    fontSize: typography.fontSize.xs,
+    marginTop: -spacing.lg,
+    marginBottom: spacing.xl,
   },
   submitButton: {
     borderRadius: radius.md,

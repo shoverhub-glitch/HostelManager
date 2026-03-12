@@ -718,8 +718,8 @@ export const paymentService = {
     }>;
   },
 
-  async getPaymentMethods(): Promise<ApiResponse<{ data: string[] }>> {
-    return await request<{ data: string[] }>('GET', '/payments/methods', undefined, true) as ApiResponse<{ data: string[] }>;
+  async getPaymentMethods(): Promise<PaginatedResponse<string>> {
+    return await request<string>('GET', '/payments/methods', undefined, true) as PaginatedResponse<string>;
   },
 };
 

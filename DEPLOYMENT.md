@@ -31,8 +31,6 @@ At minimum, update these values in `api/.env`:
 
 Defaults already work for Docker Compose:
 - `MONGO_URL=mongodb://mongodb:27017/hostelmanager`
-- `REDIS_URL=redis://redis:6379/0`
-- `USE_IN_MEMORY_RATE_LIMIT=false`
 
 ### 3. Start the stack
 ```bash
@@ -73,7 +71,6 @@ Logs:
 sudo docker compose logs -f backend
 sudo docker compose logs -f nginx
 sudo docker compose logs -f mongodb
-sudo docker compose logs -f redis
 ```
 
 ## Troubleshooting
@@ -96,6 +93,5 @@ sudo docker compose logs -f redis
 | Service | Port | Purpose |
 |---------|------|---------|
 | MongoDB | 27017 | Database |
-| Redis | 6379 | Cache and rate limiting |
 | Backend | 8000 | FastAPI app |
 | Nginx | 80 | Reverse proxy |

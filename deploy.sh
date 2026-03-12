@@ -156,12 +156,6 @@ RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:-}
 RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:-}
 
 # ========================================
-# REDIS & CACHING
-# ========================================
-REDIS_URL=redis://redis:6379/0
-USE_IN_MEMORY_RATE_LIMIT=false
-
-# ========================================
 # ENVIRONMENT CONFIG
 # ========================================
 ENV=production
@@ -210,7 +204,6 @@ echo -e "  Public health:  ${YELLOW}http://$PUBLIC_HOST_VALUE/api/v1/health${NC}
 echo ""
 echo -e "Services expected:"
 echo -e "  MongoDB:  ${GREEN}api-mongodb${NC}"
-echo -e "  Redis:    ${GREEN}api-redis${NC}"
 echo -e "  API:      ${GREEN}fast-api-backend${NC}"
 echo -e "  Nginx:    ${GREEN}api-nginx${NC}"
 echo ""

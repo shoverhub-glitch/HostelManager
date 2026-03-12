@@ -39,9 +39,13 @@ export default function LoginScreen() {
   const [lockoutTimer, setLockoutTimer] = useState<number | null>(null);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: '286636123791-d19psn7pd71nc3mb1mco6a4tduaf2f8q.apps.googleusercontent.com',
-    androidClientId: '286636123791-d19psn7pd71nc3mb1mco6a4tduaf2f8q.apps.googleusercontent.com',
-    scopes: ['profile', 'email'],
+    // Web client ID is required when running in Expo Go (development)
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    // Native client IDs are used in production standalone builds
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    // openid scope is required to receive idToken from Google
+    scopes: ['profile', 'email', 'openid'],
   });
 
   useEffect(() => {
@@ -71,7 +75,8 @@ export default function LoginScreen() {
   }, [response]);
 
   const handleGoogleAuthResponse = async (authResponse: any) => {
-    if (!authResponse.authentication?.accessToken) {
+    const { accessToken, idToken } = authResponse.authentication ?? {};
+    if (!accessToken || !idToken) {
       setError('Failed to authenticate with Google. Please try again.');
       return;
     }
@@ -80,7 +85,6 @@ export default function LoginScreen() {
       setGoogleLoading(true);
       setError(null);
 
-      const { idToken } = authResponse.authentication;
       const response = await authService.googleSignIn({ idToken });
 
       if (response?.data?.tokens) {

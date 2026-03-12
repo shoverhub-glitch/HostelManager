@@ -25,7 +25,7 @@ import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { roomService } from '@/services/apiClient';
 import type { Room, PaginatedResponse } from '@/services/apiTypes';
-import { cacheKeys, getScreenCache, setScreenCache } from '@/services/screenCache';
+import { cacheKeys, clearScreenCache, getScreenCache, setScreenCache } from '@/services/screenCache';
 
 const ROOMS_CACHE_STALE_MS = 60 * 1000;
 const ROOMS_FOCUS_THROTTLE_MS = 60 * 1000;
@@ -46,19 +46,21 @@ export default function ManageRoomsScreen() {
   const [deleting, setDeleting] = useState(false);
   const lastRoomsFocusRefreshRef = useRef<number>(0);
 
-  const fetchRooms = async () => {
+  const fetchRooms = useCallback(async (forceNetwork: boolean = false) => {
     if (!selectedPropertyId) {
       setLoading(false);
       return;
     }
 
     const cacheKey = cacheKeys.rooms(selectedPropertyId);
-    const cachedResponse = getScreenCache<PaginatedResponse<Room>>(cacheKey, ROOMS_CACHE_STALE_MS);
-    if (cachedResponse) {
-      setRooms(cachedResponse.data || []);
-      setError(null);
-      setLoading(false);
-      return;
+    if (!forceNetwork) {
+      const cachedResponse = getScreenCache<PaginatedResponse<Room>>(cacheKey, ROOMS_CACHE_STALE_MS);
+      if (cachedResponse) {
+        setRooms(cachedResponse.data || []);
+        setError(null);
+        setLoading(false);
+        return;
+      }
     }
 
     try {
@@ -75,32 +77,39 @@ export default function ManageRoomsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedPropertyId]);
 
   useFocusEffect(
     useCallback(() => {
-      if (propertyLoading) return;
+      if (propertyLoading || !selectedPropertyId) return;
       
+      const cacheKey = cacheKeys.rooms(selectedPropertyId);
+      const hasFreshCache = !!getScreenCache<PaginatedResponse<Room>>(cacheKey, ROOMS_CACHE_STALE_MS);
       const now = Date.now();
-      if (lastRoomsFocusRefreshRef.current === 0 || (now - lastRoomsFocusRefreshRef.current) > ROOMS_FOCUS_THROTTLE_MS) {
+      const shouldRefreshBecauseCacheMissing = !hasFreshCache;
+      const shouldRefreshByThrottle =
+        lastRoomsFocusRefreshRef.current === 0 ||
+        (now - lastRoomsFocusRefreshRef.current) > ROOMS_FOCUS_THROTTLE_MS;
+
+      if (shouldRefreshBecauseCacheMissing || shouldRefreshByThrottle) {
         lastRoomsFocusRefreshRef.current = now;
-        fetchRooms();
+        fetchRooms(shouldRefreshBecauseCacheMissing);
       }
-    }, [propertyLoading])
+    }, [propertyLoading, selectedPropertyId, fetchRooms])
   );
 
   const handleRetry = () => {
-    fetchRooms();
+    fetchRooms(true);
   };
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchRooms();
+      await fetchRooms(true);
     } finally {
       setRefreshing(false);
     }
-  }, [selectedPropertyId]);
+  }, [fetchRooms]);
 
   const handleAddRoom = () => {
     if (!selectedPropertyId) {
@@ -138,8 +147,7 @@ export default function ManageRoomsScreen() {
       await roomService.deleteRoom(selectedRoom.id);
       
       // Clear cache and refresh
-      const cacheKey = cacheKeys.rooms(selectedPropertyId!);
-      setScreenCache(cacheKey, null);
+      clearScreenCache('rooms:');
       await fetchRooms();
       
       setShowDeleteConfirm(false);

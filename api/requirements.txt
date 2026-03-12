@@ -30,7 +30,6 @@ razorpay==2.0.0
 
 # Rate Limiting
 slowapi==0.1.9
-redis==5.3.1
 
 # Task Scheduling
 apscheduler==3.11.2

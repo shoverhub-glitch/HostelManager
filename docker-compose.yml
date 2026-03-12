@@ -10,18 +10,9 @@ services:
     env_file:
       - ./api/.env
     depends_on:
-      - redis
       - mongodb
     volumes:
       - ./api/app/static:/app/app/static
-
-  redis:
-    image: redis:alpine
-    container_name: api-redis
-    ports:
-      - "6379:6379"
-    restart: always
-    command: redis-server --appendonly yes
 
   mongodb:
     image: mongo:latest

@@ -40,7 +40,6 @@ export default function RegisterScreen() {
   const [error, setError] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [emailAlreadyVerified, setEmailAlreadyVerified] = useState(false);
-  const [conflictEmail, setConflictEmail] = useState<{ email: string; isGoogleAccount: boolean } | null>(null);
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -72,7 +71,6 @@ export default function RegisterScreen() {
     try {
       setLoading(true);
       setError(null);
-      setConflictEmail(null);
       setEmailAlreadyVerified(false);
       await authService.sendEmailOTP({ email: email.trim() });
       setOtpSent(true);
@@ -85,13 +83,7 @@ export default function RegisterScreen() {
         setResendCooldown(seconds);
         setError(`Please wait ${seconds} seconds before requesting another OTP`);
       } else if (err?.code === 'CONFLICT' || err?.details?.status === 409) {
-        // Email already has an account
-        const isGoogleAccount = err?.message?.includes('Google Sign-in');
-        setConflictEmail({
-          email: email.trim(),
-          isGoogleAccount: isGoogleAccount,
-        });
-        setError(null); // Clear error, we'll show conflict card instead
+        setError('Email already exists');
       } else if (err?.message?.includes('Email already verified')) {
         // Email is already verified in this flow
         setEmailAlreadyVerified(true);
@@ -232,7 +224,11 @@ export default function RegisterScreen() {
 
       setError('Registration failed. Please try again.');
     } catch (err: any) {
-      setError(err?.message || 'Registration failed. Please try again.');
+      if (err?.code === 'CONFLICT' || err?.details?.status === 409) {
+        setError('Email already exists');
+      } else {
+        setError(err?.message || 'Registration failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -266,50 +262,6 @@ export default function RegisterScreen() {
                   { backgroundColor: colors.danger[50], borderColor: colors.danger[200] },
                 ]}>
                 <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
-              </View>
-            )}
-
-            {conflictEmail && (
-              <View
-                style={[
-                  styles.conflictCard,
-                  { backgroundColor: colors.warning[50], borderColor: colors.warning[200] },
-                ]}>
-                <Text style={[styles.conflictIcon]}>⚠️</Text>
-                <Text style={[styles.conflictTitle, { color: colors.warning[800] }]}>
-                  {conflictEmail.isGoogleAccount ? 'Account Already Exists' : 'Email Already Registered'}
-                </Text>
-                {conflictEmail.isGoogleAccount ? (
-                  <>
-                    <Text style={[styles.conflictMessage, { color: colors.warning[700] }]}>
-                      The email <Text style={{ fontWeight: '600' }}>{conflictEmail.email}</Text> is already registered with Google Sign-in.
-                    </Text>
-                    <View style={styles.conflictActionContainer}>
-                      <Text style={[styles.conflictSubtext, { color: colors.warning[600] }]}>
-                        Please use "Continue with Google" to sign in instead.
-                      </Text>
-                      <TouchableOpacity
-                        style={[styles.conflictButton, { backgroundColor: colors.warning[100] }]}
-                        onPress={() => setConflictEmail(null)}
-                        activeOpacity={0.7}>
-                        <Text style={[styles.conflictButtonText, { color: colors.warning[800] }]}>
-                          Go to Google Sign-in
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                ) : (
-                  <>
-                    <Text style={[styles.conflictMessage, { color: colors.warning[700] }]}>
-                      The email <Text style={{ fontWeight: '600' }}>{conflictEmail.email}</Text> is already registered with email/password.
-                    </Text>
-                    <View style={styles.conflictActionContainer}>
-                      <Text style={[styles.conflictSubtext, { color: colors.warning[600] }]}>
-                        Please log in with your existing account or use a different email.
-                      </Text>
-                    </View>
-                  </>
-                )}
               </View>
             )}
 
@@ -753,47 +705,5 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     textAlign: 'center',
     lineHeight: 20,
-  },
-  conflictCard: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    marginBottom: spacing.lg,
-    alignItems: 'center',
-  },
-  conflictIcon: {
-    fontSize: 40,
-    marginBottom: spacing.sm,
-  },
-  conflictTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    marginBottom: spacing.sm,
-    textAlign: 'center',
-  },
-  conflictMessage: {
-    fontSize: typography.fontSize.sm,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: spacing.md,
-  },
-  conflictActionContainer: {
-    width: '100%',
-  },
-  conflictSubtext: {
-    fontSize: typography.fontSize.xs,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  conflictButton: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    alignItems: 'center',
-  },
-  conflictButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
   },
 });

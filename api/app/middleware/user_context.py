@@ -32,6 +32,10 @@ class UserContextMiddleware(BaseHTTPMiddleware):
             "/api/v1/auth/google",
             "/api/v1/auth/email/send-otp",
             "/api/v1/auth/email/verify-otp",
+            "/api/v1/auth/email/resend-otp",
+            "/api/v1/auth/forgot-password",
+            "/api/v1/auth/verify-reset-otp",
+            "/api/v1/auth/reset-password",
             "/api/v1/auth/refresh",
             "/api/v1/auth/logout",  # Logout only needs refresh token, not access token
             "/api/v1/subscription/limits/free",  # Plan limits are public

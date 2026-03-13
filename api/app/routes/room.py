@@ -7,6 +7,7 @@ from app.database.mongodb import db
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 room_service = RoomService()
 
+@router.get("")
 @router.get("/")
 async def get_rooms(request: Request, property_id: str = None, search: str = None, page: int = 1, page_size: int = 50):
     property_ids = getattr(request.state, "property_ids", [])
@@ -59,6 +60,7 @@ async def preview_bed_count_change(request: Request, room_id: str, new_bed_count
         return {"data": result}
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
+@router.post("")
 @router.post("/")
 async def create_room(request: Request, room: Room):
     try:

@@ -24,10 +24,12 @@ async def generate_and_store_otp(email: str, otp_type: str = "registration") -> 
     # Check if there's an existing OTP and if we're within resend cooldown
     if normalized_email in otp_store:
         stored = otp_store[normalized_email]
+        stored_type = stored.get("otp_type", "registration")
         last_sent = stored.get("last_sent_at")
         resend_cooldown_expires = stored.get("resend_cooldown_expires_at")
-        
-        if resend_cooldown_expires and resend_cooldown_expires > now:
+
+        # Apply cooldown only when requesting OTP for the same flow.
+        if stored_type == otp_type and resend_cooldown_expires and resend_cooldown_expires > now:
             # User is still in resend cooldown period
             remaining_seconds = int((resend_cooldown_expires - now).total_seconds())
             return stored.get("otp", ""), False
@@ -68,9 +70,14 @@ async def get_otp(email: str) -> Optional[dict]:
     return stored
 
 
-async def verify_otp(email: str, otp: str) -> Tuple[bool, Optional[str]]:
+async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tuple[bool, Optional[str]]:
     """
     Verify OTP and return (is_valid, error_message)
+
+    Args:
+        email: User email
+        otp: Submitted OTP code
+        otp_type: Expected OTP type (registration or password_reset)
     
     Returns:
         Tuple of (is_valid, error_message)
@@ -80,6 +87,11 @@ async def verify_otp(email: str, otp: str) -> Tuple[bool, Optional[str]]:
     
     if not stored:
         return False, "OTP not found. Please request a new OTP"
+
+    # Ensure OTP can only be used for its intended flow.
+    stored_type = stored.get("otp_type", "registration")
+    if stored_type != otp_type:
+        return False, "Invalid OTP for this action. Please request a new OTP"
     
     now = datetime.now(timezone.utc)
     

@@ -539,7 +539,12 @@ async def forgot_password_service(email: str):
     otp, is_new = await generate_and_store_otp(normalized_email, "password_reset")
 
     # Send OTP via Zoho Zepto Mail
-    email_sent = await send_otp_email(normalized_email, otp, app_name="Hostel Manager")
+    email_sent = await send_otp_email(
+        normalized_email,
+        otp,
+        app_name="Hostel Manager",
+        otp_type="password_reset",
+    )
     
     if not email_sent:
         # Log warning but don't fail the request - OTP is stored in memory
@@ -573,7 +578,7 @@ async def reset_password_service(email: str, otp: str, new_password: str):
     now = datetime.now(timezone.utc)
 
     # Verify OTP using in-memory store
-    is_valid, error_message = await verify_otp(normalized_email, otp)
+    is_valid, error_message = await verify_otp(normalized_email, otp, otp_type="password_reset")
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_message)
 

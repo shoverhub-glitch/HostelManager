@@ -9,6 +9,8 @@ services:
       - "8000"
     env_file:
       - ./api/.env
+    environment:
+      FORWARDED_ALLOW_IPS: "*"
     depends_on:
       - mongodb
     volumes:

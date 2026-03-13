@@ -8,13 +8,19 @@ from app.config.settings import ZEPTO_MAIL_API_KEY, FROM_EMAIL
 ZEPTO_API_ENDPOINT = "https://api.zeptomail.in/v1.1/email"
 
 
-async def send_otp_email(email: str, otp: str, app_name: str = "Hostel Manager") -> bool:
+async def send_otp_email(
+    email: str,
+    otp: str,
+    app_name: str = "Hostel Manager",
+    otp_type: str = "registration",
+) -> bool:
     """
     Send OTP to user's email via Zoho Zepto Mail
     Args:
         email: User's email address
         otp: 6-digit OTP code
         app_name: Application name for email template
+        otp_type: OTP type (registration or password_reset)
     Returns:
         True if email sent successfully, False otherwise
     """
@@ -23,44 +29,81 @@ async def send_otp_email(email: str, otp: str, app_name: str = "Hostel Manager")
         return False
 
     try:
-        # Email template content
-        subject = f"Your {app_name} Verification Code: {otp}"
-        
-        html_content = f"""
-        <html>
-            <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px;">
-                <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; max-width: 400px; margin: 0 auto; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <h2 style="color: #333; text-align: center; margin-bottom: 20px;">Verify Your Email</h2>
-                    
-                    <p style="color: #666; font-size: 14px; line-height: 1.6; text-align: center;">
-                        Welcome to {app_name}! Use the verification code below to complete your registration.
-                    </p>
-                    
-                    <div style="background-color: #f0f0f0; padding: 20px; text-align: center; border-radius: 6px; margin: 25px 0;">
-                        <p style="margin: 0; font-size: 12px; color: #999; text-transform: uppercase; letter-spacing: 2px;">Your verification code</p>
-                        <p style="margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: #007bff; letter-spacing: 5px;">{otp}</p>
-                    </div>
-                    
-                    <p style="color: #999; font-size: 13px; text-align: center; margin-bottom: 10px;">
-                        This code will expire in 10 minutes
-                    </p>
-                    
-                    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-                    
-                    <p style="color: #999; font-size: 12px; text-align: center; margin-bottom: 0;">
-                        If you didn't request this code, you can safely ignore this email.
-                    </p>
-                    
-                    <div style="background-color: #f9f9f9; padding: 15px; border-radius: 6px; margin-top: 20px;">
-                        <p style="margin: 0; color: #666; font-size: 12px; text-align: center;">
-                            <strong>Security Note:</strong> Never share your verification code with anyone. 
-                            {app_name} staff will never ask for your code.
+        # Build template by OTP use-case
+        if otp_type == "password_reset":
+            subject = f"Your {app_name} Password Reset Code: {otp}"
+            html_content = f"""
+            <html>
+                <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px;">
+                    <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; max-width: 400px; margin: 0 auto; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #333; text-align: center; margin-bottom: 20px;">Reset Your Password</h2>
+
+                        <p style="color: #666; font-size: 14px; line-height: 1.6; text-align: center;">
+                            We received a request to reset your {app_name} account password. Use the code below to continue.
                         </p>
+
+                        <div style="background-color: #f0f0f0; padding: 20px; text-align: center; border-radius: 6px; margin: 25px 0;">
+                            <p style="margin: 0; font-size: 12px; color: #999; text-transform: uppercase; letter-spacing: 2px;">Your reset code</p>
+                            <p style="margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: #007bff; letter-spacing: 5px;">{otp}</p>
+                        </div>
+
+                        <p style="color: #999; font-size: 13px; text-align: center; margin-bottom: 10px;">
+                            This code will expire in 10 minutes
+                        </p>
+
+                        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+
+                        <p style="color: #999; font-size: 12px; text-align: center; margin-bottom: 0;">
+                            If you did not request a password reset, please ignore this email and keep your account secure.
+                        </p>
+
+                        <div style="background-color: #f9f9f9; padding: 15px; border-radius: 6px; margin-top: 20px;">
+                            <p style="margin: 0; color: #666; font-size: 12px; text-align: center;">
+                                <strong>Security Note:</strong> Never share your reset code with anyone.
+                                {app_name} staff will never ask for this code.
+                            </p>
+                        </div>
                     </div>
-                </div>
-            </body>
-        </html>
-        """
+                </body>
+            </html>
+            """
+        else:
+            subject = f"Your {app_name} Verification Code: {otp}"
+            html_content = f"""
+            <html>
+                <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px;">
+                    <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; max-width: 400px; margin: 0 auto; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #333; text-align: center; margin-bottom: 20px;">Verify Your Email</h2>
+
+                        <p style="color: #666; font-size: 14px; line-height: 1.6; text-align: center;">
+                            Welcome to {app_name}! Use the verification code below to complete your registration.
+                        </p>
+
+                        <div style="background-color: #f0f0f0; padding: 20px; text-align: center; border-radius: 6px; margin: 25px 0;">
+                            <p style="margin: 0; font-size: 12px; color: #999; text-transform: uppercase; letter-spacing: 2px;">Your verification code</p>
+                            <p style="margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: #007bff; letter-spacing: 5px;">{otp}</p>
+                        </div>
+
+                        <p style="color: #999; font-size: 13px; text-align: center; margin-bottom: 10px;">
+                            This code will expire in 10 minutes
+                        </p>
+
+                        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+
+                        <p style="color: #999; font-size: 12px; text-align: center; margin-bottom: 0;">
+                            If you didn't request this code, you can safely ignore this email.
+                        </p>
+
+                        <div style="background-color: #f9f9f9; padding: 15px; border-radius: 6px; margin-top: 20px;">
+                            <p style="margin: 0; color: #666; font-size: 12px; text-align: center;">
+                                <strong>Security Note:</strong> Never share your verification code with anyone.
+                                {app_name} staff will never ask for your code.
+                            </p>
+                        </div>
+                    </div>
+                </body>
+            </html>
+            """
 
         # Zepto Mail API payload
         payload = {

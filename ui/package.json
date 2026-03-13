@@ -1,24 +1,31 @@
 {
   "name": "hostel-manager",
-  "main": "expo-router/entry",
+  "description": "Property management system for hostels and guest houses",
   "version": "1.0.0",
+  "author": "Hostel Manager Team",
+  "license": "UNLICENSED",
+  "main": "expo-router/entry",
   "private": true,
   "scripts": {
     "dev": "expo start",
+    "start": "expo start",
     "build:web": "expo export --platform web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "clean": "rimraf .expo .turbo node_modules package-lock.json",
+    "reset": "npm run clean && npm install",
+    "prebuild": "expo prebuild"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "^1.24.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/native": "^7.0.14",
     "expo": "^54.0.10",
     "expo-auth-session": "~7.0.10",
     "expo-constants": "~18.0.9",
-    "expo-device": "^55.0.9",
+    "expo-device": "~8.0.10",
     "expo-linking": "~8.0.8",
     "expo-router": "~6.0.8",
     "expo-status-bar": "~3.0.8",
@@ -26,7 +33,7 @@
     "lucide-react-native": "^0.544.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "react-native": "0.81.4",
+    "react-native": "0.81.5",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-razorpay": "^2.3.1",
     "react-native-reanimated": "~4.1.1",
@@ -34,11 +41,14 @@
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.0",
-    "react-native-webview": "13.15.0"
+    "react-native-webview": "13.15.0",
+    "react-native-worklets": "0.5.1"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@types/react": "~19.1.10",
+    "babel-preset-expo": "~54.0.10",
+    "rimraf": "^5.0.0",
     "typescript": "~5.9.2"
   },
   "overrides": {

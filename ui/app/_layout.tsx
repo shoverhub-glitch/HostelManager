@@ -54,13 +54,21 @@ function RootNavigator() {
   useEffect(() => {
     if (loading) return;
 
-    const inAuthGroup = segments[0] === '(tabs)' || segments[0] === 'property-detail' || segments[0] === 'subscription' || segments[0] === 'manage-properties' || segments[0] === 'property-form' || segments[0] === 'manage-rooms' || segments[0] === 'room-form' || segments[0] === 'manage-beds' || segments[0] === 'manage-staff' || segments[0] === 'add-tenant' || segments[0] === 'add-payment' || segments[0] === 'manual-payment' || segments[0] === 'edit-payment' || segments[0] === 'tenant-detail';
-    const inPublicRoute = (segments[0] as any) === 'register' || (segments[0] as any) === 'index';
+    const firstSegment = segments[0];
+    const inAuthGroup = [
+      '(tabs)', 'property-detail', 'subscription', 'manage-properties', 
+      'property-form', 'manage-rooms', 'room-form', 'manage-beds', 
+      'manage-staff', 'add-tenant', 'add-payment', 'manual-payment', 
+      'edit-payment', 'tenant-detail'
+    ].includes(firstSegment);
+
+    const isRoot = !firstSegment || firstSegment === 'index';
+    const inPublicRoute = isRoot || firstSegment === 'register';
 
     if (!isAuthenticated && inAuthGroup) {
       // Not authenticated but trying to access protected routes
       router.replace('/');
-    } else if (isAuthenticated && (inPublicRoute || !inAuthGroup)) {
+    } else if (isAuthenticated && inPublicRoute) {
       // Authenticated - redirect to dashboard from any public route
       router.replace('/(tabs)/dashboard');
     }
@@ -80,6 +88,7 @@ function RootNavigator() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="register" />
+        <Stack.Screen name="forgot-password" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="property-detail" />
         <Stack.Screen name="subscription" />

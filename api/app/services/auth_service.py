@@ -387,39 +387,40 @@ async def send_email_otp_service(email: str):
     )
 
 
-async def verify_email_otp_service(email: str, otp: str):
-    """Verify OTP sent to email during registration"""
+async def verify_email_otp_service(email: str, otp: str, otp_type: str = "registration"):
+    """Verify OTP sent to email during registration or password reset"""
     if not email or not otp:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email and OTP are required")
 
     normalized_email = email.strip().lower()
 
     # Verify OTP using in-memory store
-    is_valid, error_message = await verify_otp(normalized_email, otp)
+    is_valid, error_message = await verify_otp(normalized_email, otp, otp_type=otp_type)
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_message)
 
-    # Mark OTP as verified
-    await mark_otp_verified(normalized_email)
-    
-    # Also update database for registration flow (to check if email is verified)
-    now = datetime.now(timezone.utc)
-    await email_otp_collection.update_one(
-        {"email": normalized_email},
-        {
-            "$set": {
-                "verified": True,
-                "updatedAt": now
-            }
-        },
-        upsert=True,
-    )
+    if otp_type == "registration":
+        # Mark OTP as verified in registration flow
+        await mark_otp_verified(normalized_email)
+        
+        # Also update database for registration flow (to check if email is verified)
+        now = datetime.now(timezone.utc)
+        await email_otp_collection.update_one(
+            {"email": normalized_email},
+            {
+                "$set": {
+                    "verified": True,
+                    "updatedAt": now
+                }
+            },
+            upsert=True,
+        )
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
             "data": {
-                "message": "Email verified successfully",
+                "message": "OTP verified successfully",
             }
         },
     )

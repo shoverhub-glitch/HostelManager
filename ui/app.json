@@ -4,9 +4,9 @@
     "slug": "hostel-manager",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/hm-logo-v2.png",
+    "icon": "./assets/images/hm-logo-v2.jpg",
     "splash": {
-      "image": "./assets/images/hm-logo-v2.png",
+      "image": "./assets/images/hm-logo-v2.jpg",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
@@ -20,7 +20,7 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/hm-logo-v2.png"
+      "favicon": "./assets/images/hm-logo-v2.jpg"
     },
     "platforms": [
       "ios",
@@ -35,21 +35,21 @@
     },
     "extra": {
       "router": {},
+      "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "286636123791-d19psn7pd71nc3mb1mco6a4tduaf2f8q.apps.googleusercontent.com",
       "eas": {
-        "projectId": "f2c359b8-1d34-4e1d-9aaf-be71065ae390"
-      },
-      "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "286636123791-d19psn7pd71nc3mb1mco6a4tduaf2f8q.apps.googleusercontent.com"
+        "projectId": "2bb7f802-4a9f-4513-849d-d9f63a703b93"
+      }
     },
     "android": {
       "package": "com.shoverhub.hostelmanager",
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/hm-logo-v2.png",
+        "foregroundImage": "./assets/images/hm-logo-v2.jpg",
         "backgroundColor": "#FFFFFF"
-      }
-        ,"blockedPermissions": [
-          "android.permission.READ_PHONE_STATE"
-        ]
+      },
+      "blockedPermissions": [
+        "android.permission.READ_PHONE_STATE"
+      ]
     }
   }
 }

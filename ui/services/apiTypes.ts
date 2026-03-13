@@ -224,7 +224,7 @@ export interface RegisterResponse {
 }
 
 export interface VerifyOTPRequest {
-  documentId: string;
+  email: string;
   otp: string;
 }
 
@@ -233,15 +233,11 @@ export interface VerifyOTPResponse {
 }
 
 export interface ResendOTPRequest {
-  documentId: string;
-}
-
-export interface ResendOTPResponse {
-  message: string;
+  email: string;
 }
 
 export interface ForgotPasswordRequest {
-  documentId: string;
+  email: string;
 }
 
 export interface ForgotPasswordResponse {
@@ -249,7 +245,7 @@ export interface ForgotPasswordResponse {
 }
 
 export interface ResetPasswordRequest {
-  documentId: string;
+  email: string;
   otp: string;
   newPassword: string;
 }

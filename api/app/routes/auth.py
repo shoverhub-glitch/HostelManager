@@ -91,6 +91,11 @@ async def forgot_password(payload: ForgotPasswordRequest):
     return await forgot_password_service(payload.email)
 
 
+@router.post("/verify-reset-otp", status_code=status.HTTP_200_OK, summary="Verify password reset OTP", tags=["auth"])
+async def verify_reset_otp(payload: EmailVerifyOTPRequest):
+    return await verify_email_otp_service(payload.email, payload.otp, otp_type="password_reset")
+
+
 @router.post("/reset-password", status_code=status.HTTP_200_OK, summary="Reset password with OTP", tags=["auth"])
 async def reset_password(payload: ResetPasswordRequest):
     return await reset_password_service(payload.email, payload.otp, payload.newPassword)

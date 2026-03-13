@@ -410,7 +410,7 @@ export default function DashboardScreen() {
                         <View style={styles.paymentRow}>
                           <View style={styles.paymentInfo}>
                             <Text style={[styles.paymentName, { color: colors.text.primary }]}>
-                              {payment.tenantName}
+                              {payment.tenantName || 'Unknown Tenant'}
                             </Text>
                             <Text style={[styles.paymentRoom, { color: colors.text.secondary }]}>
                               Room {payment.bed}

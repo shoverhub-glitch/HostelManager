@@ -620,3 +620,63 @@ async def reset_password_service(email: str, otp: str, new_password: str):
             }
         },
     )
+
+
+async def change_password_service(request: Request, old_password: str, new_password: str):
+    """Change password for the currently authenticated user."""
+    if not old_password or not new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Old password and new password are required"
+        )
+
+    if len(new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters long"
+        )
+
+    if old_password == new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from old password"
+        )
+
+    current_user = getattr(request.state, "current_user", None)
+    if not current_user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    user_id = current_user.get("_id")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+
+    user = await users_collection.find_one({"_id": user_id})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if user.get("isDeleted"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deleted")
+
+    if not verify_password(old_password, user.get("password", "")):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Old password is incorrect")
+
+    now = datetime.now(timezone.utc)
+    await users_collection.update_one(
+        {"_id": user_id},
+        {
+            "$set": {
+                "password": hash_password(new_password),
+                "updatedAt": now,
+            }
+        },
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "data": {
+                "message": "Password changed successfully",
+                "success": True,
+            }
+        },
+    )

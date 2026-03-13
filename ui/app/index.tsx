@@ -290,7 +290,7 @@ export default function LoginScreen() {
               activeOpacity={0.7}
               disabled={loading || isLockedOut}>
               <Text style={[styles.registerLinkText, { color: colors.text.secondary }]}>
-                Don't have an account?{' '}
+                Don{`'`}t have an account?{' '}
                 <Text style={[styles.registerLinkBold, { color: colors.primary[500] }]}>Register</Text>
               </Text>
             </TouchableOpacity>

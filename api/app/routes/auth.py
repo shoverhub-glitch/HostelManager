@@ -11,6 +11,7 @@ from app.services.auth_service import (
     get_current_user_service,
     forgot_password_service,
     reset_password_service,
+    change_password_service,
 )
 from app.models.user_schema import (
     UserCreate,
@@ -22,6 +23,7 @@ from app.models.user_schema import (
     EmailVerifyOTPRequest,
     ForgotPasswordRequest,
     ResetPasswordRequest,
+    ChangePasswordRequest,
 )
 from app.utils.otp_memory_store import get_resend_cooldown_remaining
 from fastapi.responses import JSONResponse
@@ -99,3 +101,8 @@ async def verify_reset_otp(payload: EmailVerifyOTPRequest):
 @router.post("/reset-password", status_code=status.HTTP_200_OK, summary="Reset password with OTP", tags=["auth"])
 async def reset_password(payload: ResetPasswordRequest):
     return await reset_password_service(payload.email, payload.otp, payload.newPassword)
+
+
+@router.post("/change-password", status_code=status.HTTP_200_OK, summary="Change password for authenticated user", tags=["auth"])
+async def change_password(request: Request, payload: ChangePasswordRequest):
+    return await change_password_service(request, payload.oldPassword, payload.newPassword)

@@ -254,6 +254,16 @@ export interface ResetPasswordResponse {
   message: string;
 }
 
+export interface ChangePasswordRequest {
+  oldPassword: string;
+  newPassword: string;
+}
+
+export interface ChangePasswordResponse {
+  message: string;
+  success: boolean;
+}
+
 export interface Room {
   id: string;
   propertyId: string;

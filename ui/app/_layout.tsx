@@ -59,10 +59,10 @@ function RootNavigator() {
       '(tabs)', 'property-detail', 'subscription', 'manage-properties', 
       'property-form', 'manage-rooms', 'room-form', 'manage-beds', 
       'manage-staff', 'add-tenant', 'add-payment', 'manual-payment', 
-      'edit-payment', 'tenant-detail'
+      'edit-payment', 'tenant-detail', 'privacy-security', 'change-password'
     ].includes(firstSegment);
 
-    const isRoot = !firstSegment || firstSegment === 'index';
+    const isRoot = !firstSegment;
     const inPublicRoute = isRoot || firstSegment === 'register';
 
     if (!isAuthenticated && inAuthGroup) {
@@ -89,6 +89,7 @@ function RootNavigator() {
         <Stack.Screen name="index" />
         <Stack.Screen name="register" />
         <Stack.Screen name="forgot-password" />
+        <Stack.Screen name="change-password" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="property-detail" />
         <Stack.Screen name="subscription" />
@@ -103,6 +104,7 @@ function RootNavigator() {
         <Stack.Screen name="manual-payment" />
         <Stack.Screen name="edit-payment" />
         <Stack.Screen name="tenant-detail" />
+        <Stack.Screen name="privacy-security" />
         <Stack.Screen name="+not-found" />
       </Stack>
       <StatusBar style={isDark ? 'light' : 'dark'} />

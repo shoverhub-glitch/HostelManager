@@ -28,6 +28,8 @@ import {
   ForgotPasswordResponse,
   ResetPasswordRequest,
   ResetPasswordResponse,
+  ChangePasswordRequest,
+  ChangePasswordResponse,
   ApiError,
   RazorpayCheckoutSession,
   VerifyPaymentRequest,
@@ -565,6 +567,12 @@ export const authService = {
     data: ResetPasswordRequest
   ): Promise<ApiResponse<ResetPasswordResponse>> {
     return await request<ResetPasswordResponse>('POST', '/auth/reset-password', data, false) as ApiResponse<ResetPasswordResponse>;
+  },
+
+  async changePassword(
+    data: ChangePasswordRequest
+  ): Promise<ApiResponse<ChangePasswordResponse>> {
+    return await request<ChangePasswordResponse>('POST', '/auth/change-password', data, true) as ApiResponse<ChangePasswordResponse>;
   },
 
   async logout(): Promise<ApiResponse<{ success: boolean }>> {

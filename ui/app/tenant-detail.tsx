@@ -710,7 +710,7 @@ export default function TenantDetailScreen() {
                         Total Paid
                       </Text>
                       <Text style={[styles.summaryValue, { color: colors.success[500] }]}>
-                        ₹{totalPaid.toLocaleString()}
+                        ₹{totalPaid.toLocaleString('en-IN')}
                       </Text>
                     </View>
 
@@ -719,7 +719,7 @@ export default function TenantDetailScreen() {
                         Monthly Rent
                       </Text>
                       <Text style={[styles.summaryValue, { color: colors.text.primary }]}>
-                        {tenant.rent}
+                        {tenant.rent || '₹0'}
                       </Text>
                     </View>
 
@@ -728,7 +728,7 @@ export default function TenantDetailScreen() {
                         Outstanding
                       </Text>
                       <Text style={[styles.summaryValue, { color: outstanding > 0 ? colors.danger[500] : colors.text.primary }]}>
-                        ₹{outstanding.toLocaleString()}
+                        ₹{outstanding.toLocaleString('en-IN')}
                       </Text>
                     </View>
                   </View>

@@ -94,3 +94,13 @@ class ResetPasswordRequest(BaseModel):
 class ResetPasswordResponse(BaseModel):
     message: str
     success: bool
+
+
+class ChangePasswordRequest(BaseModel):
+    oldPassword: str
+    newPassword: str
+
+
+class ChangePasswordResponse(BaseModel):
+    message: str
+    success: bool

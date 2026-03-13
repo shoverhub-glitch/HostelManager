@@ -68,6 +68,7 @@ export default function ProfileScreen() {
       title: 'Privacy & Security',
       description: 'Password and security settings',
       color: colors.success[500],
+      route: '/privacy-security' as Href,
     },
     {
       icon: HelpCircle,
@@ -92,7 +93,9 @@ export default function ProfileScreen() {
               <User size={40} color={colors.white} />
             </View>
           </View>
-          <Text style={[styles.ownerName, { color: colors.text.primary }]}>{user?.name || 'Property Owner'}</Text>
+          <Text style={[styles.ownerName, { color: colors.text.primary }]}>
+            {user?.name || 'Property Owner'}
+          </Text>
           <Text style={[styles.ownerRole, { color: colors.text.secondary }]}>Hostel Manager</Text>
         </Card>
 
@@ -106,7 +109,9 @@ export default function ProfileScreen() {
               </View>
               <View style={styles.infoContent}>
                 <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Email</Text>
-                <Text style={[styles.infoValue, { color: colors.text.primary }]}>{user?.email || 'owner@example.com'}</Text>
+                <Text style={[styles.infoValue, { color: colors.text.primary }]}>
+                  {user?.email || 'owner@example.com'}
+                </Text>
               </View>
             </View>
           </Card>
@@ -118,7 +123,9 @@ export default function ProfileScreen() {
               </View>
               <View style={styles.infoContent}>
                 <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Phone</Text>
-                <Text style={[styles.infoValue, { color: colors.text.primary }]}>{user?.phone || 'Not provided'}</Text>
+                <Text style={[styles.infoValue, { color: colors.text.primary }]}>
+                  {user?.phone || 'Not provided'}
+                </Text>
               </View>
             </View>
           </Card>

@@ -18,6 +18,9 @@
     },
     "production": {
       "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://hostel.shoverhub.com/api/v1",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "286636123791-d19psn7pd71nc3mb1mco6a4tduaf2f8q.apps.googleusercontent.com",

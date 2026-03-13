@@ -189,7 +189,7 @@ export default function ForgotPasswordScreen() {
   const renderOtpStep = () => (
     <>
       <Text style={[styles.description, { color: colors.text.secondary }]}>
-        We've sent a 6-digit verification code to {email}
+        We{`'`}ve sent a 6-digit verification code to {email}
       </Text>
       
       <View style={styles.otpContainer}>

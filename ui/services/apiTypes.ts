@@ -186,15 +186,6 @@ export interface LoginResponse {
   tokens: AuthTokens;
 }
 
-export interface GoogleSignInRequest {
-  idToken: string;
-}
-
-export interface GoogleAuthResponse {
-  user: Owner;
-  tokens: AuthTokens;
-}
-
 export interface EmailSendOTPRequest {
   email: string;
 }

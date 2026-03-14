@@ -18,15 +18,13 @@
       "android"
     ],
     "plugins": [
-      "expo-router",
-      "expo-web-browser"
+      "expo-router"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
       "router": {},
-      "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "286636123791-d19psn7pd71nc3mb1mco6a4tduaf2f8q.apps.googleusercontent.com",
       "eas": {
         "projectId": "f2c359b8-1d34-4e1d-9aaf-be71065ae390"
       }

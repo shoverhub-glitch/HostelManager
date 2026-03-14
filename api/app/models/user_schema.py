@@ -42,10 +42,6 @@ class UserLogin(BaseModel):
     password: str
 
 
-class GoogleSignInRequest(BaseModel):
-    idToken: str
-
-
 class EmailSendOTPRequest(BaseModel):
     email: EmailStr
 

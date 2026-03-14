@@ -4,10 +4,7 @@ from jose import JWTError, jwt
 from fastapi import HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
-import random
 import time
-from google.oauth2 import id_token as google_id_token
-from google.auth.transport import requests as google_requests
 
 from app.database.mongodb import db
 from app.database.token_blacklist import blacklist_token, is_token_blacklisted
@@ -50,45 +47,6 @@ def validate_indian_phone(phone: str) -> bool:
     """Validate Indian phone numbers (+91 followed by 10 digits)"""
     pattern = r'^\+91[6-9]\d{9}$'
     return bool(re.match(pattern, phone.strip()))
-
-
-def _get_google_client_ids() -> list[str]:
-    return [client_id.strip() for client_id in settings.GOOGLE_CLIENT_IDS.split(",") if client_id.strip()]
-
-
-def _verify_google_id_token(id_token: str) -> dict:
-    if not id_token:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google idToken is required")
-
-    allowed_client_ids = _get_google_client_ids()
-    if not allowed_client_ids:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Google sign-in is not configured on server",
-        )
-
-    last_error = None
-    token_info = None
-    request_adapter = google_requests.Request()
-
-    for audience in allowed_client_ids:
-        try:
-            token_info = google_id_token.verify_oauth2_token(id_token, request_adapter, audience=audience)
-            break
-        except Exception as exc:
-            last_error = exc
-
-    if not token_info:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google token") from last_error
-
-    issuer = token_info.get("iss")
-    if issuer not in ["accounts.google.com", "https://accounts.google.com"]:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google token issuer")
-
-    if not token_info.get("email_verified"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Google email is not verified")
-
-    return token_info
 
 
 def _build_auth_payload(user_doc: dict, user_id: str):
@@ -264,65 +222,6 @@ async def login_user_service(data: UserLogin):
     return JSONResponse(status_code=status.HTTP_200_OK, content={"data": response})
 
 
-async def google_sign_in_service(payload):
-    now = datetime.now(timezone.utc)
-    token_info = _verify_google_id_token(payload.idToken)
-
-    email = token_info.get("email")
-    name = token_info.get("name") or token_info.get("given_name") or "Google User"
-    google_id = token_info.get("sub")
-
-    if not email:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Google token has no email")
-
-    user = await users_collection.find_one({"email": email})
-
-    if not user:
-        user_doc = {
-            "name": name,
-            "email": email,
-            "password": hash_password(f"google-{random.randint(100000, 999999)}"),
-            "role": "propertyowner",
-            "isVerified": True,
-            "isDeleted": False,
-            "lastLogin": now,
-            "createdAt": now,
-            "updatedAt": now,
-            "authProvider": "google",
-            "googleId": google_id,
-            "phone": None,
-            "location": None,
-        }
-        result = await users_collection.insert_one(user_doc)
-        user_id = str(result.inserted_id)
-        
-        # Create 3 default subscriptions for the user (free, pro, premium)
-        from app.services.subscription_service import SubscriptionService
-        await SubscriptionService.create_default_subscriptions(user_id)
-        
-        response = _build_auth_payload(user_doc, user_id)
-        return JSONResponse(status_code=status.HTTP_200_OK, content={"data": response})
-
-    if user.get("isDeleted"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deleted")
-
-    await users_collection.update_one(
-        {"_id": user["_id"]},
-        {
-            "$set": {
-                "lastLogin": now,
-                "updatedAt": now,
-                "authProvider": "google",
-                "googleId": google_id,
-            }
-        },
-    )
-
-    user_id = str(user["_id"])
-    response = _build_auth_payload(user, user_id)
-    return JSONResponse(status_code=status.HTTP_200_OK, content={"data": response})
-
-
 async def send_email_otp_service(email: str):
     """Send OTP to email for verification during registration"""
     if not email:
@@ -336,18 +235,10 @@ async def send_email_otp_service(email: str):
         # Email already has an account - prevent duplicate registration
         auth_provider = existing_user.get("authProvider", "email")
         print(f"[SECURITY] Attempted re-registration with existing email: {normalized_email} (Provider: {auth_provider})")
-        
-        # Give specific guidance based on how they originally signed up
-        if auth_provider == "google":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This email is already registered with Google Sign-in. Please click 'Continue with Google' instead of trying to register manually."
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email already registered. Please login with your existing account instead."
-            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered. Please login with your existing account instead."
+        )
     
     # Check resend cooldown (for existing OTP requests, not for first request)
     cooldown_remaining = await get_resend_cooldown_remaining(normalized_email)

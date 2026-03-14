@@ -23,7 +23,7 @@ export function useNetworkStatus(): boolean {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      const response = await fetch('https://www.google.com/favicon.ico', {
+      await fetch('https://www.microsoft.com/favicon.ico', {
         method: 'HEAD',
         signal: controller.signal,
       });

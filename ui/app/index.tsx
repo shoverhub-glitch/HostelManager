@@ -12,10 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Building2, Eye, EyeOff, Chrome } from 'lucide-react-native';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import Constants from 'expo-constants';
+import { Building2, Eye, EyeOff } from 'lucide-react-native';
 import { spacing, typography, radius, shadows } from '@/theme';
 
 import { useTheme } from '@/context/ThemeContext';
@@ -24,35 +21,17 @@ import { authService } from '@/services/apiClient';
 import { encryptedTokenStorage } from '@/services/encryptedTokenStorage';
 import { deviceIdService } from '@/services/deviceId';
 
-WebBrowser.maybeCompleteAuthSession();
-
 export default function LoginScreen() {
   const { colors } = useTheme();
   const { login } = useAuth();
   const router = useRouter();
-  const expoExtra = (Constants.expoConfig?.extra ?? {}) as Record<string, string | undefined>;
-  const isExpoGo = Constants.executionEnvironment === 'storeClient';
-  const googleWebClientId =
-    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
-    expoExtra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-  const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || expoExtra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
-  const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || expoExtra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [lockoutTimer, setLockoutTimer] = useState<number | null>(null);
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    webClientId: googleWebClientId,
-    androidClientId: googleAndroidClientId,
-    iosClientId: googleIosClientId,
-    selectAccount: true,
-    scopes: ['profile', 'email', 'openid'],
-  });
 
   useEffect(() => {
     if (!lockoutTimer || lockoutTimer <= 0) {
@@ -73,94 +52,6 @@ export default function LoginScreen() {
 
     return () => clearInterval(interval);
   }, [lockoutTimer]);
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      handleGoogleAuthResponse(response);
-      return;
-    }
-
-    if (response?.type === 'error') {
-      const oauthError = response.params?.error_description || response.params?.error || response.error?.message || 'Google authorization failed. Please verify OAuth client IDs and redirect settings.';
-      const runtimeHint =
-        isExpoGo && String(oauthError).toLowerCase().includes('invalid_request')
-          ? ' Hint: In Expo Go, Google OAuth often fails with native Android client IDs. Test with an EAS development build.'
-          : '';
-      setError(`Google authorization failed: ${oauthError}${runtimeHint}`);
-    }
-  }, [response]);
-
-  const handleGoogleAuthResponse = async (authResponse: any) => {
-    const { accessToken, idToken } = authResponse.authentication ?? {};
-    if (!accessToken || !idToken) {
-      setError('Failed to authenticate with Google. Please try again.');
-      return;
-    }
-
-    try {
-      setGoogleLoading(true);
-      setError(null);
-
-      const response = await authService.googleSignIn({ idToken });
-
-      if (response?.data?.tokens) {
-        // Store tokens with device ID binding
-        const deviceId = await deviceIdService.getOrCreateDeviceId();
-        await Promise.all([
-          encryptedTokenStorage.setAccessToken(response.data.tokens.accessToken),
-          encryptedTokenStorage.setRefreshToken(response.data.tokens.refreshToken),
-          encryptedTokenStorage.setTokenExpiry(response.data.tokens.expiresAt),
-          encryptedTokenStorage.setDeviceIdForTokens(deviceId),
-        ]);
-
-        login(response.data.user);
-        return;
-      }
-
-      setError('Google sign-in failed. Please try again.');
-    } catch (err: any) {
-      const errorMessage = err?.message || 'Google sign-in failed. Please try again.';
-      setError(errorMessage);
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    const platformClientId = Platform.OS === 'android' ? googleAndroidClientId : Platform.OS === 'ios' ? googleIosClientId : googleWebClientId;
-    if (!platformClientId) {
-      setError('Google Sign-In is not configured for this platform. Please add the Google client ID and restart the app.');
-      return;
-    }
-
-    try {
-      setError(null);
-      const result = await promptAsync();
-      if (result?.type === 'error') {
-        const oauthError = result.params?.error_description || result.params?.error || result.error?.message || 'Invalid OAuth request.';
-        const idHint =
-          Platform.OS === 'android' &&
-          googleAndroidClientId &&
-          googleWebClientId &&
-          googleAndroidClientId === googleWebClientId
-            ? ' Hint: Android and Web client IDs look identical. Ensure EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID is an Android OAuth client.'
-            : '';
-        const runtimeHint =
-          isExpoGo && String(oauthError).toLowerCase().includes('invalid_request')
-            ? ' Hint: In Expo Go, Google OAuth often fails with native Android client IDs. Test with an EAS development build.'
-            : '';
-        setError(`Google authorization failed: ${oauthError}${idHint}${runtimeHint}`);
-        return;
-      }
-
-      if (result?.type !== 'success') {
-        setError('Google sign-in was cancelled.');
-      }
-    } catch (err: any) {
-      const errorMessage = err?.message || 'Google sign-in failed. Please try again.';
-      setError(errorMessage);
-    }
-  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -290,36 +181,13 @@ export default function LoginScreen() {
               style={[styles.actionButton, { backgroundColor: colors.primary[500], opacity: loading || isLockedOut ? 0.6 : 1 }]}
               onPress={handleLogin}
               activeOpacity={0.8}
-              disabled={loading || isLockedOut || googleLoading}>
+              disabled={loading || isLockedOut}>
               {loading ? (
                 <ActivityIndicator color={colors.white} size="small" />
               ) : (
                 <Text style={[styles.actionButtonText, { color: colors.white }]}>
                   {isLockedOut ? 'Account Locked' : 'Login'}
                 </Text>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.dividerContainer}>
-              <View style={[styles.divider, { backgroundColor: colors.border.medium }]} />
-              <Text style={[styles.dividerText, { color: colors.text.secondary, backgroundColor: colors.background.primary }]}>Or continue with</Text>
-              <View style={[styles.divider, { backgroundColor: colors.border.medium }]} />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.googleButton, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium }]}
-              onPress={handleGoogleSignIn}
-              activeOpacity={0.8}
-              disabled={loading || isLockedOut || googleLoading || !request}>
-              {googleLoading ? (
-                <ActivityIndicator color={colors.primary[500]} size="small" />
-              ) : (
-                <>
-                  <Chrome size={20} color={colors.primary[500]} />
-                  <Text style={[styles.googleButtonText, { color: colors.text.primary }]}>
-                    Continue with Google
-                  </Text>
-                </>
               )}
             </TouchableOpacity>
 
@@ -415,24 +283,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
   },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: spacing.lg,
-    gap: spacing.md,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    position: 'absolute',
-    top: -10,
-    left: '50%',
-    transform: [{ translateX: -15 }],
-    paddingHorizontal: spacing.md,
-    fontSize: typography.fontSize.sm,
-  },
   errorContainer: {
     borderRadius: radius.md,
     borderWidth: 1,
@@ -454,21 +304,6 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   actionButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  googleButton: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    borderWidth: 1,
-    gap: spacing.md,
-    marginBottom: spacing.md,
-    ...shadows.sm,
-  },
-  googleButtonText: {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
   },

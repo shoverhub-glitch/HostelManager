@@ -13,8 +13,6 @@ import {
   PaginatedResponse,
   LoginCredentials,
   LoginResponse,
-  GoogleSignInRequest,
-  GoogleAuthResponse,
   EmailSendOTPRequest,
   EmailSendOTPResponse,
   EmailVerifyOTPRequest,
@@ -175,7 +173,7 @@ async function invalidateRelatedCaches(endpoint: string): Promise<void> {
   const path = getEndpointPath(endpoint);
   const root = `/${path.split('/').filter(Boolean)[0] || ''}`;
 
-  if (root === '/auth' && /\/(login|logout|google|register)$/.test(path)) {
+  if (root === '/auth' && /\/(login|logout|register)$/.test(path)) {
     memoryCache.clear();
     await dataCache.clear();
     return;
@@ -509,10 +507,6 @@ export const authService = {
 
   async refreshToken(refreshToken: string): Promise<any> {
     return await request<any>('POST', '/auth/refresh', { refreshToken }, false);
-  },
-
-  async googleSignIn(payload: GoogleSignInRequest): Promise<ApiResponse<GoogleAuthResponse>> {
-    return await request<GoogleAuthResponse>('POST', '/auth/google', payload, false) as ApiResponse<GoogleAuthResponse>;
   },
 
   async sendEmailOTP(

@@ -15,7 +15,6 @@ bcrypt==5.0.0
 argon2-cffi==25.1.0
 passlib==1.7.4
 email-validator==2.3.0
-google-auth==2.40.3
 
 # Environment & Configuration
 python-dotenv==1.2.1

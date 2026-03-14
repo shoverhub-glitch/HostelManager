@@ -12,7 +12,6 @@ REFRESH_TOKEN_EXPIRE_MINUTES = int(os.environ.get("REFRESH_TOKEN_EXPIRE_MINUTES"
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS")
 FROM_EMAIL = os.environ.get("FROM_EMAIL")
 ENV = os.environ.get("ENV", "production")
-GOOGLE_CLIENT_IDS = os.environ.get("GOOGLE_CLIENT_IDS", "")
 # Zoho Zepto Mail Configuration
 ZEPTO_MAIL_API_KEY = os.environ.get("ZEPTO_MAIL_API_KEY")
 
@@ -20,10 +19,8 @@ PUBLIC_PATHS = os.environ.get("PUBLIC_PATHS")
 if not PUBLIC_PATHS:
 	PUBLIC_PATHS = ",".join([
 		"/api/v1/health",
-		"/api/v1/health/auth-config",
 		"/api/v1/auth/login",
 		"/api/v1/auth/register",
-		"/api/v1/auth/google",
 		"/api/v1/auth/refresh",
 		"/api/v1/auth/forgot-password",
 		"/api/v1/auth/verify-reset-otp",

@@ -26,10 +26,8 @@ class UserContextMiddleware(BaseHTTPMiddleware):
         public_paths = {p.strip() for p in settings.PUBLIC_PATHS.split(",") if p.strip()}
         public_paths.update({
             "/api/v1/health",
-            "/api/v1/health/auth-config",
             "/api/v1/auth/login",
             "/api/v1/auth/register",
-            "/api/v1/auth/google",
             "/api/v1/auth/email/send-otp",
             "/api/v1/auth/email/verify-otp",
             "/api/v1/auth/email/resend-otp",

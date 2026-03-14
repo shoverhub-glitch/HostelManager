@@ -11,14 +11,14 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { spacing, typography, radius, shadows } from '@/theme';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
-const PLAY_STORE_URL = process.env.EXPO_PUBLIC_PLAYSTORE_URL || 'https://play.google.com/store/apps/details?id=com.lohilit101.boltexponativewind';
+const PLAY_STORE_URL = process.env.EXPO_PUBLIC_PLAYSTORE_URL || 'https://hostel.shoverhub.com/download';
 
 function WebRedirectScreen() {
   const { colors } = useTheme();
 
   const handleDownload = () => {
     Linking.openURL(PLAY_STORE_URL).catch((err) => {
-      console.error('Failed to open Play Store:', err);
+      console.error('Failed to open download link:', err);
     });
   };
 
@@ -30,7 +30,7 @@ function WebRedirectScreen() {
       <Text style={[styles.webTitle, { color: colors.text.primary }]}>Mobile App Only</Text>
       <Text style={[styles.webSubtitle, { color: colors.text.secondary }]}>
         This application is designed exclusively for mobile devices. 
-        Download it from Google Play Store to access all features on your Android or iOS device.
+        Download it from the app store link to access all features on your Android or iOS device.
       </Text>
       <TouchableOpacity
         style={[styles.webButton, { backgroundColor: colors.primary[500] }]}

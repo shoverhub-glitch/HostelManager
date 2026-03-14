@@ -5,7 +5,6 @@ from app.services.auth_service import (
     login_user_service,
     refresh_token_service,
     logout_user_service,
-    google_sign_in_service,
     send_email_otp_service,
     verify_email_otp_service,
     get_current_user_service,
@@ -18,7 +17,6 @@ from app.models.user_schema import (
     UserLogin,
     RefreshTokenRequest,
     LogoutRequest,
-    GoogleSignInRequest,
     EmailSendOTPRequest,
     EmailVerifyOTPRequest,
     ForgotPasswordRequest,
@@ -40,11 +38,6 @@ async def register(user: UserCreate):
 @rate_limit_dep
 async def login(request: Request, data: UserLogin):
     return await login_user_service(data)
-
-
-@router.post("/google", status_code=status.HTTP_200_OK, summary="Google sign in", tags=["auth"])
-async def google_sign_in(payload: GoogleSignInRequest):
-    return await google_sign_in_service(payload)
 
 
 @router.post("/email/send-otp", status_code=status.HTTP_200_OK, summary="Send email verification OTP", tags=["auth"])

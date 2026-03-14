@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { Building2, Eye, EyeOff, Chrome } from 'lucide-react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
+import Constants from 'expo-constants';
 import { spacing, typography, radius, shadows } from '@/theme';
 
 import { useTheme } from '@/context/ThemeContext';
@@ -29,6 +30,13 @@ export default function LoginScreen() {
   const { colors } = useTheme();
   const { login } = useAuth();
   const router = useRouter();
+  const expoExtra = (Constants.expoConfig?.extra ?? {}) as Record<string, string | undefined>;
+  const isExpoGo = Constants.executionEnvironment === 'storeClient';
+  const googleWebClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+    expoExtra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || expoExtra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+  const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || expoExtra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -39,12 +47,10 @@ export default function LoginScreen() {
   const [lockoutTimer, setLockoutTimer] = useState<number | null>(null);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
-    // Web client ID is required when running in Expo Go (development)
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    // Native client IDs are used in production standalone builds
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    // openid scope is required to receive idToken from Google
+    webClientId: googleWebClientId,
+    androidClientId: googleAndroidClientId,
+    iosClientId: googleIosClientId,
+    selectAccount: true,
     scopes: ['profile', 'email', 'openid'],
   });
 
@@ -71,6 +77,16 @@ export default function LoginScreen() {
   useEffect(() => {
     if (response?.type === 'success') {
       handleGoogleAuthResponse(response);
+      return;
+    }
+
+    if (response?.type === 'error') {
+      const oauthError = response.params?.error_description || response.params?.error || response.error?.message || 'Google authorization failed. Please verify OAuth client IDs and redirect settings.';
+      const runtimeHint =
+        isExpoGo && String(oauthError).toLowerCase().includes('invalid_request')
+          ? ' Hint: In Expo Go, Google OAuth often fails with native Android client IDs. Test with an EAS development build.'
+          : '';
+      setError(`Google authorization failed: ${oauthError}${runtimeHint}`);
     }
   }, [response]);
 
@@ -111,9 +127,32 @@ export default function LoginScreen() {
   };
 
   const handleGoogleSignIn = async () => {
+    const platformClientId = Platform.OS === 'android' ? googleAndroidClientId : Platform.OS === 'ios' ? googleIosClientId : googleWebClientId;
+    if (!platformClientId) {
+      setError('Google Sign-In is not configured for this platform. Please add the Google client ID and restart the app.');
+      return;
+    }
+
     try {
       setError(null);
       const result = await promptAsync();
+      if (result?.type === 'error') {
+        const oauthError = result.params?.error_description || result.params?.error || result.error?.message || 'Invalid OAuth request.';
+        const idHint =
+          Platform.OS === 'android' &&
+          googleAndroidClientId &&
+          googleWebClientId &&
+          googleAndroidClientId === googleWebClientId
+            ? ' Hint: Android and Web client IDs look identical. Ensure EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID is an Android OAuth client.'
+            : '';
+        const runtimeHint =
+          isExpoGo && String(oauthError).toLowerCase().includes('invalid_request')
+            ? ' Hint: In Expo Go, Google OAuth often fails with native Android client IDs. Test with an EAS development build.'
+            : '';
+        setError(`Google authorization failed: ${oauthError}${idHint}${runtimeHint}`);
+        return;
+      }
+
       if (result?.type !== 'success') {
         setError('Google sign-in was cancelled.');
       }

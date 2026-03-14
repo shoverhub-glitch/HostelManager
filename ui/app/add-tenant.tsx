@@ -35,11 +35,11 @@ export default function AddTenantScreen() {
   const { selectedPropertyId } = useProperty();
   const isOnline = useNetworkStatus();
 
-  const [name, setName] = useState('John Doe');
-  const [documentId, setDocumentId] = useState('1234567890');
-  const [phone, setPhone] = useState('9876543210');
+  const [name, setName] = useState('');
+  const [documentId, setDocumentId] = useState('');
+  const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
-  const [rent, setRent] = useState('5000');
+  const [rent, setRent] = useState('');
   const [joinDate, setJoinDate] = useState(new Date().toISOString().split('T')[0]);
 
   const [roomsWithBeds, setRoomsWithBeds] = useState<Array<{ room: Room; availableBeds: Bed[] }>>([]);
@@ -54,6 +54,101 @@ export default function AddTenantScreen() {
   const [showRoomPicker, setShowRoomPicker] = useState(false);
   const [showBedPicker, setShowBedPicker] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  const [errors, setErrors] = useState<{
+    name?: string;
+    phone?: string;
+    documentId?: string;
+    rent?: string;
+    address?: string;
+  }>({});
+
+  const validateName = (value: string): string | undefined => {
+    if (!value || value.trim().length === 0) {
+      return 'Name is required';
+    }
+    if (value.trim().length < 2) {
+      return 'Name must be at least 2 characters';
+    }
+    if (/^\d+$/.test(value.trim())) {
+      return 'Name cannot contain only numbers';
+    }
+    if (/[0-9]/.test(value.trim())) {
+      return 'Name cannot contain numbers';
+    }
+    if (!/^[a-zA-Z\s\'\-\.]+$/.test(value.trim())) {
+      return 'Name can only contain letters, spaces, hyphens, dots, and apostrophes';
+    }
+    return undefined;
+  };
+
+  const validatePhone = (value: string): string | undefined => {
+    if (!value || value.trim().length === 0) {
+      return 'Phone number is required';
+    }
+    const digitsOnly = value.replace(/\D/g, '');
+    if (digitsOnly.length !== 10) {
+      return 'Phone number must be exactly 10 digits';
+    }
+    if (!/^[6-9]/.test(digitsOnly)) {
+      return 'Phone number must start with 6, 7, 8, or 9';
+    }
+    return undefined;
+  };
+
+  const validateDocumentId = (value: string): string | undefined => {
+    if (!value || value.trim().length === 0) {
+      return undefined;
+    }
+    if (value.trim().length < 4) {
+      return 'Document ID must be at least 4 characters';
+    }
+    if (!/^[a-zA-Z0-9\-_]+$/.test(value.trim())) {
+      return 'Document ID can only contain letters, numbers, hyphens, and underscores';
+    }
+    return undefined;
+  };
+
+  const validateRent = (value: string): string | undefined => {
+    if (!value || value.trim().length === 0) {
+      return 'Rent amount is required';
+    }
+    const rentNum = parseFloat(value.replace(/,/g, ''));
+    if (isNaN(rentNum)) {
+      return 'Please enter a valid number';
+    }
+    if (rentNum <= 0) {
+      return 'Rent amount must be greater than 0';
+    }
+    if (rentNum > 999999) {
+      return 'Rent amount is too high';
+    }
+    return undefined;
+  };
+
+  const validateAddress = (value: string): string | undefined => {
+    if (!value || value.trim().length === 0) {
+      return undefined;
+    }
+    if (value.trim().length < 5) {
+      return 'Address must be at least 5 characters';
+    }
+    return undefined;
+  };
+
+  const validateForm = () => {
+    const newErrors: typeof errors = {};
+    
+    newErrors.name = validateName(name);
+    newErrors.phone = validatePhone(phone);
+    newErrors.documentId = validateDocumentId(documentId);
+    newErrors.rent = validateRent(rent);
+    newErrors.address = validateAddress(address);
+    
+    setErrors(newErrors);
+    
+    return !Object.values(newErrors).some(error => error !== undefined);
+  };
 
   const fetchAvailableBeds = useCallback(async () => {
     if (!selectedPropertyId) return;
@@ -126,26 +221,35 @@ export default function AddTenantScreen() {
   }, [selectedRoom, roomsWithBeds]);
 
   const handleNext = () => {
-    if (!name || !phone || !rent || !joinDate || !selectedRoom || !selectedBed) {
-      setError('All fields except email are required');
+    setError(null);
+    
+    if (!validateForm()) {
+      setError('Please fix the errors below');
       return;
     }
+
+    if (!selectedRoom || !selectedBed) {
+      setError('Please select a room and bed');
+      return;
+    }
+    
+    if (!joinDate) {
+      setError('Join date is required');
+      return;
+    }
+
     const rentNum = parseFloat(rent);
-    if (isNaN(rentNum) || rentNum <= 0) {
-      setError('Please enter a valid rent amount');
-      return;
-    }
     if (!selectedPropertyId) {
       setError('No property selected');
       return;
     }
-    // Pass tenant details to billing setup screen (status will default to 'active' in backend)
+    
     router.push({
       pathname: '/add-payment',
       params: {
         name: name.trim(),
         documentId: documentId.trim(),
-        phone: phone.trim(),
+        phone: phone.replace(/\D/g, ''),
         address: address.trim(),
         rent: rentNum.toString(),
         joinDate,
@@ -165,8 +269,9 @@ export default function AddTenantScreen() {
       joinDate &&
       selectedRoom &&
       selectedBed &&
-      !isNaN(parseFloat(rent)) &&
-      parseFloat(rent) > 0
+      !validateName(name) &&
+      !validatePhone(phone) &&
+      !validateRent(rent)
     );
   };
 
@@ -298,16 +403,29 @@ export default function AddTenantScreen() {
                   {
                     backgroundColor: colors.background.secondary,
                     color: colors.text.primary,
-                    borderColor: colors.border.medium,
+                    borderColor: errors.name ? colors.danger[500] : colors.border.medium,
                   },
                 ]}
                 placeholder="e.g., John Smith"
                 placeholderTextColor={colors.text.tertiary}
                 value={name}
-                onChangeText={setName}
+                onChangeText={(text) => {
+                  setName(text);
+                  if (errors.name) {
+                    setErrors(prev => ({ ...prev, name: undefined }));
+                  }
+                }}
+                onBlur={() => {
+                  setErrors(prev => ({ ...prev, name: validateName(name) }));
+                }}
                 editable={!loading}
                 autoFocus
               />
+              {errors.name && (
+                <Text style={[styles.errorText, { color: colors.danger[600] }]}>
+                  {errors.name}
+                </Text>
+              )}
             </View>
 
             <View style={styles.inputContainer}>
@@ -318,16 +436,29 @@ export default function AddTenantScreen() {
                   {
                     backgroundColor: colors.background.secondary,
                     color: colors.text.primary,
-                    borderColor: colors.border.medium,
+                    borderColor: errors.documentId ? colors.danger[500] : colors.border.medium,
                   },
                 ]}
-                placeholder="e.g., DOC123456"
-                autoCapitalize="none"
+                placeholder="e.g., AADHAR123456"
+                autoCapitalize="characters"
                 placeholderTextColor={colors.text.tertiary}
                 value={documentId}
-                onChangeText={setDocumentId}
+                onChangeText={(text) => {
+                  setDocumentId(text);
+                  if (errors.documentId) {
+                    setErrors(prev => ({ ...prev, documentId: undefined }));
+                  }
+                }}
+                onBlur={() => {
+                  setErrors(prev => ({ ...prev, documentId: validateDocumentId(documentId) }));
+                }}
                 editable={!loading}
               />
+              {errors.documentId && (
+                <Text style={[styles.errorText, { color: colors.danger[600] }]}>
+                  {errors.documentId}
+                </Text>
+              )}
             </View>
 
             <View style={styles.inputContainer}>
@@ -338,16 +469,30 @@ export default function AddTenantScreen() {
                   {
                     backgroundColor: colors.background.secondary,
                     color: colors.text.primary,
-                    borderColor: colors.border.medium,
+                    borderColor: errors.phone ? colors.danger[500] : colors.border.medium,
                   },
                 ]}
-                placeholder="e.g., +91 98765 43210"
+                placeholder="e.g., 9876543210"
                 keyboardType="phone-pad"
+                maxLength={15}
                 placeholderTextColor={colors.text.tertiary}
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={(text) => {
+                  setPhone(text);
+                  if (errors.phone) {
+                    setErrors(prev => ({ ...prev, phone: undefined }));
+                  }
+                }}
+                onBlur={() => {
+                  setErrors(prev => ({ ...prev, phone: validatePhone(phone) }));
+                }}
                 editable={!loading}
               />
+              {errors.phone && (
+                <Text style={[styles.errorText, { color: colors.danger[600] }]}>
+                  {errors.phone}
+                </Text>
+              )}
             </View>
 
             <View style={styles.inputContainer}>
@@ -358,17 +503,30 @@ export default function AddTenantScreen() {
                   {
                     backgroundColor: colors.background.secondary,
                     color: colors.text.primary,
-                    borderColor: colors.border.medium,
+                    borderColor: errors.address ? colors.danger[500] : colors.border.medium,
                   },
                 ]}
                 placeholder="e.g., 123 Main St, City"
                 placeholderTextColor={colors.text.tertiary}
                 value={address}
-                onChangeText={setAddress}
+                onChangeText={(text) => {
+                  setAddress(text);
+                  if (errors.address) {
+                    setErrors(prev => ({ ...prev, address: undefined }));
+                  }
+                }}
+                onBlur={() => {
+                  setErrors(prev => ({ ...prev, address: validateAddress(address) }));
+                }}
                 editable={!loading}
                 multiline
                 numberOfLines={2}
               />
+              {errors.address && (
+                <Text style={[styles.errorText, { color: colors.danger[600] }]}>
+                  {errors.address}
+                </Text>
+              )}
             </View>
 
             <View style={styles.inputContainer}>
@@ -441,16 +599,33 @@ export default function AddTenantScreen() {
                   {
                     backgroundColor: colors.background.secondary,
                     color: colors.text.primary,
-                    borderColor: colors.border.medium,
+                    borderColor: errors.rent ? colors.danger[500] : colors.border.medium,
                   },
                 ]}
                 placeholder="e.g., 5000"
                 keyboardType="numeric"
                 placeholderTextColor={colors.text.tertiary}
                 value={rent}
-                onChangeText={setRent}
+                onChangeText={(text) => {
+                  const cleaned = text.replace(/[^0-9.]/g, '');
+                  const parts = cleaned.split('.');
+                  if (parts.length > 2) return;
+                  if (parts[1] && parts[1].length > 2) return;
+                  setRent(cleaned);
+                  if (errors.rent) {
+                    setErrors(prev => ({ ...prev, rent: undefined }));
+                  }
+                }}
+                onBlur={() => {
+                  setErrors(prev => ({ ...prev, rent: validateRent(rent) }));
+                }}
                 editable={!loading}
               />
+              {errors.rent && (
+                <Text style={[styles.errorText, { color: colors.danger[600] }]}>
+                  {errors.rent}
+                </Text>
+              )}
             </View>
 
             <DatePicker
@@ -695,8 +870,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   errorText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+    marginTop: spacing.xs,
   },
   inputContainer: {
     marginBottom: spacing.xl,

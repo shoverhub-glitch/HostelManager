@@ -60,6 +60,7 @@ class TenantService:
         limit: int = 50,
         include_room_bed: bool = True,
         property_ids: Optional[List[str]] = None,
+        sort: str = None,
     ):
         query = {"isDeleted": {"$ne": True}}
 
@@ -80,11 +81,16 @@ class TenantService:
                 {"documentId": {"$regex": search, "$options": "i"}}
             ]
         if status:
-            # Filter by billingConfig.status
-            query["billingConfig.status"] = status
+            # Filter by tenantStatus (active/vacated)
+            query["tenantStatus"] = status
         
         # Get total count
         total = await self.collection.count_documents(query)
+        
+        # Determine sort order
+        sort_order = -1  # Default: newest first
+        if sort == 'oldest':
+            sort_order = 1
         
         # Build aggregation pipeline to replace N+1 queries
         pipeline = [{"$match": query}]
@@ -161,6 +167,7 @@ class TenantService:
             ])
         
         pipeline.extend([
+            {"$sort": {"createdAt": sort_order}},  # Sort by createdAt: -1 for newest first, 1 for oldest first
             {"$skip": skip},
             {"$limit": limit}
         ])

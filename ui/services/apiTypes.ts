@@ -84,6 +84,7 @@ export interface SubscriptionPeriodOption {
 
 export interface PlanMetadata {
   name: string;
+  display_name: string;
   properties: number;
   tenants: number;
   rooms: number;

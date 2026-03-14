@@ -545,7 +545,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
   },
   statLabel: {
     fontSize: typography.fontSize.xs,

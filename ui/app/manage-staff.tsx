@@ -985,7 +985,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     paddingBottom: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
   detailItem: {
     flex: 1,
@@ -1013,7 +1012,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     paddingBottom: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
   addressText: {
     fontSize: typography.fontSize.sm,

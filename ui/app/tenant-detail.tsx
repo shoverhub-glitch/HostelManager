@@ -681,17 +681,86 @@ export default function TenantDetailScreen() {
                   <Text style={[styles.tenantName, { color: colors.text.primary }]}>
                     {tenant.name}
                   </Text>
+                  <Text style={[styles.tenantStatus, { color: tenant.tenantStatus === 'active' ? colors.success[600] : colors.danger[600] }]}>
+                    {tenant.tenantStatus === 'active' ? 'Active' : 'Vacated'}
+                  </Text>
                 </View>
               </View>
 
               <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
 
               <View style={styles.contactSection}>
-                <View style={styles.contactItem}>
-                  <Text style={[styles.contactText, { color: colors.text.primary }]}>
-                    Status: <Text style={{ color: tenant.tenantStatus === 'active' ? colors.success[600] : colors.danger[600], fontWeight: typography.fontWeight.semibold as any }}>{tenant.tenantStatus === 'active' ? 'Active' : 'Vacated'}</Text>
-                  </Text>
-                </View>
+                {tenant.phone && (
+                  <View style={styles.contactItem}>
+                    <Phone size={16} color={colors.text.secondary} />
+                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
+                      Phone:
+                    </Text>
+                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
+                      {tenant.phone}
+                    </Text>
+                  </View>
+                )}
+
+                {tenant.documentId && (
+                  <View style={styles.contactItem}>
+                    <User size={16} color={colors.text.secondary} />
+                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
+                      Document ID:
+                    </Text>
+                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
+                      {tenant.documentId}
+                    </Text>
+                  </View>
+                )}
+
+                {tenant.address && (
+                  <View style={styles.contactItem}>
+                    <MapPin size={16} color={colors.text.secondary} />
+                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
+                      Address:
+                    </Text>
+                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
+                      {tenant.address}
+                    </Text>
+                  </View>
+                )}
+
+                {tenant.joinDate && (
+                  <View style={styles.contactItem}>
+                    <Calendar size={16} color={colors.text.secondary} />
+                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
+                      Join Date:
+                    </Text>
+                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
+                      {formatDateWithOrdinal(tenant.joinDate)}
+                    </Text>
+                  </View>
+                )}
+
+                {tenant.tenantStatus === 'active' && room && (
+                  <View style={styles.contactItem}>
+                    <MapPin size={16} color={colors.text.secondary} />
+                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
+                      Room:
+                    </Text>
+                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
+                      {room.roomNumber}
+                    </Text>
+                  </View>
+                )}
+
+                {tenant.tenantStatus === 'vacated' && tenant.checkoutDate && (
+                  <View style={styles.contactItem}>
+                    <Calendar size={16} color={colors.text.secondary} />
+                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
+                      Checkout Date:
+                    </Text>
+                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
+                      {formatDateWithOrdinal(tenant.checkoutDate)}
+                    </Text>
+                  </View>
+                )}
               </View>
             </Card>
 
@@ -1321,7 +1390,7 @@ export default function TenantDetailScreen() {
                 {tenantActionLoading ? (
                   <ActivityIndicator color={colors.white} size="small" />
                 ) : (
-                  <Text style={styles.deleteConfirmButtonText}>Delete</Text>
+                  <Text style={[styles.deleteConfirmButtonText, { color: colors.white }]}>Delete</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1523,6 +1592,10 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.bold,
   },
+  tenantStatus: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+  },
   divider: {
     height: 1,
     marginBottom: spacing.lg,
@@ -1534,7 +1607,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+  },
+  contactLabel: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.medium,
   },
   contactText: {
     fontSize: typography.fontSize.md,
@@ -1928,7 +2005,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   deleteConfirmButtonText: {
-    color: '#FFFFFF',
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
   },

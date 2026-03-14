@@ -598,9 +598,9 @@ export default function RoomFormScreen() {
                 }}
                 disabled={loading}>
                 {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={colors.white} />
                 ) : (
-                  <Text style={[styles.bedChangeModalButtonText, { color: '#fff' }]}>
+                  <Text style={[styles.bedChangeModalButtonText, { color: colors.white }]}>
                     Confirm & Update
                   </Text>
                 )}

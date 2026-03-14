@@ -306,14 +306,14 @@ export default function DashboardScreen() {
                   </Card>
                 )}
 
-                {/* Quick Stats */}
+                  {/* Quick Stats */}
                 <View style={styles.quickStatsContainer}>
                   {dashboardData?.stats.pendingPayments !== undefined && (
                     <TouchableOpacity 
                       onPress={() => router.push('/payments')}
                       activeOpacity={0.7}>
                       <Card style={styles.quickStatCard}>
-                        <View style={[styles.quickStatIcon, { backgroundColor: colors.primary[50] }]}>
+                        <View style={[styles.quickStatIcon, { backgroundColor: isDark ? colors.neutral[800] : colors.primary[50] }]}>
                           <AlertCircle size={18} color={colors.primary[500]} />
                         </View>
                         <View>
@@ -384,7 +384,7 @@ export default function DashboardScreen() {
                         onPress={() => router.push(action.route as any)}
                         activeOpacity={0.7}>
                         <Card style={styles.actionCard}>
-                          <View style={[styles.actionIcon, { backgroundColor: colors.primary[50] }]}>
+                          <View style={[styles.actionIcon, { backgroundColor: isDark ? colors.neutral[800] : colors.primary[50] }]}>
                             <action.icon size={24} color={colors.primary[500]} />
                           </View>
                           <Text style={[styles.actionLabel, { color: colors.text.primary }]}>

@@ -397,9 +397,9 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
                 disabled={deleting}
               >
                 {deleting ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={colors.white} />
                 ) : (
-                  <Text style={[styles.modalButtonText, { color: '#fff' }]}>Delete</Text>
+                  <Text style={[styles.modalButtonText, { color: colors.white }]}>Delete</Text>
                 )}
               </TouchableOpacity>
             </View>

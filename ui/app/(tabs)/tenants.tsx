@@ -55,7 +55,8 @@ export default function TenantsScreen() {
   
   // Filter & Pagination
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<'all' | 'paid' | 'due'>('all');
+  const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'vacated'>('all');
+  const [sortBy, setSortBy] = useState<'latest' | 'oldest'>('latest');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -69,7 +70,7 @@ export default function TenantsScreen() {
     tenantsCountRef.current = tenants.length;
   }, [tenants.length]);
 
-  const fetchTenants = useCallback(async (page: number = 1, search: string = '', status: string = 'all', forceNetwork: boolean = false) => {
+  const fetchTenants = useCallback(async (page: number = 1, search: string = '', status: string = 'all', forceNetwork: boolean = false, sort: string = 'latest') => {
     if (!selectedPropertyId) {
       setLoading(false);
       return;
@@ -113,7 +114,7 @@ export default function TenantsScreen() {
       const statusFilter = status !== 'all' ? status : undefined;
       
       // ONLY fetch tenants - rooms & beds data now included in response
-      const tenantsRes = await tenantService.getTenants(selectedPropertyId, search || undefined, statusFilter, page, pageSize);
+      const tenantsRes = await tenantService.getTenants(selectedPropertyId, search || undefined, statusFilter, page, pageSize, sort as 'latest' | 'oldest');
 
       // Clear timeout if we got data back
       if (loadingTimeoutRef.current) {
@@ -142,7 +143,7 @@ export default function TenantsScreen() {
       setLoading(false);
       isFetchingRef.current = false;
     }
-  }, [selectedPropertyId]);
+  }, [selectedPropertyId, sortBy]);
 
   // Fetch data on property change or initial mount
   useEffect(() => {
@@ -159,9 +160,9 @@ export default function TenantsScreen() {
       setLoading(true);
       setTenants([]);
       setTotal(0);
-      fetchTenants(1, '', 'all');
+      fetchTenants(1, '', 'all', false, sortBy);
     }
-  }, [selectedPropertyId, propertyLoading, fetchTenants]);
+  }, [selectedPropertyId, propertyLoading, fetchTenants, sortBy]);
 
   // Debounced search handler
   useEffect(() => {
@@ -176,13 +177,13 @@ export default function TenantsScreen() {
 
     searchTimeoutRef.current = setTimeout(() => {
       setCurrentPage(1); // Reset to first page on new search
-      fetchTenants(1, searchQuery, selectedStatus);
+      fetchTenants(1, searchQuery, selectedStatus, false, sortBy);
     }, 500); // 500ms debounce
 
     return () => {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
-  }, [searchQuery, selectedStatus, fetchTenants]);
+  }, [searchQuery, selectedStatus, sortBy, fetchTenants]);
 
   // Cleanup loading timeout on unmount
   useEffect(() => {
@@ -205,14 +206,14 @@ export default function TenantsScreen() {
 
         if (shouldRefreshBecauseCacheMissing || shouldRefreshByThrottle) {
           lastFocusRefreshRef.current = now;
-          fetchTenants(currentPage, searchQuery, selectedStatus, shouldRefreshBecauseCacheMissing);
+          fetchTenants(currentPage, searchQuery, selectedStatus, shouldRefreshBecauseCacheMissing, sortBy);
         }
       }
-    }, [propertyLoading, selectedPropertyId, currentPage, searchQuery, selectedStatus, fetchTenants])
+    }, [propertyLoading, selectedPropertyId, currentPage, searchQuery, selectedStatus, sortBy, fetchTenants])
   );
 
   const handleRetry = () => {
-    fetchTenants(currentPage, searchQuery, selectedStatus, true);
+    fetchTenants(currentPage, searchQuery, selectedStatus, true, sortBy);
   };
 
   const handleRefresh = useCallback(async () => {
@@ -229,13 +230,14 @@ export default function TenantsScreen() {
     setCurrentPage(1);
     setSearchQuery('');
     setSelectedStatus('all');
+    setSortBy('latest');
     setTenants([]);
     setTotal(0);
     
     // Re-fetch tenants
     if (selectedPropertyId) {
       try {
-        await fetchTenants(1, '', 'all', true);
+        await fetchTenants(1, '', 'all', true, 'latest');
       } finally {
         setRefreshing(false);
       }
@@ -248,10 +250,16 @@ export default function TenantsScreen() {
     router.push('/add-tenant');
   };
 
-  const handleSelectStatusFilter = (status: 'all' | 'paid' | 'due') => {
+  const handleSelectStatusFilter = (status: 'all' | 'active' | 'vacated') => {
     setShowStatusFilterModal(false);
     setCurrentPage(1);
     setSelectedStatus(status);
+  };
+
+  const handleSelectSort = (sort: 'latest' | 'oldest') => {
+    setCurrentPage(1);
+    setSortBy(sort);
+    fetchTenants(1, searchQuery, selectedStatus, true, sort);
   };
 
   const handleAddRoom = () => {
@@ -293,14 +301,14 @@ export default function TenantsScreen() {
           style={[
             styles.filterButton,
             {
-              backgroundColor: selectedStatus !== 'all' ? colors.primary[100] : colors.primary[50],
-              borderColor: selectedStatus !== 'all' ? colors.primary[300] : colors.primary[100]
+              backgroundColor: selectedStatus !== 'all' || sortBy !== 'latest' ? colors.primary[100] : colors.primary[50],
+              borderColor: selectedStatus !== 'all' || sortBy !== 'latest' ? colors.primary[300] : colors.primary[100]
             }
           ]}
           activeOpacity={0.7}
           onPress={() => setShowStatusFilterModal(true)}
           disabled={loading || !selectedProperty || !!error}>
-          <Filter size={20} color={selectedStatus !== 'all' ? colors.primary[700] : colors.primary[500]} />
+          <Filter size={20} color={selectedStatus !== 'all' || sortBy !== 'latest' ? colors.primary[700] : colors.primary[500]} />
         </TouchableOpacity>
       </View>
 
@@ -410,7 +418,7 @@ export default function TenantsScreen() {
                     if (currentPage > 1) {
                       const newPage = currentPage - 1;
                       setCurrentPage(newPage);
-                      fetchTenants(newPage, searchQuery, selectedStatus);
+                      fetchTenants(newPage, searchQuery, selectedStatus, true, sortBy);
                     }
                   }}
                   disabled={currentPage === 1}
@@ -438,7 +446,7 @@ export default function TenantsScreen() {
                     if (currentPage < Math.ceil(total / pageSize)) {
                       const newPage = currentPage + 1;
                       setCurrentPage(newPage);
-                      fetchTenants(newPage, searchQuery, selectedStatus);
+                      fetchTenants(newPage, searchQuery, selectedStatus, true, sortBy);
                     }
                   }}
                   disabled={currentPage >= Math.ceil(total / pageSize)}
@@ -466,12 +474,50 @@ export default function TenantsScreen() {
         onRequestClose={() => setShowStatusFilterModal(false)}>
         <View style={styles.filterModalOverlay}>
           <View style={[styles.filterModalContainer, { backgroundColor: colors.background.secondary }]}> 
-            <Text style={[styles.filterModalTitle, { color: colors.text.primary }]}>Filter by Payment Status</Text>
+            <Text style={[styles.filterModalTitle, { color: colors.text.primary }]}>Sort By</Text>
 
             {[
-              { label: 'All', value: 'all' as const },
-              { label: 'Paid', value: 'paid' as const },
-              { label: 'Due', value: 'due' as const },
+              { label: 'Latest First', value: 'latest' as const, icon: '↓' },
+              { label: 'Oldest First', value: 'oldest' as const, icon: '↑' },
+            ].map((option) => {
+              const selected = sortBy === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.filterOption,
+                    {
+                      borderColor: selected ? colors.primary[500] : colors.border.medium,
+                      backgroundColor: selected ? colors.primary[50] : colors.background.primary,
+                    },
+                  ]}
+                  onPress={() => {
+                    handleSelectSort(option.value);
+                    setShowStatusFilterModal(false);
+                  }}
+                  activeOpacity={0.7}>
+                  <Text
+                    style={[
+                      styles.filterOptionText,
+                      {
+                        color: selected ? colors.primary[700] : colors.text.primary,
+                        fontWeight: selected ? typography.fontWeight.semibold : typography.fontWeight.regular,
+                      },
+                    ]}>
+                    {option.icon} {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+
+            <View style={[styles.filterDivider, { backgroundColor: colors.border.light }]} />
+
+            <Text style={[styles.filterModalTitle, { color: colors.text.primary }]}>Filter by Status</Text>
+
+            {[
+              { label: 'All Tenants', value: 'all' as const },
+              { label: 'Active', value: 'active' as const },
+              { label: 'Vacated', value: 'vacated' as const },
             ].map((option) => {
               const selected = selectedStatus === option.value;
               return (
@@ -690,6 +736,10 @@ const styles = StyleSheet.create({
   },
   filterOptionText: {
     fontSize: typography.fontSize.md,
+  },
+  filterDivider: {
+    height: 1,
+    marginVertical: spacing.md,
   },
   filterModalCloseButton: {
     marginTop: spacing.sm,

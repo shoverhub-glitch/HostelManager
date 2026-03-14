@@ -632,13 +632,14 @@ export const propertyService = {
 };
 
 export const tenantService = {
-  async getTenants(propertyId?: string, search?: string, status?: string, page: number = 1, pageSize: number = 50): Promise<PaginatedResponse<Tenant>> {
+  async getTenants(propertyId?: string, search?: string, status?: string, page: number = 1, pageSize: number = 50, sort?: 'latest' | 'oldest'): Promise<PaginatedResponse<Tenant>> {
     let endpoint = '/tenants?';
     const params: string[] = [];
     
     if (propertyId) params.push(`property_id=${encodeURIComponent(propertyId)}`);
     if (search) params.push(`search=${encodeURIComponent(search)}`);
     if (status) params.push(`status=${encodeURIComponent(status)}`);
+    if (sort) params.push(`sort=${encodeURIComponent(sort)}`);
     params.push(`page=${page}`);
     params.push(`page_size=${pageSize}`);
     

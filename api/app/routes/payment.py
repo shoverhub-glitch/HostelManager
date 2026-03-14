@@ -174,7 +174,7 @@ async def list_payments(
     # Single aggregation pipeline replaces all N+1 queries
     pipeline = [
         {"$match": match_stage},
-        {"$sort": {"updatedAt": -1}},
+        {"$sort": {"dueDate": -1, "createdAt": -1}},  # Sort by latest due date first, then by creation date
         {"$skip": skip},
         {"$limit": page_size},
         # Lookup tenant name

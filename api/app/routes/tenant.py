@@ -13,7 +13,8 @@ async def get_tenants(
     search: str = None,
     status: str = None,
     page: int = 1,
-    page_size: int = 50
+    page_size: int = 50,
+    sort: str = None
 ):
     page = max(1, page)
     page_size = min(100, max(1, page_size))  # Cap at 100 per page
@@ -44,6 +45,7 @@ async def get_tenants(
         limit=page_size,
         include_room_bed=True,  # Enrich with room/bed data
         property_ids=scoped_property_ids,
+        sort=sort,
     )
 
     return {

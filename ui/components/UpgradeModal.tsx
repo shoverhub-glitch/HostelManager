@@ -208,7 +208,9 @@ export default function UpgradeModal({
       try {
         setProcessing(true);
         setError(null);
-        await subscriptionService.updateSubscription('free', 0);
+        // Free plan downgrade must go through cancel endpoint to trigger archival lifecycle
+        // This ensures excess resources are archived with 30-day recovery grace period
+        await subscriptionService.cancelSubscription();
         onSelectPlan('free');
         onClose();
       } catch (err: any) {

@@ -41,6 +41,17 @@ import { cacheKeys, getScreenCache, setScreenCache, clearScreenCache } from '@/s
 import UpgradeModal from '@/components/UpgradeModal';
 
 const PAYMENTS_CACHE_STALE_MS = 30 * 1000;
+const PAYMENTS_PAGE_SIZE = 50;
+const MAX_ERROR_MESSAGE_LENGTH = 220;
+
+function normalizeErrorMessage(message?: string): string {
+  if (!message) return 'Failed to load payments';
+  const normalized = String(message).replace(/\s+/g, ' ').trim();
+  if (!normalized) return 'Failed to load payments';
+  return normalized.length > MAX_ERROR_MESSAGE_LENGTH
+    ? `${normalized.slice(0, MAX_ERROR_MESSAGE_LENGTH)}...`
+    : normalized;
+}
 
 export default function PaymentsScreen() {
   const { colors } = useTheme();
@@ -53,7 +64,7 @@ export default function PaymentsScreen() {
     if (!selectedPropertyId) return { initialPayments: [], initialTotal: 0 };
     const now = new Date();
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const cacheKey = cacheKeys.payments(selectedPropertyId, monthKey);
+    const cacheKey = cacheKeys.payments(selectedPropertyId, `${monthKey}:page:1`);
     const cachedResponse = getScreenCache<PaginatedResponse<Payment>>(cacheKey, PAYMENTS_CACHE_STALE_MS);
     return {
       initialPayments: cachedResponse?.data || [],
@@ -75,6 +86,10 @@ export default function PaymentsScreen() {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'due'>('all');
   const [methodFilter, setMethodFilter] = useState<'all' | 'Cash' | 'Online' | 'Bank Transfer' | 'UPI' | 'Cheque'>('all');
+
+  const getPaymentsCacheKey = useCallback((propertyId: string, keyMonth: string, page: number) => {
+    return cacheKeys.payments(propertyId, `${keyMonth}:page:${page}`);
+  }, []);
 
   // Get month/year display string
   const monthYearString = useMemo(() => {
@@ -114,7 +129,7 @@ export default function PaymentsScreen() {
       return;
     }
 
-    const cacheKey = cacheKeys.payments(selectedPropertyId, monthKey);
+    const cacheKey = getPaymentsCacheKey(selectedPropertyId, monthKey, currentPage);
     if (!forceNetwork) {
       const cachedResponse = getScreenCache<PaginatedResponse<Payment>>(cacheKey, PAYMENTS_CACHE_STALE_MS);
       if (cachedResponse) {
@@ -139,7 +154,7 @@ export default function PaymentsScreen() {
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
         page: currentPage,
-        pageSize: 50,
+        pageSize: PAYMENTS_PAGE_SIZE,
       });
       const data = response.data || [];
       setPayments(data);
@@ -150,7 +165,7 @@ export default function PaymentsScreen() {
       if (err?.code === 'SUBSCRIPTION_LIMIT_EXCEEDED' || err?.details?.status === 402) {
         setShowUpgradeModal(true);
       } else {
-        setError(err?.message || 'Failed to load payments');
+        setError(normalizeErrorMessage(err?.message));
       }
       if (!payments.length) {
         setPayments([]);
@@ -159,12 +174,12 @@ export default function PaymentsScreen() {
       setIsRefreshing(false);
       isFetchingRef.current = false;
     }
-  }, [selectedPropertyId, monthKey, dateRange.startDate, dateRange.endDate, currentPage, payments.length]);
+  }, [selectedPropertyId, monthKey, dateRange.startDate, dateRange.endDate, currentPage, payments.length, getPaymentsCacheKey]);
 
   useFocusEffect(
     useCallback(() => {
       if (!propertyLoading && selectedPropertyId) {
-        const cacheKey = cacheKeys.payments(selectedPropertyId, monthKey);
+        const cacheKey = getPaymentsCacheKey(selectedPropertyId, monthKey, currentPage);
         const hasFreshCache = !!getScreenCache<PaginatedResponse<Payment>>(cacheKey, PAYMENTS_CACHE_STALE_MS);
         const now = Date.now();
         const timeSinceLastRefresh = now - lastFocusRefreshRef.current;
@@ -176,14 +191,14 @@ export default function PaymentsScreen() {
           fetchPayments(shouldRefreshBecauseCacheMissing);
         }
       }
-    }, [selectedPropertyId, propertyLoading, monthKey, fetchPayments])
+    }, [selectedPropertyId, propertyLoading, monthKey, currentPage, fetchPayments, getPaymentsCacheKey])
   );
 
   // Refetch payments when month changes
   useEffect(() => {
     if (!propertyLoading && selectedPropertyId) {
       // Check cache synchronously first to avoid skeleton flash
-      const cacheKey = cacheKeys.payments(selectedPropertyId, monthKey);
+      const cacheKey = getPaymentsCacheKey(selectedPropertyId, monthKey, currentPage);
       const cachedResponse = getScreenCache<PaginatedResponse<Payment>>(cacheKey, PAYMENTS_CACHE_STALE_MS);
       
       if (cachedResponse) {
@@ -205,7 +220,7 @@ export default function PaymentsScreen() {
       setError(null);
       setIsRefreshing(false);
     }
-  }, [monthKey, selectedPropertyId, propertyLoading, payments.length, fetchPayments]);
+  }, [monthKey, currentPage, selectedPropertyId, propertyLoading, payments.length, fetchPayments, getPaymentsCacheKey]);
 
   const handlePreviousMonth = () => {
     clearScreenCache('payments:');
@@ -281,6 +296,7 @@ export default function PaymentsScreen() {
   }, [payments, statusFilter, methodFilter]);
 
   const hasActiveFilters = statusFilter !== 'all' || methodFilter !== 'all';
+  const totalPages = Math.max(1, Math.ceil(total / PAYMENTS_PAGE_SIZE));
 
   const clearFilters = () => {
     setStatusFilter('all');
@@ -343,8 +359,8 @@ export default function PaymentsScreen() {
                 </TouchableOpacity>
               </View>
             )}
-            {filteredPayments.map((payment, index) => (
-                <TouchableOpacity key={index} activeOpacity={0.7} onPress={() => router.push(`/edit-payment?paymentId=${payment.id}`)}>
+            {filteredPayments.map((payment) => (
+              <TouchableOpacity key={payment.id} activeOpacity={0.7} onPress={() => router.push(`/edit-payment?paymentId=${payment.id}`)}>
                   <Card style={styles.paymentCard}>
                     <View style={styles.paymentHeader}>
                       <View style={styles.statusIconContainer}>
@@ -352,7 +368,7 @@ export default function PaymentsScreen() {
                       </View>
                       <View style={styles.paymentInfo}>
                         <View style={styles.tenantNameRow}>
-                          <Text style={[styles.tenantName, { color: colors.text.primary }]}>
+                          <Text style={[styles.tenantName, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">
                             {payment.tenantName || 'Unknown Tenant'}
                           </Text>
                           {payment.tenantStatus === 'vacated' && (
@@ -362,10 +378,10 @@ export default function PaymentsScreen() {
                             </View>
                           )}
                         </View>
-                        <Text style={[styles.bedNumber, { color: colors.text.tertiary }]}>Room: {payment.roomNumber || 'N/A'}</Text>
+                        <Text style={[styles.bedNumber, { color: colors.text.tertiary }]} numberOfLines={1} ellipsizeMode="tail">Room: {payment.roomNumber || 'N/A'}</Text>
                       </View>
                       <View style={styles.amountContainer}>
-                        <Text style={[styles.amount, { color: colors.text.primary }]}>{payment.amount}</Text>
+                        <Text style={[styles.amount, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{payment.amount}</Text>
                         <StatusBadge status={payment.status} />
                       </View>
                     </View>
@@ -378,12 +394,12 @@ export default function PaymentsScreen() {
                         {payment.status === 'paid' ? (
                           <>
                             <Text style={[styles.dateLabel, { color: colors.text.secondary }]}>Paid On:</Text>
-                            <Text style={[styles.dateValue, { color: colors.text.primary }]}>{payment.paidDate || payment.dueDate || '-'}</Text>
+                            <Text style={[styles.dateValue, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{payment.paidDate || payment.dueDate || '-'}</Text>
                           </>
                         ) : (
                           <>
                             <Text style={[styles.dateLabel, { color: colors.text.secondary }]}>Due:</Text>
-                            <Text style={[styles.dateValue, { color: colors.text.primary }]}>{payment.dueDate || '-'}</Text>
+                            <Text style={[styles.dateValue, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{payment.dueDate || '-'}</Text>
                           </>
                         )}
                       </View>
@@ -391,13 +407,61 @@ export default function PaymentsScreen() {
                       {payment.method && (
                         <View style={styles.methodRow}>
                           <Text style={[styles.methodLabel, { color: colors.text.secondary }]}>Method:</Text>
-                          <Text style={[styles.methodValue, { color: colors.primary[500] }]}>{payment.method}</Text>
+                          <Text style={[styles.methodValue, { color: colors.primary[500] }]} numberOfLines={1} ellipsizeMode="tail">{payment.method}</Text>
                         </View>
                       )}
                     </View>
                   </Card>
                 </TouchableOpacity>
               ))}
+
+            {total > PAYMENTS_PAGE_SIZE && (
+              <View style={[styles.paginationContainer, { backgroundColor: colors.background.secondary, borderTopColor: colors.border.light }]}>
+                <TouchableOpacity
+                  style={[
+                    styles.paginationButton,
+                    {
+                      backgroundColor: currentPage === 1 ? colors.neutral[100] : colors.primary[500],
+                      borderColor: colors.border.medium,
+                    },
+                  ]}
+                  onPress={() => {
+                    if (currentPage > 1) {
+                      setCurrentPage(currentPage - 1);
+                    }
+                  }}
+                  disabled={currentPage === 1 || isRefreshing}
+                  activeOpacity={0.7}>
+                  <Text style={[styles.paginationButtonText, { color: currentPage === 1 ? colors.text.tertiary : colors.white }]}>
+                    ← Previous
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={styles.paginationInfo}>
+                  <Text style={[styles.paginationText, { color: colors.text.primary }]}>Page {currentPage} of {totalPages}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.paginationButton,
+                    {
+                      backgroundColor: currentPage >= totalPages ? colors.neutral[100] : colors.primary[500],
+                      borderColor: colors.border.medium,
+                    },
+                  ]}
+                  onPress={() => {
+                    if (currentPage < totalPages) {
+                      setCurrentPage(currentPage + 1);
+                    }
+                  }}
+                  disabled={currentPage >= totalPages || isRefreshing}
+                  activeOpacity={0.7}>
+                  <Text style={[styles.paginationButtonText, { color: currentPage >= totalPages ? colors.text.tertiary : colors.white }]}>
+                    Next →
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -704,6 +768,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: spacing.md,
     marginHorizontal: spacing.md,
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+  },
+  paginationButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paginationButtonText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  paginationInfo: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  paginationText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
   },
   filterSummaryText: {
     fontSize: typography.fontSize.sm,

@@ -108,6 +108,12 @@ async def upgrade_subscription(
     payload: dict = Body(...),
     user_id: str = Depends(get_current_user)
 ):
+    """
+    Upgrade or change subscription plan.
+    - For paid plan upgrades: Updates subscription and restores archived resources if upgrading from free
+    - For paid plan downgrades (lateral): Updates subscription but resources remain active (use /cancel for archival)
+    - For free plan selection: Use /cancel endpoint instead (triggers archival lifecycle)
+    """
     try:
         plan = payload.get("plan")
         period = payload.get("period", 1)
@@ -127,8 +133,8 @@ async def upgrade_subscription(
         # Update subscription
         sub = await SubscriptionService.update_subscription(user_id, plan, period)
         
-        # If upgrading, restore archived resources
-        if plan != old_plan and old_plan != 'free':
+        # If upgrading from free to paid, restore archived resources
+        if old_plan == 'free' and plan != 'free':
             restore_result = await SubscriptionLifecycle.handle_upgrade(user_id, plan)
             if restore_result.get("success"):
                 sub_dict = sub.model_dump()
@@ -362,8 +368,8 @@ async def recover_archived_resources(user_id: str = Depends(get_current_user)):
 @router.get("/all")
 async def get_all_subscriptions(user_id: str = Depends(get_current_user)):
     """
-    Get all 3 subscription documents (free, pro, premium) for the current user.
-    Each subscription shows plan details including limits and pricing.
+    Get all subscription documents for the current user (typically a single active subscription).
+    Shows current plan details including limits, pricing, and period information.
     """
     try:
         from app.database.mongodb import db
@@ -506,28 +512,4 @@ async def disable_auto_renewal(user_id: str = Depends(get_current_user)):
         raise HTTPException(
             status_code=500,
             detail="Error disabling auto-renewal. Please try again."
-        )
-
-
-@router.post("/cancel")
-async def cancel_subscription(user_id: str = Depends(get_current_user)):
-    """Cancel active subscription and downgrade to free plan"""
-    try:
-        result = await SubscriptionService.cancel_subscription(user_id)
-        return {
-            "data": {
-                "success": True,
-                "message": result.get("message", "Subscription cancelled successfully"),
-                "plan": result.get("plan", "free")
-            }
-        }
-    except ValueError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail="Error cancelling subscription. Please try again."
         )

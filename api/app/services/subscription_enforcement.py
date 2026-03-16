@@ -66,8 +66,11 @@ class SubscriptionEnforcement:
                 logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
-            # Count existing properties using string owner_id
-            current = await db["properties"].count_documents(build_owner_query(owner_id))
+            # Count existing properties using string owner_id (exclude deleted)
+            current = await db["properties"].count_documents({
+                **build_owner_query(owner_id),
+                "isDeleted": {"$ne": True}
+            })
 
             # Check quota
             if current >= limits["properties"]:
@@ -119,8 +122,13 @@ class SubscriptionEnforcement:
             # Get subscription
             sub = await SubscriptionService.get_subscription(owner_id)
 
-            # Check subscription status
-            if sub.status == "expired":
+            # Check subscription status AND expiry date (consistent with property check)
+            now = datetime.now(timezone.utc)
+            expiry = datetime.fromisoformat(sub.currentPeriodEnd.replace('Z', '+00:00'))
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+
+            if sub.status == "expired" or expiry < now:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=f"Subscription expired on {sub.currentPeriodEnd}. Please renew to create tenants."
@@ -134,10 +142,11 @@ class SubscriptionEnforcement:
                 logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
-            # Count existing tenants in THIS property only (not across all properties)
-            current = await db["tenants"].count_documents(
-                {"propertyId": property_id}
-            )
+            # Count existing tenants in THIS property only (not across all properties, exclude deleted)
+            current = await db["tenants"].count_documents({
+                "propertyId": property_id,
+                "isDeleted": {"$ne": True}
+            })
 
             # Check quota (max tenants per property)
             if current >= limits["tenants"]:
@@ -189,8 +198,13 @@ class SubscriptionEnforcement:
             # Get subscription
             sub = await SubscriptionService.get_subscription(owner_id)
 
-            # Check subscription status
-            if sub.status == "expired":
+            # Check subscription status AND expiry date (consistent with property check)
+            now = datetime.now(timezone.utc)
+            expiry = datetime.fromisoformat(sub.currentPeriodEnd.replace('Z', '+00:00'))
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+
+            if sub.status == "expired" or expiry < now:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=f"Subscription expired on {sub.currentPeriodEnd}. Please renew to create rooms."
@@ -204,10 +218,11 @@ class SubscriptionEnforcement:
                 logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
-            # Count existing rooms in THIS property
-            current = await db["rooms"].count_documents(
-                {"propertyId": property_id}
-            )
+            # Count existing rooms in THIS property (exclude deleted)
+            current = await db["rooms"].count_documents({
+                "propertyId": property_id,
+                "isDeleted": {"$ne": True}
+            })
 
             # Check quota (30 rooms per property)
             room_limit = limits["rooms"]
@@ -260,8 +275,13 @@ class SubscriptionEnforcement:
             # Get subscription
             sub = await SubscriptionService.get_subscription(owner_id)
 
-            # Check subscription status
-            if sub.status == "expired":
+            # Check subscription status AND expiry date (consistent with property check)
+            now = datetime.now(timezone.utc)
+            expiry = datetime.fromisoformat(sub.currentPeriodEnd.replace('Z', '+00:00'))
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+
+            if sub.status == "expired" or expiry < now:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=f"Subscription expired on {sub.currentPeriodEnd}. Please renew to add staff members."
@@ -275,10 +295,12 @@ class SubscriptionEnforcement:
                 logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
-            # Count existing staff in THIS property (not archived)
-            current = await db["staff"].count_documents(
-                {"propertyId": property_id, "archived": False}
-            )
+            # Count existing staff in THIS property (not archived, not deleted)
+            current = await db["staff"].count_documents({
+                "propertyId": property_id, 
+                "archived": False,
+                "isDeleted": {"$ne": True}
+            })
 
             # Check quota
             staff_limit = limits["staff"]

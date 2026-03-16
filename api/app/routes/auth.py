@@ -1,5 +1,6 @@
 from fastapi import APIRouter, status, Request, HTTPException
 from app.utils.rate_limit import rate_limit_dep
+from app.utils.rate_limit import rate_limit_dep, sensitive_action_limit
 from app.services.auth_service import (
     register_user_service,
     login_user_service,
@@ -30,7 +31,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED, summary="Register a new user", tags=["auth"])
-async def register(user: UserCreate):
+@sensitive_action_limit
+async def register(request: Request, user: UserCreate):
     return await register_user_service(user)
 
 
@@ -41,7 +43,8 @@ async def login(request: Request, data: UserLogin):
 
 
 @router.post("/email/send-otp", status_code=status.HTTP_200_OK, summary="Send email verification OTP", tags=["auth"])
-async def send_email_otp(payload: EmailSendOTPRequest):
+@sensitive_action_limit
+async def send_email_otp(request: Request, payload: EmailSendOTPRequest):
     return await send_email_otp_service(payload.email)
 
 
@@ -82,7 +85,8 @@ async def get_current_user(request: Request):
 
 
 @router.post("/forgot-password", status_code=status.HTTP_200_OK, summary="Send password reset OTP", tags=["auth"])
-async def forgot_password(payload: ForgotPasswordRequest):
+@sensitive_action_limit
+async def forgot_password(request: Request, payload: ForgotPasswordRequest):
     return await forgot_password_service(payload.email)
 
 

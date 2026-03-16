@@ -18,6 +18,12 @@ services:
       - mongodb
     networks:
       - backend-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
 
   mongodb:
@@ -47,6 +53,8 @@ services:
     image: mongo-express
     container_name: mongo-express
     restart: always
+    profiles:
+      - debug
     expose:
       - "8081"
     env_file:

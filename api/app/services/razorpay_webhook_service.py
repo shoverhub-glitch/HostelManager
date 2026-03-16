@@ -20,8 +20,8 @@ class RazorpayWebhookService:
     def verify_signature(payload: bytes, signature: str) -> bool:
         """Verify that the webhook actually came from Razorpay"""
         if not RAZORPAY_WEBHOOK_SECRET:
-            logger.warning("RAZORPAY_WEBHOOK_SECRET not set, skipping verification (INSECURE)")
-            return True
+            logger.error("RAZORPAY_WEBHOOK_SECRET not set in environment. Webhooks MUST be signed in production.")
+            raise ValueError("Razorpay webhook secret not configured. Cannot verify webhook authenticity.")
             
         expected_signature = hmac.new(
             RAZORPAY_WEBHOOK_SECRET.encode(),

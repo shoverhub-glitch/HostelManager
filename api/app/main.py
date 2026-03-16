@@ -41,7 +41,7 @@ async def ensure_indexes():
     async def create_index_safe(collection, keys, **kwargs):
         """Safely create an index, ignoring conflicts with existing indexes."""
         try:
-            db[collection].create_index(keys, **kwargs)
+            await db[collection].create_index(keys, **kwargs)
         except OperationFailure as e:
             # IndexKeySpecsConflict (code 86) means the index already exists with different specs
             # This is safe to ignore - the index was already created
@@ -213,6 +213,17 @@ async def lifespan(app):
         
         logger.info(f"✓ Database cleanup completed at {now}")
 
+    # Wrapper for cleanup of expired archived resources
+    async def cleanup_expired_archives_job():
+        """Cleanup permanently deleted archived resources after 30-day grace period."""
+        from app.services.subscription_lifecycle import SubscriptionLifecycle
+        logger = logging.getLogger(__name__)
+        try:
+            await SubscriptionLifecycle.cleanup_expired_archives()
+            logger.info(f"✓ Expired archives cleanup completed at {datetime.now(timezone.utc)}")
+        except Exception as e:
+            logger.error(f"Error during expired archives cleanup: {str(e)}")
+
     # Job 1: Generate monthly payments daily at 00:05 UTC
     # This ensures all tenants get their monthly payment created on the same day
     scheduler.add_job(
@@ -250,12 +261,25 @@ async def lifespan(app):
         max_instances=1,
         coalesce=True
     )
+
+    # Job 4: Cleanup expired archives daily at 02:00 UTC
+    # Runs after subscription renewal check (01:00 UTC) to handle any newly-expired resources
+    scheduler.add_job(
+        cleanup_expired_archives_job,
+        trigger=CronTrigger(hour=2, minute=0, timezone="UTC"),
+        id="cleanup_expired_archives",
+        name="Cleanup permanently deleted archived resources after 30-day grace",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300
+    )
     
     scheduler.start()
     app.state.scheduler = scheduler
     
     logger.info("✓ Background scheduler initialized")
-    logger.info("✓ Jobs registered: generate_monthly_payments, auto_renewal_subscriptions, db_cleanup")
+    logger.info("✓ Jobs registered: generate_monthly_payments, auto_renewal_subscriptions, db_cleanup, cleanup_expired_archives")
     
     yield
     

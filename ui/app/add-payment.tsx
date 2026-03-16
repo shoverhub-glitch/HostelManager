@@ -82,15 +82,7 @@ export default function AddPaymentScreen() {
   const handleStatusChange = (newStatus: 'paid' | 'due') => {
     if (newStatus === 'paid' || newStatus === 'due') {
       setStatus(newStatus);
-      if (newStatus === 'paid') {
-        setStatusAutoUpdateNotice(null);
-      }
-      
-      // If status is 'due', set anchor day to today
-      if (newStatus === 'due') {
-        const today = new Date();
-        setAnchorDay(today.getDate());
-      }
+      setStatusAutoUpdateNotice(null);
     }
   };
 
@@ -136,7 +128,7 @@ export default function AddPaymentScreen() {
           status,
           billingCycle: 'monthly',
           anchorDay: anchorDay,
-          ...(status === 'paid' ? { method: paymentMethod } : {}),
+          method: paymentMethod,
         };
       }
 
@@ -349,9 +341,9 @@ export default function AddPaymentScreen() {
             {/* Auto-generate Payments Toggle */}
             <View style={[styles.toggleContainer, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[50], borderColor: colors.border.light }]}>
               <View style={styles.toggleTextContainer}>
-                <Text style={[styles.toggleLabel, { color: colors.text.primary }]}>Auto-Generate Payment</Text>
+                <Text style={[styles.toggleLabel, { color: colors.text.primary }]}>Auto-Generate Payments</Text>
                 <Text style={[styles.toggleDescription, { color: colors.text.secondary }]}>
-                  Create an initial payment record for this tenant
+                  Automatically create monthly payment records for this tenant
                 </Text>
               </View>
               <Switch
@@ -479,18 +471,8 @@ export default function AddPaymentScreen() {
                     key={day}
                     style={[styles.modalOption, { borderBottomColor: colors.border.light }]}
                     onPress={() => {
-                      const todayDay = new Date().getDate();
-                      const selectedFutureAnchor = day > todayDay;
-
-                      if (autoGeneratePayments && status === 'paid' && selectedFutureAnchor) {
-                        handleStatusChange('due');
-                        setStatusAutoUpdateNotice(
-                          `Future date selected (Day ${day}). Status changed to Due and anchor reset to today.`
-                        );
-                      } else {
-                        setAnchorDay(day);
-                        setStatusAutoUpdateNotice(null);
-                      }
+                      setAnchorDay(day);
+                      setStatusAutoUpdateNotice(null);
                       setShowAnchorDayPicker(false);
                     }}
                     activeOpacity={0.7}>

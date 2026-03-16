@@ -30,6 +30,17 @@ import { cacheKeys, clearScreenCache, getScreenCache, setScreenCache } from '@/s
 
 const ROOMS_CACHE_STALE_MS = 60 * 1000;
 const ROOMS_FOCUS_THROTTLE_MS = 60 * 1000;
+const ROOMS_PAGE_SIZE = 50;
+const MAX_ERROR_MESSAGE_LENGTH = 220;
+
+function normalizeErrorMessage(message?: string): string {
+  if (!message) return 'Failed to load rooms';
+  const normalized = String(message).replace(/\s+/g, ' ').trim();
+  if (!normalized) return 'Failed to load rooms';
+  return normalized.length > MAX_ERROR_MESSAGE_LENGTH
+    ? `${normalized.slice(0, MAX_ERROR_MESSAGE_LENGTH)}...`
+    : normalized;
+}
 
 export default function ManageRoomsScreen() {
   const { colors } = useTheme();
@@ -42,6 +53,8 @@ export default function ManageRoomsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [showArchiveWarning, setShowArchiveWarning] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
   const [warningAction, setWarningAction] = useState<'edit' | 'delete' | null>(null);
@@ -49,17 +62,22 @@ export default function ManageRoomsScreen() {
   const [deleting, setDeleting] = useState(false);
   const lastRoomsFocusRefreshRef = useRef<number>(0);
 
-  const fetchRooms = useCallback(async (forceNetwork: boolean = false) => {
+  const getRoomsCacheKey = useCallback((propertyId: string, page: number) => {
+    return `${cacheKeys.rooms(propertyId)}:page:${page}`;
+  }, []);
+
+  const fetchRooms = useCallback(async (page: number = currentPage, forceNetwork: boolean = false) => {
     if (!selectedPropertyId) {
       setLoading(false);
       return;
     }
 
-    const cacheKey = cacheKeys.rooms(selectedPropertyId);
+    const cacheKey = getRoomsCacheKey(selectedPropertyId, page);
     if (!forceNetwork) {
       const cachedResponse = getScreenCache<PaginatedResponse<Room>>(cacheKey, ROOMS_CACHE_STALE_MS);
       if (cachedResponse) {
         setRooms(cachedResponse.data || []);
+        setTotal(cachedResponse.meta?.total || 0);
         setError(null);
         setLoading(false);
         return;
@@ -69,24 +87,25 @@ export default function ManageRoomsScreen() {
     try {
       setLoading(true);
       setError(null);
-      const response = await roomService.getRooms(selectedPropertyId);
+      const response = await roomService.getRooms(selectedPropertyId, undefined, page, ROOMS_PAGE_SIZE);
 
       if (response.data) {
         setRooms(response.data);
+        setTotal(response.meta?.total || response.data.length || 0);
         setScreenCache(cacheKey, response);
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to load rooms');
+      setError(normalizeErrorMessage(err?.message));
     } finally {
       setLoading(false);
     }
-  }, [selectedPropertyId]);
+  }, [selectedPropertyId, currentPage, getRoomsCacheKey]);
 
   useFocusEffect(
     useCallback(() => {
       if (propertyLoading || !selectedPropertyId) return;
       
-      const cacheKey = cacheKeys.rooms(selectedPropertyId);
+      const cacheKey = getRoomsCacheKey(selectedPropertyId, currentPage);
       const hasFreshCache = !!getScreenCache<PaginatedResponse<Room>>(cacheKey, ROOMS_CACHE_STALE_MS);
       const now = Date.now();
       const shouldRefreshBecauseCacheMissing = !hasFreshCache;
@@ -96,19 +115,20 @@ export default function ManageRoomsScreen() {
 
       if (shouldRefreshBecauseCacheMissing || shouldRefreshByThrottle) {
         lastRoomsFocusRefreshRef.current = now;
-        fetchRooms(shouldRefreshBecauseCacheMissing);
+        fetchRooms(currentPage, shouldRefreshBecauseCacheMissing);
       }
-    }, [propertyLoading, selectedPropertyId, fetchRooms])
+    }, [propertyLoading, selectedPropertyId, currentPage, fetchRooms, getRoomsCacheKey])
   );
 
   const handleRetry = () => {
-    fetchRooms(true);
+    fetchRooms(currentPage, true);
   };
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+    setCurrentPage(1);
     try {
-      await fetchRooms(true);
+      await fetchRooms(1, true);
     } finally {
       setRefreshing(false);
     }
@@ -120,6 +140,8 @@ export default function ManageRoomsScreen() {
     }
     router.push('/room-form');
   };
+
+  const totalPages = Math.max(1, Math.ceil(total / ROOMS_PAGE_SIZE));
 
   const handleEditRoom = (room: any) => {
     if (room.active === false) {
@@ -151,7 +173,7 @@ export default function ManageRoomsScreen() {
       
       // Clear cache and refresh
       clearScreenCache('rooms:');
-      await fetchRooms();
+      await fetchRooms(currentPage, true);
       
       setShowDeleteConfirm(false);
       setSelectedRoom(null);
@@ -263,9 +285,9 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
           />
         ) : (
           <View style={[styles.roomsGrid, isTablet && styles.roomsGridTablet]}>
-            {rooms.map((room, index) => (
+            {rooms.map((room) => (
               <Card
-                key={index}
+                key={room.id}
                 style={[
                   styles.roomCard,
                   { width: roomCardWidth },
@@ -278,7 +300,7 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
                     </View>
                     <View style={styles.roomInfo}>
                       <View style={styles.roomNameRow}>
-                        <Text style={[styles.roomNumber, { color: colors.text.primary }]}>
+                        <Text style={[styles.roomNumber, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">
                           Room {room.roomNumber}
                         </Text>
                         {room.active === false && (
@@ -290,7 +312,7 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
                           </View>
                         )}
                       </View>
-                      <Text style={[styles.roomFloor, { color: colors.text.secondary }]}>
+                      <Text style={[styles.roomFloor, { color: colors.text.secondary }]} numberOfLines={1} ellipsizeMode="tail">
                         Floor {room.floor}
                       </Text>
                     </View>
@@ -355,6 +377,54 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
                 </View>
               </Card>
             ))}
+          </View>
+        )}
+
+        {total > ROOMS_PAGE_SIZE && !error && (
+          <View style={[styles.paginationContainer, { backgroundColor: colors.background.secondary, borderTopColor: colors.border.light }]}>
+            <TouchableOpacity
+              style={[
+                styles.paginationButton,
+                {
+                  backgroundColor: currentPage === 1 ? colors.neutral[100] : colors.primary[500],
+                  borderColor: colors.border.medium,
+                },
+              ]}
+              onPress={() => {
+                if (currentPage > 1) {
+                  const nextPage = currentPage - 1;
+                  setCurrentPage(nextPage);
+                  fetchRooms(nextPage, true);
+                }
+              }}
+              disabled={currentPage === 1 || refreshing}
+              activeOpacity={0.7}>
+              <Text style={[styles.paginationButtonText, { color: currentPage === 1 ? colors.text.tertiary : colors.white }]}>← Previous</Text>
+            </TouchableOpacity>
+
+            <View style={styles.paginationInfo}>
+              <Text style={[styles.paginationText, { color: colors.text.primary }]}>Page {currentPage} of {totalPages}</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.paginationButton,
+                {
+                  backgroundColor: currentPage >= totalPages ? colors.neutral[100] : colors.primary[500],
+                  borderColor: colors.border.medium,
+                },
+              ]}
+              onPress={() => {
+                if (currentPage < totalPages) {
+                  const nextPage = currentPage + 1;
+                  setCurrentPage(nextPage);
+                  fetchRooms(nextPage, true);
+                }
+              }}
+              disabled={currentPage >= totalPages || refreshing}
+              activeOpacity={0.7}>
+              <Text style={[styles.paginationButtonText, { color: currentPage >= totalPages ? colors.text.tertiary : colors.white }]}>Next →</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -616,6 +686,36 @@ const styles = StyleSheet.create({
   roomNumber: {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.bold,
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+  },
+  paginationButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paginationButtonText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  paginationInfo: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  paginationText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
   },
   modalOverlay: {
     flex: 1,

@@ -17,7 +17,7 @@ class PaymentMethod(str, Enum):
 class PaymentBase(BaseModel):
     tenantId: str
     propertyId: str
-    bed: str
+    bed: Optional[str] = None
     amount: str
     status: Literal['paid', 'due']
     dueDate: Optional[date] = None
@@ -69,6 +69,7 @@ class Payment(PaymentBase):
     updatedAt: datetime
     tenantName: Optional[str] = None  # Enriched field from tenant lookup
     roomNumber: Optional[str] = None  # Enriched field from room lookup
+    tenantStatus: Optional[str] = None  # Enriched field from tenant lookup
 
 
 class PaymentUpdate(BaseModel):

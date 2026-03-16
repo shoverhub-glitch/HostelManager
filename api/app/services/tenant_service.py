@@ -9,7 +9,7 @@ from bson import ObjectId
 from app.models.payment_schema import PaymentCreate
 from app.services.payment_service import PaymentService
 from app.models.tenant_schema import BillingConfig
-from typing import Optional, List, Tuple
+from typing import Optional, List
 
 
 
@@ -34,22 +34,27 @@ class TenantService:
         return today + relativedelta(day=anchor_day)
 
     @classmethod
-    def _calculate_initial_payment_plan(cls, anchor_day: int, billing_status: str, today: date) -> Tuple[bool, date]:
+    def _calculate_initial_due_date(cls, anchor_day: int, billing_status: str, today: date) -> date:
         """
-        Decide whether to create an initial payment now and what dueDate to use.
+        Calculate the due date for the initial payment when a tenant is created.
 
         Rules:
-        - `paid` + past/today anchor: create now as `paid` for current month's anchor.
-        - `paid` + future anchor: do not create now; first auto-generated payment should happen on anchor day.
-        - `due`: create now as `due` for current month's anchor (past, today, or future).
+        - `due`: next upcoming anchor (current month if anchor not yet passed, else next month).
+        - `paid`: most recently passed anchor (current month if anchor passed, else previous month).
         """
         current_month_anchor = cls._get_current_month_anchor(anchor_day, today)
         is_future_anchor = current_month_anchor > today
 
-        if billing_status == BillingStatus.PAID.value and is_future_anchor:
-            return False, current_month_anchor
-
-        return True, current_month_anchor
+        if billing_status == BillingStatus.DUE.value:
+            # Anchor already passed this month — next due date is next month
+            if not is_future_anchor:
+                return current_month_anchor + relativedelta(months=1)
+            return current_month_anchor
+        else:  # paid
+            # Anchor hasn't arrived yet this month — last billing cycle was previous month
+            if is_future_anchor:
+                return current_month_anchor - relativedelta(months=1)
+            return current_month_anchor
 
     async def get_tenants(
         self,
@@ -232,23 +237,21 @@ class TenantService:
         if auto_generate and billing_config:
             anchor_day = billing_config.anchorDay
             today_date = datetime.now(timezone.utc).date()
-            should_create_initial_payment, due_date = self._calculate_initial_payment_plan(
+            due_date = self._calculate_initial_due_date(
                 anchor_day=anchor_day,
                 billing_status=billing_config.status,
                 today=today_date,
             )
-
-            if should_create_initial_payment:
-                payment = PaymentCreate(
-                    tenantId=tenant_data["id"],
-                    propertyId=tenant_data["propertyId"],
-                    bed=tenant_data.get("bedId", ""),
-                    amount=tenant_data["rent"],
-                    status=billing_config.status,
-                    dueDate=due_date,
-                    method=billing_config.method or PaymentMethod.CASH.value
-                )
-                await payment_service.create_payment(payment)
+            payment = PaymentCreate(
+                tenantId=tenant_data["id"],
+                propertyId=tenant_data["propertyId"],
+                bed=tenant_data.get("bedId"),
+                amount=tenant_data["rent"],
+                status=billing_config.status,
+                dueDate=due_date,
+                method=billing_config.method or PaymentMethod.CASH.value
+            )
+            await payment_service.create_payment(payment)
 
         return Tenant(**tenant_data)
 
@@ -328,7 +331,63 @@ class TenantService:
         # Ensure billingConfig is handled properly
         if "billingConfig" in tenant_data:
             tenant_data["billingConfig"] = tenant_data["billingConfig"] or None
-        
+
+        # Handle autoGeneratePayments toggle
+        orig_auto_generate = orig_doc.get("autoGeneratePayments", True)
+        new_auto_generate = tenant_data.get("autoGeneratePayments", orig_auto_generate)
+        payments_collection = getCollection("payments")
+        today_date = datetime.now(timezone.utc).date()
+
+        if orig_auto_generate and not new_auto_generate:
+            # Case A: Auto → Manual
+            # Soft-delete all future unpaid (due) auto-generated payments for this tenant
+            # so they don't appear alongside manually entered payments.
+            await payments_collection.update_many(
+                {
+                    "tenantId": tenant_id,
+                    "status": "due",
+                    "isDeleted": {"$ne": True},
+                    "dueDate": {"$gte": today_date.isoformat()},
+                },
+                {"$set": {"isDeleted": True, "updatedAt": datetime.now(timezone.utc).isoformat()}}
+            )
+
+        elif not orig_auto_generate and new_auto_generate:
+            # Case B: Manual → Auto
+            # Immediately create an initial payment so the tenant doesn't have to wait
+            # until the next cron run (up to 24 hours).
+            new_billing_config_data = tenant_data.get("billingConfig") or orig_doc.get("billingConfig")
+            if new_billing_config_data:
+                if isinstance(new_billing_config_data, dict):
+                    new_billing_config = BillingConfig(**new_billing_config_data)
+                else:
+                    new_billing_config = new_billing_config_data
+                due_date = self._calculate_initial_due_date(
+                    anchor_day=new_billing_config.anchorDay,
+                    billing_status=new_billing_config.status,
+                    today=today_date,
+                )
+                # Only create if no payment already exists for this month/due-date
+                existing = await payments_collection.find_one({
+                    "tenantId": tenant_id,
+                    "dueDate": due_date.isoformat(),
+                    "isDeleted": {"$ne": True},
+                })
+                if not existing:
+                    current_rent = tenant_data.get("rent") or orig_doc.get("rent", "0")
+                    current_bed = tenant_data.get("bedId") or orig_doc.get("bedId")
+                    current_property = tenant_data.get("propertyId") or orig_doc.get("propertyId")
+                    initial_payment = PaymentCreate(
+                        tenantId=tenant_id,
+                        propertyId=current_property,
+                        bed=current_bed,
+                        amount=current_rent,
+                        status=new_billing_config.status,
+                        dueDate=due_date,
+                        method=new_billing_config.method or PaymentMethod.CASH.value,
+                    )
+                    await payment_service.create_payment(initial_payment)
+
         # Update the tenant document
         await self.collection.update_one({"_id": ObjectId(tenant_id)}, {"$set": tenant_data})
         

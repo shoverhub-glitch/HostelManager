@@ -376,8 +376,11 @@ async def generate_monthly_payments_manual(request: Request):
     """
     Admin endpoint: Manually trigger monthly payment generation.
     Useful for testing or manual execution outside scheduled time.
-    Requires user authentication.
+    Requires owner role.
     """
+    user_role = getattr(request.state, "role", None)
+    if user_role != "owner":
+        raise HTTPException(status_code=403, detail="Forbidden: owner access required")
     from app.services.tenant_service import TenantService
     tenant_service = TenantService()
     

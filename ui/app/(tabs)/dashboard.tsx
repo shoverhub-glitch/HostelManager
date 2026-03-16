@@ -40,6 +40,16 @@ interface DashboardData {
 }
 
 const DASHBOARD_CACHE_STALE_MS = 60 * 1000;
+const MAX_ERROR_MESSAGE_LENGTH = 220;
+
+function normalizeErrorMessage(message?: string): string {
+  if (!message) return 'Failed to load dashboard data';
+  const normalized = String(message).replace(/\s+/g, ' ').trim();
+  if (!normalized) return 'Failed to load dashboard data';
+  return normalized.length > MAX_ERROR_MESSAGE_LENGTH
+    ? `${normalized.slice(0, MAX_ERROR_MESSAGE_LENGTH)}...`
+    : normalized;
+}
 
 export default function DashboardScreen() {
   const { colors, isDark } = useTheme();
@@ -133,7 +143,7 @@ export default function DashboardScreen() {
         duePayments,
       });
     } catch (err: any) {
-      setError(err?.message || 'Failed to load dashboard data');
+      setError(normalizeErrorMessage(err?.message));
     } finally {
       setLoading(false);
       isFetchingRef.current = false;
@@ -417,22 +427,22 @@ export default function DashboardScreen() {
                         <ArrowRight size={18} color={colors.primary[500]} />
                       </TouchableOpacity>
                     </View>
-                    {dashboardData.duePayments.map((payment, index) => (
-                      <Card key={index} style={styles.paymentCard}>
+                    {dashboardData.duePayments.map((payment) => (
+                      <Card key={payment.id} style={styles.paymentCard}>
                         <View style={styles.paymentRow}>
                           <View style={styles.paymentInfo}>
-                            <Text style={[styles.paymentName, { color: colors.text.primary }]}>
+                            <Text style={[styles.paymentName, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">
                               {payment.tenantName || 'Unknown Tenant'}
                             </Text>
-                            <Text style={[styles.paymentRoom, { color: colors.text.secondary }]}>
+                            <Text style={[styles.paymentRoom, { color: colors.text.secondary }]} numberOfLines={1} ellipsizeMode="tail">
                               Room {payment.bed}
                             </Text>
                           </View>
                           <View style={styles.paymentRight}>
-                            <Text style={[styles.paymentAmount, { color: colors.text.primary }]}>
+                            <Text style={[styles.paymentAmount, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">
                               {payment.amount}
                             </Text>
-                            <Text style={[styles.paymentDate, { color: colors.primary[500] }]}>
+                            <Text style={[styles.paymentDate, { color: colors.primary[500] }]} numberOfLines={1} ellipsizeMode="tail">
                               {payment.dueDate}
                             </Text>
                           </View>

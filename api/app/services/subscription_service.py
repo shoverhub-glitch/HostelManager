@@ -168,15 +168,15 @@ class SubscriptionService:
         try:
             # Count properties using ownerIds/ownerId-compatible query
             owned_properties = await db["properties"].find(
-                build_owner_query(owner_id),
+                {**build_owner_query(owner_id), "isDeleted": {"$ne": True}},
                 {"_id": 1}
             ).to_list(length=None)
             property_ids = [str(doc["_id"]) for doc in owned_properties]
 
             properties = len(property_ids)
-            tenants = await db["tenants"].count_documents({"propertyId": {"$in": property_ids}}) if property_ids else 0
-            rooms = await db["rooms"].count_documents({"propertyId": {"$in": property_ids}}) if property_ids else 0
-            staff = await db["staff"].count_documents({"propertyId": {"$in": property_ids}}) if property_ids else 0
+            tenants = await db["tenants"].count_documents({"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}}) if property_ids else 0
+            rooms = await db["rooms"].count_documents({"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}}) if property_ids else 0
+            staff = await db["staff"].count_documents({"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}}) if property_ids else 0
             now = datetime.now().isoformat()
             return Usage(
                 ownerId=owner_id,
@@ -245,57 +245,6 @@ class SubscriptionService:
             result.append(plan_info)
         
         return result
-
-    @staticmethod
-    async def cancel_subscription(owner_id: str):
-        """Cancel subscription and downgrade to free plan"""
-        try:
-            now = datetime.now().isoformat()
-            
-            # Fetch free plan from database
-            free_plan = await db.plans.find_one({"name": "free"})
-            if not free_plan:
-                free_plan = get_default_plan("free")
-                if not free_plan:
-                    raise ValueError("Free plan not found in database or config")
-            free_limits = {
-                'properties': free_plan['properties'],
-                'tenants': free_plan['tenants'],
-                'rooms': free_plan['rooms'],
-                'staff': free_plan['staff']
-            }
-            
-            period_end = (datetime.now() + timedelta(days=365)).isoformat()
-            
-            # Set all subscriptions to inactive first
-            await db["subscriptions"].update_many(
-                {"ownerId": owner_id},
-                {"$set": {"status": "inactive"}}
-            )
-            
-            # Activate free plan
-            result = await db["subscriptions"].find_one_and_update(
-                {"ownerId": owner_id, "plan": "free"},
-                {"$set": {
-                    "status": "active",
-                    "period": 0,
-                    "price": 0,
-                    "currentPeriodStart": now,
-                    "currentPeriodEnd": period_end,
-                    "updatedAt": now,
-                    "cancelledAt": now,
-                    "propertyLimit": free_plan['properties'],
-                    "roomLimit": free_plan['rooms'],
-                    "tenantLimit": free_plan['tenants'],
-                    "staffLimit": free_plan['staff'],
-                }},
-                return_document=True
-            )
-            if result:
-                return Subscription(**result)
-        except Exception as e:
-            logger.error(f"Error cancelling subscription: {str(e)}")
-        raise ValueError("Subscription not found or could not be cancelled")
 
     @staticmethod
     async def check_downgrade_eligibility(owner_id: str) -> dict:

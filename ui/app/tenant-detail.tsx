@@ -72,6 +72,8 @@ export default function TenantDetailScreen() {
   const [showEditBillingModal, setShowEditBillingModal] = useState(false);
   const [editAnchorDay, setEditAnchorDay] = useState<number>(1);
   const [editAutoGenerate, setEditAutoGenerate] = useState(true);
+  const [editBillingStatus, setEditBillingStatus] = useState<'paid' | 'due'>('due');
+  const [showEditBillingStatusPicker, setShowEditBillingStatusPicker] = useState(false);
   const [showAnchorDayPicker, setShowAnchorDayPicker] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [showEditTenantModal, setShowEditTenantModal] = useState(false);
@@ -258,6 +260,10 @@ export default function TenantDetailScreen() {
 
     if (tenant.billingConfig) {
       setEditAnchorDay(tenant.billingConfig.anchorDay || 1);
+      setEditBillingStatus((tenant.billingConfig.status as 'paid' | 'due') || 'due');
+    } else {
+      setEditAnchorDay(1);
+      setEditBillingStatus('due');
     }
     setShowEditBillingModal(true);
   };
@@ -274,7 +280,7 @@ export default function TenantDetailScreen() {
         const billingConfig: BillingConfig = {
           billingCycle: 'monthly',
           anchorDay: editAnchorDay,
-          status: tenant.billingConfig?.status || 'due',
+          status: editBillingStatus,
         };
 
         nextBillingConfig = billingConfig;
@@ -1189,6 +1195,23 @@ export default function TenantDetailScreen() {
               {editAutoGenerate && (
                 <>
                   <View style={styles.inputContainer}>
+                    <Text style={[styles.label, { color: colors.text.primary }]}>Current billing status *</Text>
+                    <TouchableOpacity
+                      style={[styles.pickerButton, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium }]}
+                      onPress={() => setShowEditBillingStatusPicker(true)}
+                      activeOpacity={0.7}
+                      disabled={editLoading}>
+                      <Text style={[styles.pickerButtonText, { color: colors.text.primary }]}>
+                        {editBillingStatus === 'paid' ? 'Paid — this month already collected' : 'Due — this month not yet paid'}
+                      </Text>
+                      <ChevronDown size={20} color={colors.text.tertiary} />
+                    </TouchableOpacity>
+                    <Text style={[styles.summaryLabel, { color: colors.text.secondary, marginTop: spacing.xs }]}>
+                      Used to create the first payment record correctly
+                    </Text>
+                  </View>
+
+                  <View style={styles.inputContainer}>
                     <Text style={[styles.label, { color: colors.text.primary }]}>When is rent due each month?</Text>
                     <TouchableOpacity
                       style={[styles.pickerButton, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium }]}
@@ -1225,6 +1248,48 @@ export default function TenantDetailScreen() {
             </View>
           </ScrollView>
         </SafeAreaView>
+      </Modal>
+
+      {/* Billing Status Picker Modal */}
+      <Modal
+        visible={showEditBillingStatusPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEditBillingStatusPicker(false)}>
+        <View style={[styles.pickerOverlay, isTablet && styles.pickerOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+          <View
+            style={[
+              styles.pickerContainer,
+              isTablet && styles.pickerContainerTablet,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
+            <View style={[styles.pickerHeader, { borderBottomColor: colors.border.light }]}>
+              <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>Current billing status</Text>
+            </View>
+            <ScrollView style={styles.pickerScrollView}>
+              {(['paid', 'due'] as const).map((s) => (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.pickerOption, { borderBottomColor: colors.border.light }]}
+                  onPress={() => { setEditBillingStatus(s); setShowEditBillingStatusPicker(false); }}
+                  activeOpacity={0.7}>
+                  <Text style={[styles.pickerOptionText, {
+                    color: editBillingStatus === s ? colors.primary[500] : colors.text.primary,
+                    fontWeight: editBillingStatus === s ? typography.fontWeight.semibold : typography.fontWeight.regular,
+                  }]}>
+                    {s === 'paid' ? 'Paid — this month already collected' : 'Due — this month not yet paid'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.pickerCloseButton, { borderTopColor: colors.border.light }]}
+              onPress={() => setShowEditBillingStatusPicker(false)}
+              activeOpacity={0.7}>
+              <Text style={[styles.pickerCloseButtonText, { color: colors.text.secondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       {/* Anchor Day Picker Modal */}

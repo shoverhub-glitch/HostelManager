@@ -29,6 +29,16 @@ import type { Tenant, PaginatedResponse } from '@/services/apiTypes';
 import { cacheKeys, getScreenCache, setScreenCache, clearScreenCache } from '@/services/screenCache';
 
 const TENANTS_CACHE_STALE_MS = 30 * 1000;
+const MAX_ERROR_MESSAGE_LENGTH = 220;
+
+function normalizeErrorMessage(message?: string): string {
+  if (!message) return 'Failed to load tenants';
+  const normalized = String(message).replace(/\s+/g, ' ').trim();
+  if (!normalized) return 'Failed to load tenants';
+  return normalized.length > MAX_ERROR_MESSAGE_LENGTH
+    ? `${normalized.slice(0, MAX_ERROR_MESSAGE_LENGTH)}...`
+    : normalized;
+}
 
 export default function TenantsScreen() {
   const { colors } = useTheme();
@@ -139,7 +149,7 @@ export default function TenantsScreen() {
       if (err?.code === 'SUBSCRIPTION_LIMIT_EXCEEDED' || err?.details?.status === 402) {
         setShowUpgradeModal(true);
       } else {
-        setError(err?.message || 'Failed to load tenants');
+        setError(normalizeErrorMessage(err?.message));
       }
     } finally {
       setLoading(false);
@@ -350,9 +360,9 @@ export default function TenantsScreen() {
           />
         ) : (
           <>
-            {tenants.map((tenant, index) => {
+            {tenants.map((tenant) => {
               return (
-                <Card key={index} style={[styles.tenantCard, tenant.archived === true ? { opacity: 0.6 } : {}] as any}>
+                <Card key={tenant.id} style={[styles.tenantCard, tenant.archived === true ? { opacity: 0.6 } : {}] as any}>
                   <TouchableOpacity
                     onPress={() => router.push(`/tenant-detail?tenantId=${tenant.id}`)}
                     activeOpacity={0.7}
@@ -368,7 +378,7 @@ export default function TenantsScreen() {
                       </View>
                       <View style={styles.tenantInfo}>
                         <View style={styles.tenantNameRow}>
-                          <Text style={[styles.tenantName, { color: colors.text.primary }]}>{tenant.name}</Text>
+                          <Text style={[styles.tenantName, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{tenant.name}</Text>
                           {tenant.tenantStatus === 'vacated' && (
                             <View style={[styles.archivedBadge, { backgroundColor: colors.danger[100] }]}>
                               <LogOut size={12} color={colors.danger[600]} />
@@ -384,7 +394,7 @@ export default function TenantsScreen() {
                         </View>
                         <View style={styles.phoneRow}>
                           <Phone size={13} color={tenant.archived === true ? colors.text.tertiary : colors.primary[500]} />
-                          <Text style={[styles.phoneText, { color: colors.text.secondary }]}>{tenant.phone}</Text>
+                          <Text style={[styles.phoneText, { color: colors.text.secondary }]} numberOfLines={1} ellipsizeMode="tail">{tenant.phone}</Text>
                         </View>
                       </View>
                     </View>
@@ -392,15 +402,15 @@ export default function TenantsScreen() {
                     <View style={styles.detailsRow}>
                       <View style={styles.detailItem}>
                         <Text style={[styles.detailLabel, { color: colors.text.tertiary }]}>Room</Text>
-                        <Text style={[styles.detailValue, { color: colors.text.primary }]}>{getRoomInfo(tenant)}</Text>
+                        <Text style={[styles.detailValue, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{getRoomInfo(tenant)}</Text>
                       </View>
                       <View style={styles.detailItem}>
                         <Text style={[styles.detailLabel, { color: colors.text.tertiary }]}>Rent</Text>
-                        <Text style={[styles.detailValue, { color: colors.text.primary }]}>{tenant.rent}</Text>
+                        <Text style={[styles.detailValue, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{tenant.rent}</Text>
                       </View>
                       <View style={styles.detailItem}>
                         <Text style={[styles.detailLabel, { color: colors.text.tertiary }]}>Since</Text>
-                        <Text style={[styles.detailValue, { color: colors.text.primary }]}>{tenant.joinDate}</Text>
+                        <Text style={[styles.detailValue, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{tenant.joinDate}</Text>
                       </View>
                     </View>
                   </TouchableOpacity>

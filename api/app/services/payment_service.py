@@ -61,7 +61,7 @@ class PaymentService:
                 }
             query["propertyId"] = {"$in": property_ids}
 
-        payments = await self.collection.find(query).to_list(length=1000)
+        payments = await self.collection.find(query, {"status": 1, "amount": 1, "_id": 0}).to_list(length=None)
         
         def parse_amount(amount_str):
             """Parse amount string that may contain currency symbols and commas"""
@@ -93,7 +93,7 @@ class PaymentService:
         payment = await self.collection.find_one({"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}})
         if not payment:
             return None
-        update_data = {k: v for k, v in payment_update.model_dump().items() if v is not None}
+        update_data = payment_update.model_dump(exclude_unset=True)
         
         # Auto-set paidDate when status changes to "paid" and paidDate is not provided
         # This handles the case where user changes status to paid but hasn't edited the date

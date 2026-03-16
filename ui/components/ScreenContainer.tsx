@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/context/ThemeContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 
 interface ScreenContainerProps {
   children: ReactNode;
@@ -15,12 +16,18 @@ export default function ScreenContainer({
   style,
 }: ScreenContainerProps) {
   const { colors } = useTheme();
+  const { isTablet, contentMaxWidth } = useResponsiveLayout();
 
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background.primary }, style]}
       edges={edges}>
-      <View style={[styles.content, { backgroundColor: colors.background.primary }]}>
+      <View
+        style={[
+          styles.content,
+          { backgroundColor: colors.background.primary },
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+        ]}>
         {children}
       </View>
     </SafeAreaView>

@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Users,
   Wallet,
-  Building2,
   UserCircle,
 } from 'lucide-react-native';
 import CustomTabBar from '@/components/CustomTabBar';
@@ -43,15 +42,6 @@ export default function TabLayout() {
         options={{
           title: 'Payments',
           tabBarIcon: ({ size, color }) => <Wallet size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="my-property"
-        options={{
-          title: 'MyProperty',
-          tabBarIcon: ({ size, color }) => (
-            <Building2 size={size} color={color} />
-          ),
         }}
       />
       <Tabs.Screen

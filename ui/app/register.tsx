@@ -16,6 +16,7 @@ import { UserPlus, Eye, EyeOff } from 'lucide-react-native';
 import { spacing, typography, radius, shadows, addActionTokens } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { authService } from '@/services/apiClient';
 import { encryptedTokenStorage } from '@/services/encryptedTokenStorage';
 import { deviceIdService } from '@/services/deviceId';
@@ -24,6 +25,7 @@ export default function RegisterScreen() {
   const { colors } = useTheme();
   const { login } = useAuth();
   const router = useRouter();
+  const { isTablet, contentMaxWidth, formMaxWidth } = useResponsiveLayout();
   const otpInputRefs = useRef<Array<TextInput | null>>([]);
 
   const [name, setName] = useState('');
@@ -244,17 +246,26 @@ export default function RegisterScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled">
-          <View style={styles.header}>
-            <View style={[styles.iconCircle, { backgroundColor: colors.primary[50] }]}>
-              <UserPlus size={addActionTokens.iconSize.userPlus.auth} color={colors.action.add.background} />
+          <View
+            style={[
+              styles.contentContainer,
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+            ]}>
+            <View style={styles.header}>
+              <View style={[styles.iconCircle, { backgroundColor: colors.primary[50] }]}>
+                <UserPlus size={addActionTokens.iconSize.userPlus.auth} color={colors.action.add.background} />
+              </View>
+              <Text style={[styles.title, { color: colors.text.primary }]}>Create Account</Text>
+              <Text style={[styles.subtitle, { color: colors.text.secondary }]}> 
+                Register to get started
+              </Text>
             </View>
-            <Text style={[styles.title, { color: colors.text.primary }]}>Create Account</Text>
-            <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
-              Register to get started
-            </Text>
-          </View>
 
-          <View style={styles.formContainer}>
+            <View
+              style={[
+                styles.formContainer,
+                isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
+              ]}>
             {error && (
               <View
                 style={[
@@ -372,7 +383,7 @@ export default function RegisterScreen() {
                 <Text style={[styles.label, { color: colors.text.primary }]}>
                   Enter 6-digit OTP
                 </Text>
-                <View style={styles.otpContainer}>
+                <View style={[styles.otpContainer, isTablet && styles.otpContainerTablet]}>
                   {otp.map((digit, index) => (
                     <TextInput
                       key={index}
@@ -551,6 +562,7 @@ export default function RegisterScreen() {
                 <Text style={[styles.linkTextBold, { color: colors.primary[500] }]}>Login</Text>
               </Text>
             </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -569,6 +581,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
+  },
+  contentContainer: {
+    width: '100%',
   },
   header: {
     alignItems: 'center',
@@ -652,6 +667,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.xs,
     marginBottom: spacing.md,
+  },
+  otpContainerTablet: {
+    maxWidth: 460,
+    alignSelf: 'center',
+    width: '100%',
   },
   otpInput: {
     flex: 1,

@@ -11,6 +11,7 @@ import {
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { spacing, typography, radius } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 
 interface DatePickerProps {
   value: string;
@@ -32,6 +33,7 @@ export default function DatePicker({
   restrictToNext30Days = false,
 }: DatePickerProps) {
   const { colors } = useTheme();
+  const { modalMaxWidth } = useResponsiveLayout();
   const [showModal, setShowModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(
     value ? new Date(value) : new Date()
@@ -210,7 +212,11 @@ export default function DatePicker({
         animationType="fade"
         onRequestClose={() => setShowModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+          <View
+            style={[
+              styles.modalContainer,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
               <TouchableOpacity onPress={handlePreviousMonth} activeOpacity={0.7}>
                 <ChevronLeft size={24} color={colors.primary[500]} />

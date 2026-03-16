@@ -22,6 +22,7 @@ import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { staffService, subscriptionService } from '@/services/apiClient';
 import { Staff, Subscription, PlanLimits } from '@/services/apiTypes';
 import { ChevronLeft, Trash2, Edit2, X, Users, AlertCircle, Calendar, ChevronDown, MapPin } from 'lucide-react-native';
@@ -54,6 +55,7 @@ const STAFF_FOCUS_THROTTLE_MS = 60 * 1000;
 export default function ManageStaffScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+  const { isTablet, contentMaxWidth, modalMaxWidth, formMaxWidth } = useResponsiveLayout();
   const { selectedProperty } = useProperty();
   const isOnline = useNetworkStatus();
 
@@ -461,7 +463,12 @@ export default function ManageStaffScreen() {
       )}
 
       {/* Search Section */}
-      <View style={[styles.searchSection, { backgroundColor: colors.background.primary }]}>
+      <View
+        style={[
+          styles.searchSection,
+          { backgroundColor: colors.background.primary },
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+        ]}>
         <View
           style={[
             styles.searchInputContainer,
@@ -482,11 +489,20 @@ export default function ManageStaffScreen() {
 
       {/* Staff List */}
       {loading ? (
-        <View style={styles.centerContainer}>
+        <View
+          style={[
+            styles.centerContainer,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}>
           <ActivityIndicator size="large" color={colors.primary[500]} />
         </View>
       ) : staffList.length === 0 ? (
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.emptyContainer}>
+        <ScrollView
+          style={[
+            styles.scrollView,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
+          contentContainerStyle={styles.emptyContainer}>
           <EmptyState
             icon={Users}
             title="No Staff Added"
@@ -500,6 +516,7 @@ export default function ManageStaffScreen() {
           data={getFilteredStaff()}
           renderItem={({ item }) => <StaffCard item={item} />}
           keyExtractor={(item) => item.id}
+          style={isTablet ? { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth } : undefined}
           contentContainerStyle={styles.listContent}
           scrollEnabled={true}
           refreshControl={
@@ -537,6 +554,7 @@ export default function ManageStaffScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.keyboardView}>
             <ScrollView
+              style={isTablet ? { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth } : undefined}
               contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled">
               <View style={styles.logoContainer}>
@@ -546,7 +564,11 @@ export default function ManageStaffScreen() {
                 <Text style={[styles.title, { color: colors.text.primary }]}>{editingStaff ? 'Edit Staff Member' : 'Add New Staff'}</Text>
               </View>
 
-              <View style={styles.form}>
+              <View
+                style={[
+                  styles.form,
+                  isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
+                ]}>
                 {formError && (
                   <View style={[styles.errorContainer, { backgroundColor: colors.danger[50], borderColor: colors.danger[200] }]}>
                     <Text style={[styles.errorText, { color: colors.danger[700] }]}>{formError}</Text>
@@ -715,8 +737,23 @@ export default function ManageStaffScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowRolePicker(false)}>
-        <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+        <View
+          style={[
+            styles.modalOverlay,
+            { backgroundColor: colors.modal.overlay },
+            isTablet && { justifyContent: 'center' },
+          ]}>
+          <View
+            style={[
+              styles.modalContainer,
+              { backgroundColor: colors.background.secondary },
+              isTablet && {
+                alignSelf: 'center',
+                width: '100%',
+                maxWidth: modalMaxWidth,
+                borderRadius: radius.xl,
+              },
+            ]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Select Role
@@ -771,7 +808,12 @@ export default function ManageStaffScreen() {
       {/* Delete Confirmation Modal */}
       <Modal visible={showDeleteConfirm} transparent animationType="fade">
         <View style={[styles.overlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.deleteModal, { backgroundColor: colors.background.secondary }]}>
+          <View
+            style={[
+              styles.deleteModal,
+              { backgroundColor: colors.background.secondary },
+              isTablet && { width: '100%', maxWidth: modalMaxWidth },
+            ]}>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={() => {

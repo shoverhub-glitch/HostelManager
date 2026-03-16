@@ -13,9 +13,11 @@ import Card from '@/components/Card';
 import { ChevronLeft, MapPin } from 'lucide-react-native';
 import { spacing, typography, radius } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 
 export default function PropertyDetailScreen() {
   const { colors } = useTheme();
+  const { isTablet, contentMaxWidth } = useResponsiveLayout();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('beds');
 
@@ -192,7 +194,10 @@ export default function PropertyDetailScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+        ]}
         showsVerticalScrollIndicator={false}>
         {activeTab === 'beds' && renderBeds()}
         {activeTab === 'rooms' && renderRooms()}

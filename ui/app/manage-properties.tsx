@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   StatusBar,
-  Dimensions,
   Modal,
   ActivityIndicator,
 } from 'react-native';
@@ -25,6 +24,7 @@ import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { propertyService } from '@/services/apiClient';
 import { clearScreenCache, cacheKeys } from '@/services/screenCache';
 
@@ -32,6 +32,7 @@ export default function ManagePropertiesScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { isTablet, contentMaxWidth, modalMaxWidth } = useResponsiveLayout();
   const { properties, loading, refreshProperties } = useProperty();
   const isOnline = useNetworkStatus();
   const [showArchiveWarning, setShowArchiveWarning] = useState(false);
@@ -40,6 +41,7 @@ export default function ManagePropertiesScreen() {
   const [warningAction, setWarningAction] = useState<'edit' | 'delete' | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const propertyCardWidth = isTablet ? '48.5%' : '100%';
 
 
   const handleRefresh = useCallback(async () => {
@@ -141,6 +143,7 @@ export default function ManagePropertiesScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
           { paddingBottom: spacing.xxxl },
         ]}
         showsVerticalScrollIndicator={false}
@@ -168,12 +171,13 @@ export default function ManagePropertiesScreen() {
             />
           </View>
         ) : (
-          <View style={styles.propertiesGrid}>
+          <View style={[styles.propertiesGrid, isTablet && styles.propertiesGridTablet]}>
             {properties.map((property, index) => (
               <Card
                 key={index}
                 style={{
                   ...styles.propertyCard,
+                  width: propertyCardWidth,
                   borderColor: property.active === false ? colors.warning[200] : colors.border.light,
                 } as any}>
                 {/* Card Header with Icon and Badge */}
@@ -304,7 +308,15 @@ export default function ManagePropertiesScreen() {
 
       <Modal visible={showDeleteConfirm} transparent animationType="fade">
         <View style={[styles.overlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.deleteModal, { backgroundColor: colors.background.secondary }]}>
+          <View
+            style={[
+              styles.deleteModal,
+              {
+                backgroundColor: colors.background.secondary,
+                width: '100%',
+                maxWidth: modalMaxWidth,
+              },
+            ]}>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={() => {
@@ -485,6 +497,11 @@ const styles = StyleSheet.create({
   },
   propertiesGrid: {
     gap: spacing.md,
+  },
+  propertiesGridTablet: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'stretch',
   },
   propertyCard: {
     overflow: 'hidden',

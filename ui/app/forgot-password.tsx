@@ -16,11 +16,13 @@ import { useRouter } from 'expo-router';
 import { KeyRound, Eye, EyeOff, ArrowLeft } from 'lucide-react-native';
 import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { authService } from '@/services/apiClient';
 
 export default function ForgotPasswordScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+  const { isTablet, contentMaxWidth, formMaxWidth } = useResponsiveLayout();
   const otpInputRefs = useRef<Array<TextInput | null>>([]);
 
   const [email, setEmail] = useState('');
@@ -192,7 +194,7 @@ export default function ForgotPasswordScreen() {
         We{`'`}ve sent a 6-digit verification code to {email}
       </Text>
       
-      <View style={styles.otpContainer}>
+      <View style={[styles.otpContainer, isTablet && styles.otpContainerTablet]}>
         {otp.map((digit, index) => (
           <TextInput
             key={index}
@@ -339,39 +341,48 @@ export default function ForgotPasswordScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled">
-          
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => step === 'email' ? router.back() : setStep('email')}>
-            <ArrowLeft size={24} color={colors.text.primary} />
-          </TouchableOpacity>
+          <View
+            style={[
+              styles.contentContainer,
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+            ]}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => step === 'email' ? router.back() : setStep('email')}>
+              <ArrowLeft size={24} color={colors.text.primary} />
+            </TouchableOpacity>
 
-          <View style={styles.header}>
-            <View style={[styles.iconCircle, { backgroundColor: colors.primary[50] }]}>
-              <KeyRound size={40} color={colors.primary[500]} />
-            </View>
-            <Text style={[styles.title, { color: colors.text.primary }]}>Reset Password</Text>
-            <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
-              {step === 'email' && 'Enter your email to receive a reset code'}
-              {step === 'otp' && 'Enter the verification code'}
-              {step === 'password' && 'Create a new secure password'}
-            </Text>
-          </View>
-
-          <View style={styles.formContainer}>
-            {error && (
-              <View
-                style={[
-                  styles.errorContainer,
-                  { backgroundColor: colors.danger[50], borderColor: colors.danger[200] },
-                ]}>
-                <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
+            <View style={styles.header}>
+              <View style={[styles.iconCircle, { backgroundColor: colors.primary[50] }]}>
+                <KeyRound size={40} color={colors.primary[500]} />
               </View>
-            )}
+              <Text style={[styles.title, { color: colors.text.primary }]}>Reset Password</Text>
+              <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
+                {step === 'email' && 'Enter your email to receive a reset code'}
+                {step === 'otp' && 'Enter the verification code'}
+                {step === 'password' && 'Create a new secure password'}
+              </Text>
+            </View>
 
-            {step === 'email' && renderEmailStep()}
-            {step === 'otp' && renderOtpStep()}
-            {step === 'password' && renderPasswordStep()}
+            <View
+              style={[
+                styles.formContainer,
+                isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
+              ]}>
+              {error && (
+                <View
+                  style={[
+                    styles.errorContainer,
+                    { backgroundColor: colors.danger[50], borderColor: colors.danger[200] },
+                  ]}>
+                  <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
+                </View>
+              )}
+
+              {step === 'email' && renderEmailStep()}
+              {step === 'otp' && renderOtpStep()}
+              {step === 'password' && renderPasswordStep()}
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -390,6 +401,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
+  },
+  contentContainer: {
+    width: '100%',
   },
   backButton: {
     width: 40,
@@ -476,6 +490,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.xs,
     marginBottom: spacing.xl,
+  },
+  otpContainerTablet: {
+    maxWidth: 460,
+    alignSelf: 'center',
+    width: '100%',
   },
   otpInput: {
     flex: 1,

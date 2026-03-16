@@ -14,6 +14,7 @@ import { Check, X, AlertCircle, Tag } from 'lucide-react-native';
 import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { subscriptionService, couponService } from '@/services/apiClient';
 import { openRazorpayCheckout, RazorpaySuccessResponse, RazorpayErrorResponse } from '@/services/razorpayService';
 import type { Subscription, PlanMetadata } from '@/services/apiTypes';
@@ -35,6 +36,7 @@ export default function UpgradeModal({
 }: UpgradeModalProps) {
   const { colors } = useTheme();
   const { user } = useAuth();
+  const { isTablet, modalMaxWidth } = useResponsiveLayout();
 
   const [processing, setProcessing] = useState(false);
   const [loadingPlans, setLoadingPlans] = useState(false);
@@ -257,8 +259,12 @@ export default function UpgradeModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={processing ? undefined : onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+      <View style={[styles.overlay, isTablet && styles.overlayTablet]}>
+        <View style={[
+          styles.modalContainer,
+          { backgroundColor: colors.background.secondary },
+          isTablet && { maxWidth: modalMaxWidth, width: '100%', borderBottomLeftRadius: radius.xl, borderBottomRightRadius: radius.xl },
+        ]}>
           <View style={[styles.header, { borderBottomColor: colors.border.light }]}> 
             <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Choose Your Plan</Text>
             {!processing && (
@@ -464,6 +470,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'flex-end',
     paddingHorizontal: 0,
+  },
+  overlayTablet: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
   },
   modalContainer: {
     borderTopLeftRadius: radius.xl,

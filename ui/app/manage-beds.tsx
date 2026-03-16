@@ -23,6 +23,7 @@ import { useProperty } from '@/context/PropertyContext';
 import { bedService, roomService, tenantService } from '@/services/apiClient';
 import type { Bed, Room, Tenant } from '@/services/apiTypes';
 import { cacheKeys, getScreenCache, setScreenCache } from '@/services/screenCache';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 
 interface ManageBedsCachePayload {
   beds: Bed[];
@@ -34,6 +35,7 @@ const MANAGE_BEDS_CACHE_STALE_MS = 30 * 1000;
 
 export default function ManageBedsScreen() {
   const { colors } = useTheme();
+  const { isTablet, contentMaxWidth } = useResponsiveLayout();
   const router = useRouter();
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const { selectedPropertyId } = useProperty();
@@ -141,7 +143,10 @@ export default function ManageBedsScreen() {
           <View style={styles.placeholder} />
         </View>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           showsVerticalScrollIndicator={false}>
           <Skeleton height={100} count={3} />
         </ScrollView>
@@ -165,7 +170,10 @@ export default function ManageBedsScreen() {
           <View style={styles.placeholder} />
         </View>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           showsVerticalScrollIndicator={false}>
           <EmptyState
             icon={BedIcon}
@@ -193,7 +201,10 @@ export default function ManageBedsScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

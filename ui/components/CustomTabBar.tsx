@@ -7,6 +7,10 @@ import { useTheme } from '@/context/ThemeContext';
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const visibleRoutes = state.routes.filter((route) => {
+    const routeOptions = descriptors[route.key]?.options as { href?: unknown } | undefined;
+    return routeOptions?.href !== null;
+  });
 
   // Calculate safe bottom space dynamically based on device
   // On devices with home indicators (iPhone X+), insets.bottom will be ~34px
@@ -28,7 +32,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
         },
       ]}>
       <View style={styles.tabsContainer}>
-        {state.routes.map((route, index) => {
+        {visibleRoutes.map((route) => {
           const { options } = descriptors[route.key];
           const label =
             options.tabBarLabel !== undefined
@@ -37,7 +41,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
               ? options.title
               : route.name;
 
-          const isFocused = state.index === index;
+          const isFocused = state.routes[state.index]?.key === route.key;
 
           const onPress = () => {
             const event = navigation.emit({

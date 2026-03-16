@@ -19,6 +19,7 @@ import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { paymentService, tenantService } from '@/services/apiClient';
 import type { Tenant, Payment } from '@/services/apiTypes';
 import EmptyState from '@/components/EmptyState';
@@ -41,6 +42,7 @@ export default function AddPaymentScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { selectedPropertyId } = useProperty();
+  const { isTablet, contentMaxWidth, modalMaxWidth, formMaxWidth } = useResponsiveLayout();
   const isOnline = useNetworkStatus();
 
   const [name, setName] = useState(typeof params.name === 'string' ? params.name : '');
@@ -223,7 +225,10 @@ export default function AddPaymentScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           keyboardShouldPersistTaps="handled">
           <View style={styles.logoContainer}>
             <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
@@ -232,7 +237,11 @@ export default function AddPaymentScreen() {
             <Text style={[styles.title, { color: colors.text.primary }]}>Record Payment</Text>
           </View>
 
-          <View style={styles.formContainer}>
+          <View
+            style={[
+              styles.formContainer,
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
+            ]}>
             {error && (
               <View style={[styles.errorContainer, { backgroundColor: colors.danger[50], borderColor: colors.danger[200] }]}>
                 <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
@@ -393,8 +402,13 @@ export default function AddPaymentScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowStatusPicker(false)}>
-        <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+        <View style={[styles.modalOverlay, isTablet && styles.modalOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+          <View
+            style={[
+              styles.modalContainer,
+              isTablet && styles.modalContainerTablet,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Select Payment Status
@@ -449,8 +463,13 @@ export default function AddPaymentScreen() {
           transparent
           animationType="fade"
           onRequestClose={() => setShowAnchorDayPicker(false)}>
-          <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
-            <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+          <View style={[styles.modalOverlay, isTablet && styles.modalOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+            <View
+              style={[
+                styles.modalContainer,
+                isTablet && styles.modalContainerTablet,
+                { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+              ]}>
               <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
                 <Text style={[styles.modalTitle, { color: colors.text.primary }]}>When is rent due?</Text>
               </View>
@@ -507,8 +526,13 @@ export default function AddPaymentScreen() {
           transparent
           animationType="fade"
           onRequestClose={() => setShowMethodPicker(false)}>
-          <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
-            <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+          <View style={[styles.modalOverlay, isTablet && styles.modalOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+            <View
+              style={[
+                styles.modalContainer,
+                isTablet && styles.modalContainerTablet,
+                { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+              ]}>
               <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
                 <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Select Payment Method</Text>
               </View>
@@ -717,11 +741,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
+  modalOverlayTablet: {
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
   modalContainer: {
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     maxHeight: '70%',
     ...shadows.xl,
+  },
+  modalContainerTablet: {
+    width: '100%',
+    alignSelf: 'center',
+    maxHeight: '85%',
+    borderBottomLeftRadius: radius.xl,
+    borderBottomRightRadius: radius.xl,
   },
   modalHeader: {
     padding: spacing.lg,

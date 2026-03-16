@@ -34,6 +34,7 @@ import { Bed as BedIcon } from 'lucide-react-native';
 import { spacing, typography, radius, shadows, addActionTokens } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { tenantService, paymentService, roomService, bedService } from '@/services/apiClient';
 import type { Tenant, Payment, Room, Bed, BillingFrequency, BillingConfig } from '@/services/apiTypes';
 import Card from '@/components/Card';
@@ -58,6 +59,8 @@ export default function TenantDetailScreen() {
   const router = useRouter();
   const { tenantId } = useLocalSearchParams<{ tenantId: string }>();
   const isOnline = useNetworkStatus();
+  const { isTablet, isLandscape, contentMaxWidth, modalMaxWidth } = useResponsiveLayout();
+  const isTabletLandscape = isTablet && isLandscape;
 
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -584,7 +587,10 @@ export default function TenantDetailScreen() {
           <View style={styles.placeholder} />
         </View>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           showsVerticalScrollIndicator={false}>
           <Skeleton height={200} count={3} />
         </ScrollView>
@@ -608,7 +614,10 @@ export default function TenantDetailScreen() {
           <View style={styles.placeholder} />
         </View>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           showsVerticalScrollIndicator={false}>
           <EmptyState
             icon={User}
@@ -653,7 +662,10 @@ export default function TenantDetailScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -765,108 +777,92 @@ export default function TenantDetailScreen() {
             </Card>
 
             {tenant.tenantStatus === 'active' && (
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
-                    Financial Summary
-                  </Text>
-                </View>
-
-                <Card style={styles.summaryCard}>
-                  <View style={styles.summaryGrid}>
-                    <View style={styles.summaryItem}>
-                      <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>
-                        Total Paid
-                      </Text>
-                      <Text style={[styles.summaryValue, { color: colors.success[500] }]}>
-                        ₹{totalPaid.toLocaleString('en-IN')}
+              <View style={[styles.overviewColumns, isTabletLandscape && styles.overviewColumnsTablet]}>
+                <View style={[styles.overviewColumn, isTabletLandscape && styles.overviewColumnTablet]}>
+                  <View style={styles.section}>
+                    <View style={styles.sectionHeader}>
+                      <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
+                        Financial Summary
                       </Text>
                     </View>
 
-                    <View style={styles.summaryItem}>
-                      <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>
-                        Monthly Rent
-                      </Text>
-                      <Text style={[styles.summaryValue, { color: colors.text.primary }]}>
-                        {tenant.rent || '₹0'}
-                      </Text>
-                    </View>
+                    <Card style={styles.summaryCard}>
+                      <View style={styles.summaryGrid}>
+                        <View style={styles.summaryItem}>
+                          <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Total Paid</Text>
+                          <Text style={[styles.summaryValue, { color: colors.success[500] }]}>
+                            ₹{totalPaid.toLocaleString('en-IN')}
+                          </Text>
+                        </View>
 
-                    <View style={styles.summaryItem}>
-                      <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>
-                        Outstanding
-                      </Text>
-                      <Text style={[styles.summaryValue, { color: outstanding > 0 ? colors.danger[500] : colors.text.primary }]}>
-                        ₹{outstanding.toLocaleString('en-IN')}
-                      </Text>
-                    </View>
+                        <View style={styles.summaryItem}>
+                          <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Monthly Rent</Text>
+                          <Text style={[styles.summaryValue, { color: colors.text.primary }]}>
+                            {tenant.rent || '₹0'}
+                          </Text>
+                        </View>
+
+                        <View style={styles.summaryItem}>
+                          <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Outstanding</Text>
+                          <Text style={[styles.summaryValue, { color: outstanding > 0 ? colors.danger[500] : colors.text.primary }]}>
+                            ₹{outstanding.toLocaleString('en-IN')}
+                          </Text>
+                        </View>
+                      </View>
+                    </Card>
                   </View>
-                </Card>
-              </View>
-            )}
-
-            {tenant.tenantStatus === 'active' && (
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
-                    Billing Configuration
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: colors.primary[500], opacity: !isOnline ? 0.5 : 1 }]}
-                    onPress={openEditBillingModal}
-                    activeOpacity={0.7}
-                    disabled={!isOnline}>
-                    <Edit size={16} color={colors.white} />
-                    <Text style={[styles.actionButtonText, { color: colors.white }]}>
-                      Edit
-                    </Text>
-                  </TouchableOpacity>
                 </View>
 
-                <Card style={styles.billingCard}>
-                  {tenant?.billingConfig ? (
-                    <>
-                      <View style={styles.billingRow}>
-                        <Text style={[styles.billingLabel, { color: colors.text.secondary }]}>
-                          Billing Frequency
-                        </Text>
-                        <Text style={[styles.billingValue, { color: colors.text.primary }]}>
-                          {tenant.billingConfig.billingCycle ? (tenant.billingConfig.billingCycle.charAt(0).toUpperCase() + tenant.billingConfig.billingCycle.slice(1)) : ''}
-                        </Text>
-                      </View>
+                <View style={[styles.overviewColumn, isTabletLandscape && styles.overviewColumnTablet]}>
+                  <View style={styles.section}>
+                    <View style={styles.sectionHeader}>
+                      <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Billing Configuration</Text>
+                      <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: colors.primary[500], opacity: !isOnline ? 0.5 : 1 }]}
+                        onPress={openEditBillingModal}
+                        activeOpacity={0.7}
+                        disabled={!isOnline}>
+                        <Edit size={16} color={colors.white} />
+                        <Text style={[styles.actionButtonText, { color: colors.white }]}>Edit</Text>
+                      </TouchableOpacity>
+                    </View>
 
-                      <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
+                    <Card style={styles.billingCard}>
+                      {tenant?.billingConfig ? (
+                        <>
+                          <View style={styles.billingRow}>
+                            <Text style={[styles.billingLabel, { color: colors.text.secondary }]}>Billing Frequency</Text>
+                            <Text style={[styles.billingValue, { color: colors.text.primary }]}>
+                              {tenant.billingConfig.billingCycle ? (tenant.billingConfig.billingCycle.charAt(0).toUpperCase() + tenant.billingConfig.billingCycle.slice(1)) : ''}
+                            </Text>
+                          </View>
 
-                      <View style={styles.billingRow}>
-                        <Text style={[styles.billingLabel, { color: colors.text.secondary }]}>
-                          Anchor Day
-                        </Text>
-                        <Text style={[styles.billingValue, { color: colors.text.primary }]}>
-                          {getDayWithOrdinal(tenant.billingConfig.anchorDay)} of every month
-                        </Text>
-                      </View>
+                          <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
 
-                      <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
+                          <View style={styles.billingRow}>
+                            <Text style={[styles.billingLabel, { color: colors.text.secondary }]}>Anchor Day</Text>
+                            <Text style={[styles.billingValue, { color: colors.text.primary }]}>
+                              {getDayWithOrdinal(tenant.billingConfig.anchorDay)} of every month
+                            </Text>
+                          </View>
 
-                      <View style={styles.billingRow}>
-                        <Text style={[styles.billingLabel, { color: colors.text.secondary }]}>
-                          Next Billing Date
-                        </Text>
-                        <Text style={[styles.billingValue, { color: colors.primary[600] }]}>
-                          {formatDateWithOrdinal(calculateNextBillingDate(tenant.billingConfig.anchorDay || 1, 'monthly'))}
-                        </Text>
-                      </View>
+                          <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
 
-                      <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
+                          <View style={styles.billingRow}>
+                            <Text style={[styles.billingLabel, { color: colors.text.secondary }]}>Next Billing Date</Text>
+                            <Text style={[styles.billingValue, { color: colors.primary[600] }]}>
+                              {formatDateWithOrdinal(calculateNextBillingDate(tenant.billingConfig.anchorDay || 1, 'monthly'))}
+                            </Text>
+                          </View>
 
-                      {/* Auto-Generate logic removed, not present in BillingConfig type */}
-                    </>
-                  ) : (
-                    <Text style={[styles.noBillingText, { color: colors.text.secondary }]}>
-                      No billing configuration set
-                    </Text>
-                  )}
-                </Card>
+                          <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
+                        </>
+                      ) : (
+                        <Text style={[styles.noBillingText, { color: colors.text.secondary }]}>No billing configuration set</Text>
+                      )}
+                    </Card>
+                  </View>
+                </View>
               </View>
             )}
 
@@ -974,8 +970,8 @@ export default function TenantDetailScreen() {
           </View>
 
           <ScrollView contentContainerStyle={styles.modalScrollContent}>
-            <View style={styles.formContainer}>
-              <View style={styles.inputContainer}>
+            <View style={[styles.formContainer, isTabletLandscape && styles.formContainerTablet]}>
+              <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldFull]}>
                 <Text style={[styles.label, { color: colors.text.primary }]}>Status</Text>
                 <TouchableOpacity
                   style={[
@@ -1003,7 +999,7 @@ export default function TenantDetailScreen() {
 
               {editTenantStatus === 'active' && (
                 <>
-                  <View style={styles.inputContainer}>
+                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
                     <Text style={[styles.label, { color: colors.text.primary }]}>Name</Text>
                     <TextInput
                       style={[styles.textInput, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium, color: colors.text.primary }]}
@@ -1015,7 +1011,7 @@ export default function TenantDetailScreen() {
                     />
                   </View>
 
-                  <View style={styles.inputContainer}>
+                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
                     <Text style={[styles.label, { color: colors.text.primary }]}>Document ID</Text>
                     <TextInput
                       style={[styles.textInput, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium, color: colors.text.primary }]}
@@ -1027,7 +1023,7 @@ export default function TenantDetailScreen() {
                     />
                   </View>
 
-                  <View style={styles.inputContainer}>
+                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
                     <Text style={[styles.label, { color: colors.text.primary }]}>Phone</Text>
                     <TextInput
                       style={[styles.textInput, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium, color: colors.text.primary }]}
@@ -1041,7 +1037,7 @@ export default function TenantDetailScreen() {
                     />
                   </View>
 
-                  <View style={styles.inputContainer}>
+                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
                     <Text style={[styles.label, { color: colors.text.primary }]}>Rent</Text>
                     <TextInput
                       style={[styles.textInput, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium, color: colors.text.primary }]}
@@ -1053,7 +1049,7 @@ export default function TenantDetailScreen() {
                     />
                   </View>
 
-                  <View style={styles.inputContainer}>
+                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldFull]}>
                     <Text style={[styles.label, { color: colors.text.primary }]}>Address</Text>
                     <TextInput
                       style={[styles.textInput, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium, color: colors.text.primary }]}
@@ -1067,15 +1063,17 @@ export default function TenantDetailScreen() {
                     />
                   </View>
 
-                  <DatePicker
-                    value={editTenantJoinDate}
-                    onChange={setEditTenantJoinDate}
-                    label="Join Date"
-                    disabled={tenantActionLoading}
-                    required
-                  />
+                  <View style={isTabletLandscape ? styles.formFieldFull : undefined}>
+                    <DatePicker
+                      value={editTenantJoinDate}
+                      onChange={setEditTenantJoinDate}
+                      label="Join Date"
+                      disabled={tenantActionLoading}
+                      required
+                    />
+                  </View>
 
-                  <View style={styles.inputContainer}>
+                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
                     <Text style={[styles.label, { color: colors.text.primary }]}>Room</Text>
                     <TouchableOpacity
                       style={[
@@ -1101,7 +1099,7 @@ export default function TenantDetailScreen() {
                     </TouchableOpacity>
                   </View>
 
-                  <View style={styles.inputContainer}>
+                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
                     <Text style={[styles.label, { color: colors.text.primary }]}>Bed</Text>
                     <TouchableOpacity
                       style={[
@@ -1133,6 +1131,7 @@ export default function TenantDetailScreen() {
               <TouchableOpacity
                 style={[
                   styles.submitButton,
+                  isTabletLandscape && styles.formFieldFull,
                   {
                     backgroundColor: colors.primary[500],
                     opacity: tenantActionLoading ? 0.6 : 1,
@@ -1234,8 +1233,13 @@ export default function TenantDetailScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowAnchorDayPicker(false)}>
-        <View style={[styles.pickerOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.pickerContainer, { backgroundColor: colors.background.secondary }]}>
+        <View style={[styles.pickerOverlay, isTablet && styles.pickerOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+          <View
+            style={[
+              styles.pickerContainer,
+              isTablet && styles.pickerContainerTablet,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>When is rent due each month?</Text>
             </View>
@@ -1284,8 +1288,13 @@ export default function TenantDetailScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowStatusPicker(false)}>
-        <View style={[styles.pickerOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.pickerContainer, { backgroundColor: colors.background.secondary }]}>
+        <View style={[styles.pickerOverlay, isTablet && styles.pickerOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+          <View
+            style={[
+              styles.pickerContainer,
+              isTablet && styles.pickerContainerTablet,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>Select Status</Text>
             </View>
@@ -1354,7 +1363,11 @@ export default function TenantDetailScreen() {
         animationType="fade"
         onRequestClose={() => !tenantActionLoading && setShowDeleteConfirmModal(false)}>
         <View style={[styles.deleteModalOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
-          <View style={[styles.deleteModalContent, { backgroundColor: colors.background.secondary }]}>
+          <View
+            style={[
+              styles.deleteModalContent,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
             {/* Icon */}
             <View style={[styles.deleteIconContainer, { backgroundColor: colors.danger[50] }]}>
               <Trash2 size={32} color={colors.danger[500]} />
@@ -1404,8 +1417,13 @@ export default function TenantDetailScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowEditRoomPicker(false)}>
-        <View style={[styles.pickerOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.pickerContainer, { backgroundColor: colors.background.secondary }]}>
+        <View style={[styles.pickerOverlay, isTablet && styles.pickerOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+          <View
+            style={[
+              styles.pickerContainer,
+              isTablet && styles.pickerContainerTablet,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>
                 Select Room
@@ -1468,8 +1486,13 @@ export default function TenantDetailScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowEditBedPicker(false)}>
-        <View style={[styles.pickerOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.pickerContainer, { backgroundColor: colors.background.secondary }]}>
+        <View style={[styles.pickerOverlay, isTablet && styles.pickerOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+          <View
+            style={[
+              styles.pickerContainer,
+              isTablet && styles.pickerContainerTablet,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>
                 Select Bed
@@ -1619,6 +1642,20 @@ const styles = StyleSheet.create({
 
   section: {
     marginBottom: spacing.lg,
+  },
+  overviewColumns: {
+    width: '100%',
+  },
+  overviewColumnsTablet: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'flex-start',
+  },
+  overviewColumn: {
+    width: '100%',
+  },
+  overviewColumnTablet: {
+    flex: 1,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1803,6 +1840,18 @@ const styles = StyleSheet.create({
   formContainer: {
     width: '100%',
   },
+  formContainerTablet: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  formFieldHalf: {
+    width: '48.5%',
+  },
+  formFieldFull: {
+    width: '100%',
+  },
   dateInputContainer: {
     position: 'relative',
   },
@@ -1881,11 +1930,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
+  pickerOverlayTablet: {
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
   pickerContainer: {
+    width: '100%',
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     maxHeight: '50%',
     ...shadows.xl,
+  },
+  pickerContainerTablet: {
+    alignSelf: 'center',
+    maxHeight: '75%',
+    borderBottomLeftRadius: radius.xl,
+    borderBottomRightRadius: radius.xl,
   },
   pickerHeader: {
     padding: spacing.lg,
@@ -1947,6 +2007,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xxl,
     paddingHorizontal: spacing.xl,
     alignItems: 'center',
+    width: '100%',
     maxWidth: 360,
     ...shadows.lg,
   },

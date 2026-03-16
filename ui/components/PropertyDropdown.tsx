@@ -11,11 +11,14 @@ import { ChevronDown, Check } from 'lucide-react-native';
 import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 
 export default function PropertyDropdown() {
   const { colors } = useTheme();
   const { properties, selectedProperty, switchProperty } = useProperty();
+  const { isTablet, width, modalMaxWidth } = useResponsiveLayout();
   const [modalVisible, setModalVisible] = useState(false);
+  const computedModalWidth = Math.min(modalMaxWidth, width - spacing.xl * 2);
 
   if (!selectedProperty || properties.length <= 1) {
     return null;
@@ -44,15 +47,21 @@ export default function PropertyDropdown() {
         transparent
         animationType="fade"
         onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.overlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.white }]}>
+        <View style={[styles.overlay, isTablet && styles.overlayTablet]}>
+          <View
+            style={[
+              styles.modalContainer,
+              isTablet && styles.modalContainerTablet,
+              { backgroundColor: colors.white },
+              isTablet && { width: computedModalWidth },
+            ]}>
             <View style={[styles.header, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.headerTitle, { color: colors.text.primary }]}>
                 Select Property
               </Text>
             </View>
 
-            <ScrollView style={styles.scrollView}>
+            <ScrollView style={[styles.scrollView, isTablet && styles.scrollViewTablet]}>
               {properties.map((property) => (
                 <TouchableOpacity
                   key={property.id}
@@ -129,11 +138,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
+  overlayTablet: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
   modalContainer: {
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     maxHeight: '70%',
     ...shadows.xl,
+  },
+  modalContainerTablet: {
+    width: '100%',
+    maxHeight: '80%',
+    borderBottomLeftRadius: radius.xl,
+    borderBottomRightRadius: radius.xl,
   },
   header: {
     padding: spacing.lg,
@@ -146,6 +166,9 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     maxHeight: 400,
+  },
+  scrollViewTablet: {
+    maxHeight: 520,
   },
   propertyOption: {
     flexDirection: 'row',

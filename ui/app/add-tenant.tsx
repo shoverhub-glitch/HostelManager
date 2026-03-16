@@ -26,11 +26,13 @@ import EmptyState from '@/components/EmptyState';
 import UpgradeModal from '@/components/UpgradeModal';
 import DatePicker from '@/components/DatePicker';
 import { cacheKeys, getScreenCache, setScreenCache } from '@/services/screenCache';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 
 const FORM_CACHE_STALE_MS = 60 * 1000;
 
 export default function AddTenantScreen() {
   const { colors } = useTheme();
+  const { isTablet, contentMaxWidth, modalMaxWidth, formMaxWidth } = useResponsiveLayout();
   const router = useRouter();
   const { selectedPropertyId } = useProperty();
   const isOnline = useNetworkStatus();
@@ -372,7 +374,10 @@ export default function AddTenantScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           keyboardShouldPersistTaps="handled">
           <View style={styles.logoContainer}>
             <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
@@ -381,7 +386,11 @@ export default function AddTenantScreen() {
             <Text style={[styles.title, { color: colors.text.primary }]}>Add New Tenant</Text>
           </View>
 
-          <View style={styles.formContainer}>
+          <View
+            style={[
+              styles.formContainer,
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
+            ]}>
             {error && (
               <View
                 style={[
@@ -675,7 +684,12 @@ export default function AddTenantScreen() {
         animationType="fade"
         onRequestClose={() => setShowRoomPicker(false)}>
         <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+          <View
+            style={[
+              styles.modalContainer,
+              { backgroundColor: colors.background.secondary },
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Select Room
@@ -738,7 +752,12 @@ export default function AddTenantScreen() {
         animationType="fade"
         onRequestClose={() => setShowBedPicker(false)}>
         <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+          <View
+            style={[
+              styles.modalContainer,
+              { backgroundColor: colors.background.secondary },
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Select Bed

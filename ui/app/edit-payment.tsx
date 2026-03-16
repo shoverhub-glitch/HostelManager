@@ -18,6 +18,7 @@ import { Wallet, ChevronLeft, ChevronDown, AlertTriangle } from 'lucide-react-na
 import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { paymentService } from '@/services/apiClient';
 import type { Payment } from '@/services/apiTypes';
 import ApiErrorCard from '@/components/ApiErrorCard';
@@ -37,6 +38,7 @@ export default function EditPaymentScreen() {
   const { colors, isDark } = useTheme();
   const router = useRouter();
   const { paymentId } = useLocalSearchParams<{ paymentId: string }>();
+  const { isTablet, contentMaxWidth, modalMaxWidth, formMaxWidth } = useResponsiveLayout();
   const isOnline = useNetworkStatus();
 
   const [paymentHistory, setPaymentHistory] = useState<Payment[]>([]);
@@ -279,7 +281,10 @@ export default function EditPaymentScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           keyboardShouldPersistTaps="handled">
           <View style={styles.logoContainer}>
             <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
@@ -291,7 +296,11 @@ export default function EditPaymentScreen() {
             </Text>
           </View>
 
-          <View style={styles.formContainer}>
+          <View
+            style={[
+              styles.formContainer,
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
+            ]}>
             {error && <ApiErrorCard error={error} onRetry={handleRetry} />}
 
             <View style={styles.inputContainer}>
@@ -482,8 +491,13 @@ export default function EditPaymentScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowMethodPicker(false)}>
-        <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+        <View style={[styles.modalOverlay, isTablet && styles.modalOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+          <View
+            style={[
+              styles.modalContainer,
+              isTablet && styles.modalContainerTablet,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Select Payment Method
@@ -538,8 +552,13 @@ export default function EditPaymentScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowStatusPicker(false)}>
-        <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+        <View style={[styles.modalOverlay, isTablet && styles.modalOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+          <View
+            style={[
+              styles.modalContainer,
+              isTablet && styles.modalContainerTablet,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Select Payment Status
@@ -592,8 +611,12 @@ export default function EditPaymentScreen() {
         transparent
         animationType="fade"
         onRequestClose={handleCancelStatusChange}>
-        <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.confirmModalContainer, { backgroundColor: colors.background.secondary }]}>
+        <View style={[styles.modalOverlay, styles.confirmModalOverlay, isTablet && styles.modalOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+          <View
+            style={[
+              styles.confirmModalContainer,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}>
             <View style={styles.confirmIconContainer}>
               <View style={[styles.confirmIcon, { backgroundColor: pendingStatus === 'paid' ? (isDark ? colors.success[900] : colors.success[50]) : (isDark ? colors.warning[900] : colors.warning[50]) }]}>
                 <AlertTriangle size={32} color={pendingStatus === 'paid' ? colors.success[500] : colors.warning[500]} />
@@ -771,11 +794,26 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
+  modalOverlayTablet: {
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  confirmModalOverlay: {
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
   modalContainer: {
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     maxHeight: '70%',
     ...shadows.xl,
+  },
+  modalContainerTablet: {
+    width: '100%',
+    alignSelf: 'center',
+    maxHeight: '85%',
+    borderBottomLeftRadius: radius.xl,
+    borderBottomRightRadius: radius.xl,
   },
   modalHeader: {
     padding: spacing.lg,
@@ -807,7 +845,8 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.semibold,
   },
   confirmModalContainer: {
-    marginHorizontal: spacing.xl,
+    width: '100%',
+    alignSelf: 'center',
     borderRadius: radius.xl,
     padding: spacing.xl,
     ...shadows.xl,

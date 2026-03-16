@@ -44,6 +44,13 @@ export default function ProfileScreen() {
     route?: Href;
   }> = [
     {
+      icon: MapPin,
+      title: 'My Property',
+      description: 'View current property and quick actions',
+      color: colors.primary[600],
+      route: '/my-property' as Href,
+    },
+    {
       icon: Building2,
       title: 'Manage Properties',
       description: 'Add, edit, or remove properties',

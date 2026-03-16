@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react-native';
 import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { subscriptionService } from '@/services/apiClient';
 import type { Subscription, Usage, PlanMetadata } from '@/services/apiTypes';
 import { cacheKeys, getScreenCache, setScreenCache } from '@/services/screenCache';
@@ -38,7 +39,6 @@ interface SubscriptionCachePayload {
 }
 
 const SUBSCRIPTION_CACHE_STALE_MS = 2 * 60 * 1000;
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const PLAN_THEMES: Record<string, { borderColor: string; iconBg: string; accentColor: string; icon: any }> = {
   free: { borderColor: '#94A3B8', iconBg: '#E2E8F0', accentColor: '#64748B', icon: Crown },
@@ -55,6 +55,8 @@ const getPlanTheme = (planName: string) => {
 
 export default function SubscriptionScreen() {
   const { colors } = useTheme();
+  const { isTablet, contentMaxWidth } = useResponsiveLayout();
+  const { width: windowWidth } = useWindowDimensions();
   const router = useRouter();
   const [activeSubscription, setActiveSubscription] = useState<Subscription | null>(null);
   const [allPlans, setAllPlans] = useState<PlanMetadata[]>([]);
@@ -127,6 +129,8 @@ export default function SubscriptionScreen() {
 
   const currentPlan = activeSubscription?.plan || 'free';
   const isPaidPlan = currentPlan !== 'free';
+  const availableWidth = isTablet && contentMaxWidth ? Math.min(windowWidth, contentMaxWidth) : windowWidth;
+  const planCardWidth = Math.min(Math.max(availableWidth - 100, 280), 560);
 
   const formatPrice = (paise: number) => {
     if (paise === 0) return 'Free';
@@ -157,6 +161,7 @@ export default function SubscriptionScreen() {
         key={plan.name} 
         style={[
           styles.pageContainer,
+          { width: planCardWidth },
           { 
             backgroundColor: colors.background.secondary,
             borderColor: theme.borderColor,
@@ -260,7 +265,10 @@ export default function SubscriptionScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[colors.primary[500]]} />
@@ -285,7 +293,7 @@ export default function SubscriptionScreen() {
                 contentContainerStyle={styles.pagesScrollContent}
                 pagingEnabled
                 decelerationRate="fast"
-                snapToInterval={SCREEN_WIDTH - 80}
+                snapToInterval={planCardWidth + spacing.md}
               >
                 {allPlans.map((plan, index) => renderPlanPage(plan, index))}
               </ScrollView>
@@ -418,7 +426,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   pageContainer: {
-    width: SCREEN_WIDTH - 100,
     minHeight: 340,
     borderRadius: radius.lg,
     marginRight: spacing.md,

@@ -18,6 +18,7 @@ import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { roomService } from '@/services/apiClient';
 import { clearScreenCache } from '@/services/screenCache';
 import UpgradeModal from '@/components/UpgradeModal';
@@ -35,6 +36,7 @@ const FLOOR_OPTIONS = [
 
 export default function RoomFormScreen() {
   const { colors } = useTheme();
+  const { isTablet, contentMaxWidth, modalMaxWidth, formMaxWidth } = useResponsiveLayout();
   const router = useRouter();
   const { roomId } = useLocalSearchParams<{ roomId?: string }>();
   const { selectedPropertyId } = useProperty();
@@ -263,7 +265,10 @@ export default function RoomFormScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           keyboardShouldPersistTaps="handled">
           <View style={styles.logoContainer}>
             <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
@@ -279,7 +284,11 @@ export default function RoomFormScreen() {
             )}
           </View>
 
-          <View style={styles.formContainer}>
+          <View
+            style={[
+              styles.formContainer,
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
+            ]}>
             {error && (
               <View
                 style={[
@@ -449,7 +458,12 @@ export default function RoomFormScreen() {
         animationType="fade"
         onRequestClose={() => setShowFloorPicker(false)}>
         <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background.secondary }]}>
+          <View
+            style={[
+              styles.modalContainer,
+              { backgroundColor: colors.background.secondary },
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Select Floor

@@ -18,7 +18,7 @@ import {
   DoorOpen,
   Users,
 } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, typography, radius } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 
@@ -151,7 +151,7 @@ export default function MyPropertyScreen() {
                     <option.icon size={24} color={option.color} />
                   </View>
                   <View style={styles.optionText}>
-                    <Text style={[styles.optionTitle, { color: colors.text.primary }]}>
+                    <Text style={[styles.optionTitle, { color: colors.text.primary }]}> 
                       {option.title}
                     </Text>
                     <Text style={[styles.optionDescription, { color: colors.text.secondary }]}>

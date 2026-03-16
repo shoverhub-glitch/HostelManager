@@ -23,6 +23,7 @@ import { spacing, typography, radius } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { roomService } from '@/services/apiClient';
 import type { Room, PaginatedResponse } from '@/services/apiTypes';
 import { cacheKeys, clearScreenCache, getScreenCache, setScreenCache } from '@/services/screenCache';
@@ -33,6 +34,8 @@ const ROOMS_FOCUS_THROTTLE_MS = 60 * 1000;
 export default function ManageRoomsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+  const { isTablet, isLargeTablet, contentMaxWidth, modalMaxWidth } = useResponsiveLayout();
+  const roomCardWidth = isLargeTablet ? '31.5%' : isTablet ? '48.5%' : '100%';
   const { selectedPropertyId, selectedProperty, loading: propertyLoading } = useProperty();
   const isOnline = useNetworkStatus();
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -175,7 +178,10 @@ export default function ManageRoomsScreen() {
           <View style={styles.placeholder} />
         </View>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           showsVerticalScrollIndicator={false}>
           <Skeleton height={150} count={3} />
         </ScrollView>
@@ -201,7 +207,10 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
           <View style={styles.placeholder} />
         </View>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           showsVerticalScrollIndicator={false}>
           <EmptyState
             icon={DoorOpen}
@@ -229,7 +238,10 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -250,9 +262,15 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
             onActionPress={handleAddRoom}
           />
         ) : (
-          <>
+          <View style={[styles.roomsGrid, isTablet && styles.roomsGridTablet]}>
             {rooms.map((room, index) => (
-              <Card key={index} style={[styles.roomCard, room.active === false ? { opacity: 0.65 } : {}] as any}>
+              <Card
+                key={index}
+                style={[
+                  styles.roomCard,
+                  { width: roomCardWidth },
+                  room.active === false ? { opacity: 0.65 } : {},
+                ] as any}>
                 <View style={styles.roomCardContent}>
                   <View style={styles.roomHeader}>
                     <View style={[styles.roomIconContainer, { backgroundColor: room.active === false ? colors.neutral[100] : colors.primary[100] }]}>
@@ -337,7 +355,7 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
                 </View>
               </Card>
             ))}
-          </>
+          </View>
         )}
       </ScrollView>
 
@@ -362,7 +380,11 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
         onRequestClose={() => setShowDeleteConfirm(false)}
       >
         <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
-          <View style={[styles.modalContent, { backgroundColor: colors.background.primary }]}>
+          <View
+            style={[
+              styles.modalContent,
+              { backgroundColor: colors.background.primary, maxWidth: modalMaxWidth },
+            ]}>
             <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Delete Room?</Text>
             
             <Text style={[styles.modalMessage, { color: colors.text.secondary }]}>
@@ -436,8 +458,15 @@ const styles = StyleSheet.create({
   },
 
   roomCard: {
-    marginBottom: spacing.md,
     overflow: 'hidden',
+  },
+  roomsGrid: {
+    gap: spacing.md,
+  },
+  roomsGridTablet: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'stretch',
   },
   roomCardContent: {
     gap: spacing.md,

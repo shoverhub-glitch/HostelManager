@@ -23,6 +23,7 @@ import { Search, Filter, Phone, Users, Archive, LogOut } from 'lucide-react-nati
 import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { tenantService } from '@/services/apiClient';
 import type { Tenant, PaginatedResponse } from '@/services/apiTypes';
 import { cacheKeys, getScreenCache, setScreenCache, clearScreenCache } from '@/services/screenCache';
@@ -32,6 +33,7 @@ const TENANTS_CACHE_STALE_MS = 30 * 1000;
 export default function TenantsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+  const { isTablet, contentMaxWidth, modalMaxWidth } = useResponsiveLayout();
   const { selectedProperty, selectedPropertyId, loading: propertyLoading } = useProperty();
   
   // Initialize with cached data synchronously to avoid glitch
@@ -313,7 +315,10 @@ export default function TenantsScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl 
@@ -472,8 +477,13 @@ export default function TenantsScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowStatusFilterModal(false)}>
-        <View style={styles.filterModalOverlay}>
-          <View style={[styles.filterModalContainer, { backgroundColor: colors.background.secondary }]}> 
+        <View style={[styles.filterModalOverlay, isTablet && styles.filterModalOverlayTablet]}>
+          <View
+            style={[
+              styles.filterModalContainer,
+              isTablet && styles.filterModalContainerTablet,
+              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+            ]}> 
             <Text style={[styles.filterModalTitle, { color: colors.text.primary }]}>Sort By</Text>
 
             {[
@@ -715,6 +725,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
+  filterModalOverlayTablet: {
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
   filterModalContainer: {
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
@@ -722,6 +736,12 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
     gap: spacing.sm,
+  },
+  filterModalContainerTablet: {
+    width: '100%',
+    alignSelf: 'center',
+    borderBottomLeftRadius: radius.xl,
+    borderBottomRightRadius: radius.xl,
   },
   filterModalTitle: {
     fontSize: typography.fontSize.lg,

@@ -1,4 +1,4 @@
-import { TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import { TouchableOpacity, StyleSheet, Animated, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus } from 'lucide-react-native';
 import { shadows, addActionTokens } from '@/theme';
@@ -31,10 +31,12 @@ export default function FAB({ onPress, disabled = false }: FABProps) {
     }).start();
   };
 
+  const platformLift = Platform.OS === 'android' ? 10 : 0;
   const bottomOffset =
     (insets.bottom || 0) +
     addActionTokens.fab.tabBarHeight +
-    addActionTokens.fab.bottomGap;
+    addActionTokens.fab.bottomGap +
+    platformLift;
 
   return (
     <Animated.View

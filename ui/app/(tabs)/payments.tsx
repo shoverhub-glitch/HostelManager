@@ -34,6 +34,7 @@ import {
 import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { paymentService } from '@/services/apiClient';
 import type { Payment, PaginatedResponse } from '@/services/apiTypes';
 import { cacheKeys, getScreenCache, setScreenCache, clearScreenCache } from '@/services/screenCache';
@@ -44,6 +45,7 @@ const PAYMENTS_CACHE_STALE_MS = 30 * 1000;
 export default function PaymentsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+  const { isTablet, contentMaxWidth, modalMaxWidth } = useResponsiveLayout();
   const { selectedProperty, selectedPropertyId, loading: propertyLoading } = useProperty();
   
   // Initialize with cached data synchronously to avoid glitch
@@ -298,7 +300,10 @@ export default function PaymentsScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl 
@@ -403,8 +408,13 @@ export default function PaymentsScreen() {
         transparent
         animationType="slide"
         onRequestClose={() => setShowFilterModal(false)}>
-        <View style={[styles.filterModalOverlay, { backgroundColor: colors.modal.overlay }]}>
-          <View style={[styles.filterModalContent, { backgroundColor: colors.background.primary }]}>
+        <View style={[styles.filterModalOverlay, isTablet && styles.filterModalOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+          <View
+            style={[
+              styles.filterModalContent,
+              isTablet && styles.filterModalContentTablet,
+              { backgroundColor: colors.background.primary, maxWidth: modalMaxWidth },
+            ]}>
             <View style={[styles.filterModalHeader, { borderBottomColor: colors.border.light }]}>
               <Text style={[styles.filterModalTitle, { color: colors.text.primary }]}>Filter Payments</Text>
               <TouchableOpacity onPress={() => setShowFilterModal(false)} activeOpacity={0.7}>
@@ -707,11 +717,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
+  filterModalOverlayTablet: {
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
   filterModalContent: {
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     maxHeight: '80%',
     ...shadows.xl,
+  },
+  filterModalContentTablet: {
+    width: '100%',
+    alignSelf: 'center',
+    maxHeight: '85%',
+    borderBottomLeftRadius: radius.xl,
+    borderBottomRightRadius: radius.xl,
   },
   filterModalHeader: {
     flexDirection: 'row',

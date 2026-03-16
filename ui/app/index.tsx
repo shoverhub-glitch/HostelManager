@@ -17,6 +17,7 @@ import { spacing, typography, radius, shadows } from '@/theme';
 
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { authService } from '@/services/apiClient';
 import { encryptedTokenStorage } from '@/services/encryptedTokenStorage';
 import { deviceIdService } from '@/services/deviceId';
@@ -25,6 +26,7 @@ export default function LoginScreen() {
   const { colors } = useTheme();
   const { login } = useAuth();
   const router = useRouter();
+  const { isTablet, contentMaxWidth, formMaxWidth } = useResponsiveLayout();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -107,100 +109,110 @@ export default function LoginScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled">
-          <View style={styles.logoContainer}>
-            <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
-              <Building2 size={48} color={colors.primary[500]} />
-            </View>
-            <Text style={[styles.title, { color: colors.text.primary }]}>Hostel Manager</Text>
-            <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Owner Dashboard</Text>
-          </View>
-
-          <View style={styles.formContainer}>
-            {error && (
-              <View style={[styles.errorContainer, { backgroundColor: isLockedOut ? colors.danger[50] : colors.warning[50], borderColor: isLockedOut ? colors.danger[200] : colors.warning[200] }]}>
-                <Text style={[styles.errorText, { color: isLockedOut ? colors.danger[700] : colors.warning[700] }]}>
-                  {error}
-                </Text>
-                {lockoutTimer && (
-                  <Text style={[styles.errorText, { color: isLockedOut ? colors.danger[700] : colors.warning[700], marginTop: 4 }]}>
-                    Try again in {Math.floor(lockoutTimer / 60)}:{(lockoutTimer % 60).toString().padStart(2, '0')} minutes
-                  </Text>
-                )}
+          <View
+            style={[
+              styles.contentContainer,
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+            ]}>
+            <View style={styles.logoContainer}>
+              <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
+                <Building2 size={48} color={colors.primary[500]} />
               </View>
-            )}
-
-            <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Email</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.background.secondary, color: colors.text.primary, borderColor: colors.border.medium }]}
-                placeholder="Enter your email"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                placeholderTextColor={colors.text.tertiary}
-                value={email}
-                onChangeText={setEmail}
-                editable={!loading && !isLockedOut}
-              />
+              <Text style={[styles.title, { color: colors.text.primary }]}>Hostel Manager</Text>
+              <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Owner Dashboard</Text>
             </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Password</Text>
-              <View style={styles.passwordContainer}>
+            <View
+              style={[
+                styles.formContainer,
+                isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
+              ]}>
+              {error && (
+                <View style={[styles.errorContainer, { backgroundColor: isLockedOut ? colors.danger[50] : colors.warning[50], borderColor: isLockedOut ? colors.danger[200] : colors.warning[200] }]}>
+                  <Text style={[styles.errorText, { color: isLockedOut ? colors.danger[700] : colors.warning[700] }]}>
+                    {error}
+                  </Text>
+                  {lockoutTimer && (
+                    <Text style={[styles.errorText, { color: isLockedOut ? colors.danger[700] : colors.warning[700], marginTop: 4 }]}>
+                      Try again in {Math.floor(lockoutTimer / 60)}:{(lockoutTimer % 60).toString().padStart(2, '0')} minutes
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              <View style={styles.inputContainer}>
+                <Text style={[styles.label, { color: colors.text.primary }]}>Email</Text>
                 <TextInput
-                  style={[styles.passwordInput, { backgroundColor: colors.background.secondary, color: colors.text.primary, borderColor: colors.border.medium }]}
-                  placeholder="Enter your password"
-                  secureTextEntry={!showPassword}
+                  style={[styles.input, { backgroundColor: colors.background.secondary, color: colors.text.primary, borderColor: colors.border.medium }]}
+                  placeholder="Enter your email"
+                  keyboardType="email-address"
                   autoCapitalize="none"
                   placeholderTextColor={colors.text.tertiary}
-                  value={password}
-                  onChangeText={setPassword}
+                  value={email}
+                  onChangeText={setEmail}
                   editable={!loading && !isLockedOut}
                 />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={[styles.label, { color: colors.text.primary }]}>Password</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={[styles.passwordInput, { backgroundColor: colors.background.secondary, color: colors.text.primary, borderColor: colors.border.medium }]}
+                    placeholder="Enter your password"
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    placeholderTextColor={colors.text.tertiary}
+                    value={password}
+                    onChangeText={setPassword}
+                    editable={!loading && !isLockedOut}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowPassword(!showPassword)}
+                    disabled={loading || isLockedOut}>
+                    {showPassword ? (
+                      <EyeOff size={20} color={colors.text.tertiary} />
+                    ) : (
+                      <Eye size={20} color={colors.text.tertiary} />
+                    )}
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity
-                  style={styles.eyeIcon}
-                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.forgotPasswordLink}
+                  onPress={() => router.push('/forgot-password' as any)}
                   disabled={loading || isLockedOut}>
-                  {showPassword ? (
-                    <EyeOff size={20} color={colors.text.tertiary} />
-                  ) : (
-                    <Eye size={20} color={colors.text.tertiary} />
-                  )}
+                  <Text style={[styles.forgotPasswordText, { color: colors.primary[500] }]}>
+                    Forgot Password?
+                  </Text>
                 </TouchableOpacity>
               </View>
+
               <TouchableOpacity
-                style={styles.forgotPasswordLink}
-                onPress={() => router.push('/forgot-password' as any)}
+                style={[styles.actionButton, { backgroundColor: colors.primary[500], opacity: loading || isLockedOut ? 0.6 : 1 }]}
+                onPress={handleLogin}
+                activeOpacity={0.8}
                 disabled={loading || isLockedOut}>
-                <Text style={[styles.forgotPasswordText, { color: colors.primary[500] }]}>
-                  Forgot Password?
+                {loading ? (
+                  <ActivityIndicator color={colors.white} size="small" />
+                ) : (
+                  <Text style={[styles.actionButtonText, { color: colors.white }]}> 
+                    {isLockedOut ? 'Account Locked' : 'Login'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.registerLink}
+                onPress={() => router.push('/register' as any)}
+                activeOpacity={0.7}
+                disabled={loading || isLockedOut}>
+                <Text style={[styles.registerLinkText, { color: colors.text.secondary }]}> 
+                  Don{`'`}t have an account?{' '}
+                  <Text style={[styles.registerLinkBold, { color: colors.primary[500] }]}>Register</Text>
                 </Text>
               </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.primary[500], opacity: loading || isLockedOut ? 0.6 : 1 }]}
-              onPress={handleLogin}
-              activeOpacity={0.8}
-              disabled={loading || isLockedOut}>
-              {loading ? (
-                <ActivityIndicator color={colors.white} size="small" />
-              ) : (
-                <Text style={[styles.actionButtonText, { color: colors.white }]}>
-                  {isLockedOut ? 'Account Locked' : 'Login'}
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.registerLink}
-              onPress={() => router.push('/register' as any)}
-              activeOpacity={0.7}
-              disabled={loading || isLockedOut}>
-              <Text style={[styles.registerLinkText, { color: colors.text.secondary }]}>
-                Don{`'`}t have an account?{' '}
-                <Text style={[styles.registerLinkBold, { color: colors.primary[500] }]}>Register</Text>
-              </Text>
-            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -219,6 +231,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
+  },
+  contentContainer: {
+    width: '100%',
   },
   logoContainer: {
     alignItems: 'center',

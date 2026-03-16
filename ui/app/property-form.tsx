@@ -17,12 +17,14 @@ import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { propertyService } from '@/services/apiClient';
 import { useAuth } from '@/context/AuthContext';
 import UpgradeModal from '@/components/UpgradeModal';
 
 export default function PropertyFormScreen() {
   const { colors } = useTheme();
+  const { isTablet, contentMaxWidth, formMaxWidth } = useResponsiveLayout();
   const router = useRouter();
   const { propertyId } = useLocalSearchParams<{ propertyId?: string }>();
   const { refreshProperties, switchProperty, properties } = useProperty();
@@ -124,7 +126,10 @@ export default function PropertyFormScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+          ]}
           keyboardShouldPersistTaps="handled">
           {initialLoading ? (
             <View style={styles.loadingContainer}>
@@ -147,7 +152,11 @@ export default function PropertyFormScreen() {
                 </Text>
               </View>
 
-              <View style={styles.formContainer}>
+              <View
+                style={[
+                  styles.formContainer,
+                  isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
+                ]}>
                 {error && (
                   <View
                     style={[

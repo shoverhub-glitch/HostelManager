@@ -16,11 +16,13 @@ import { useRouter } from 'expo-router';
 import { KeyRound, Eye, EyeOff, ArrowLeft } from 'lucide-react-native';
 import { spacing, typography, radius, shadows } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { authService } from '@/services/apiClient';
 
 export default function ChangePasswordScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+  const { isTablet, contentMaxWidth, formMaxWidth } = useResponsiveLayout();
 
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -92,30 +94,39 @@ export default function ChangePasswordScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
-            <ArrowLeft size={24} color={colors.text.primary} />
-          </TouchableOpacity>
+          <View
+            style={[
+              styles.contentContainer,
+              isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+            ]}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
+              <ArrowLeft size={24} color={colors.text.primary} />
+            </TouchableOpacity>
 
-          <View style={styles.header}>
-            <View style={[styles.iconCircle, { backgroundColor: colors.primary[50] }]}>
-              <KeyRound size={40} color={colors.primary[500]} />
-            </View>
-            <Text style={[styles.title, { color: colors.text.primary }]}>Change Password</Text>
-            <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
-              Enter your current password, then set a new password.
-            </Text>
-          </View>
-
-          <View style={styles.formContainer}>
-            {error && (
-              <View
-                style={[
-                  styles.errorContainer,
-                  { backgroundColor: colors.danger[50], borderColor: colors.danger[200] },
-                ]}>
-                <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
+            <View style={styles.header}>
+              <View style={[styles.iconCircle, { backgroundColor: colors.primary[50] }]}>
+                <KeyRound size={40} color={colors.primary[500]} />
               </View>
-            )}
+              <Text style={[styles.title, { color: colors.text.primary }]}>Change Password</Text>
+              <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
+                Enter your current password, then set a new password.
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.formContainer,
+                isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
+              ]}>
+              {error && (
+                <View
+                  style={[
+                    styles.errorContainer,
+                    { backgroundColor: colors.danger[50], borderColor: colors.danger[200] },
+                  ]}>
+                  <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
+                </View>
+              )}
 
             <View style={styles.inputContainer}>
               <Text style={[styles.label, { color: colors.text.primary }]}>Old Password</Text>
@@ -216,20 +227,21 @@ export default function ChangePasswordScreen() {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[
-                styles.primaryButton,
-                { backgroundColor: colors.primary[500], opacity: loading ? 0.6 : 1 },
-              ]}
-              onPress={handleChangePassword}
-              activeOpacity={0.8}
-              disabled={loading}>
-              {loading ? (
-                <ActivityIndicator color={colors.white} size="small" />
-              ) : (
-                <Text style={[styles.primaryButtonText, { color: colors.white }]}>Update Password</Text>
-              )}
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.primaryButton,
+                  { backgroundColor: colors.primary[500], opacity: loading ? 0.6 : 1 },
+                ]}
+                onPress={handleChangePassword}
+                activeOpacity={0.8}
+                disabled={loading}>
+                {loading ? (
+                  <ActivityIndicator color={colors.white} size="small" />
+                ) : (
+                  <Text style={[styles.primaryButtonText, { color: colors.white }]}>Update Password</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -248,6 +260,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
+  },
+  contentContainer: {
+    width: '100%',
   },
   backButton: {
     width: 40,

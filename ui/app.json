@@ -15,7 +15,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "platforms": [
-      "android"
+      "android",
+      "ios"
     ],
     "plugins": [
       "expo-router"

@@ -26,6 +26,7 @@ import {
 import { spacing, typography, radius } from '@/theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
+import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import {
   paymentService,
   dashboardService,
@@ -43,6 +44,8 @@ const DASHBOARD_CACHE_STALE_MS = 60 * 1000;
 export default function DashboardScreen() {
   const { colors, isDark } = useTheme();
   const router = useRouter();
+  const { isTablet, isLandscape, contentMaxWidth } = useResponsiveLayout();
+  const isTabletLandscape = isTablet && isLandscape;
   const { selectedProperty, selectedPropertyId, loading: propertyLoading } = useProperty();
   
   // Initialize with cached data synchronously to avoid glitch
@@ -225,7 +228,10 @@ export default function DashboardScreen() {
     <ScreenContainer edges={['top']}>
       <PropertySwitcher />
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl 
@@ -271,7 +277,7 @@ export default function DashboardScreen() {
                 {/* Main Stats */}
                 <View style={styles.statsGrid}>
                   {mainStats.map((stat, index) => (
-                    <Card key={index} style={styles.statCard}>
+                    <Card key={index} style={[styles.statCard, isTabletLandscape && styles.statCardTablet]}>
                       <View style={[styles.iconContainer, { backgroundColor: stat.color }]}>
                         <stat.icon size={20} color={colors.white} />
                       </View>
@@ -281,96 +287,102 @@ export default function DashboardScreen() {
                   ))}
                 </View>
 
-                {/* Revenue Section */}
-                {dashboardData?.stats.monthlyRevenue !== undefined && (
-                  <Card style={styles.revenueCard}>
-                    <View style={styles.revenueSectionHeader}>
-                      <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Monthly Revenue</Text>
-                      <IndianRupee size={20} color={colors.success[500]} />
+                <View style={[styles.overviewColumns, isTabletLandscape && styles.overviewColumnsTablet]}>
+                  {/* Revenue Section */}
+                  {dashboardData?.stats.monthlyRevenue !== undefined && (
+                    <View style={[styles.overviewColumn, isTabletLandscape && styles.overviewColumnTablet]}>
+                      <Card style={styles.revenueCard}>
+                        <View style={styles.revenueSectionHeader}>
+                          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Monthly Revenue</Text>
+                          <IndianRupee size={20} color={colors.success[500]} />
+                        </View>
+                        <View style={styles.revenueRow}>
+                          <View style={styles.revenueItem}>
+                            <Text style={[styles.revenueLabel, { color: colors.text.secondary }]}>Total Earned</Text>
+                            <Text style={[styles.revenueValue, { color: colors.success[500] }]}>
+                              {dashboardData.stats.monthlyRevenueFormatted || '₹0'}
+                            </Text>
+                          </View>
+                          <View style={styles.revenueDivider} />
+                          <View style={styles.revenueItem}>
+                            <Text style={[styles.revenueLabel, { color: colors.text.secondary }]}>Pending</Text>
+                            <Text style={[styles.revenueValue, { color: colors.primary[500] }]}>
+                              {dashboardData.stats.duePaymentAmountFormatted || '₹0'}
+                            </Text>
+                          </View>
+                        </View>
+                      </Card>
                     </View>
-                    <View style={styles.revenueRow}>
-                      <View style={styles.revenueItem}>
-                        <Text style={[styles.revenueLabel, { color: colors.text.secondary }]}>Total Earned</Text>
-                        <Text style={[styles.revenueValue, { color: colors.success[500] }]}>
-                          {dashboardData.stats.monthlyRevenueFormatted || '₹0'}
-                        </Text>
-                      </View>
-                      <View style={styles.revenueDivider} />
-                      <View style={styles.revenueItem}>
-                        <Text style={[styles.revenueLabel, { color: colors.text.secondary }]}>Pending</Text>
-                        <Text style={[styles.revenueValue, { color: colors.primary[500] }]}>
-                          {dashboardData.stats.duePaymentAmountFormatted || '₹0'}
-                        </Text>
-                      </View>
-                    </View>
-                  </Card>
-                )}
+                  )}
 
                   {/* Quick Stats */}
-                <View style={styles.quickStatsContainer}>
-                  {dashboardData?.stats.pendingPayments !== undefined && (
-                    <TouchableOpacity 
-                      onPress={() => router.push('/payments')}
-                      activeOpacity={0.7}>
-                      <Card style={styles.quickStatCard}>
-                        <View style={[styles.quickStatIcon, { backgroundColor: isDark ? colors.neutral[800] : colors.primary[50] }]}>
-                          <AlertCircle size={18} color={colors.primary[500]} />
-                        </View>
-                        <View>
-                          <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Due Payments</Text>
-                          <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
-                            {dashboardData.stats.pendingPayments}
-                          </Text>
-                        </View>
-                      </Card>
-                    </TouchableOpacity>
-                  )}
+                  <View style={[styles.overviewColumn, isTabletLandscape && styles.overviewColumnTablet]}>
+                    <View style={styles.quickStatsContainer}>
+                      {dashboardData?.stats.pendingPayments !== undefined && (
+                        <TouchableOpacity 
+                          onPress={() => router.push('/payments')}
+                          activeOpacity={0.7}>
+                          <Card style={styles.quickStatCard}>
+                            <View style={[styles.quickStatIcon, { backgroundColor: isDark ? colors.neutral[800] : colors.primary[50] }]}>
+                              <AlertCircle size={18} color={colors.primary[500]} />
+                            </View>
+                            <View>
+                              <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Due Payments</Text>
+                              <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
+                                {dashboardData.stats.pendingPayments}
+                              </Text>
+                            </View>
+                          </Card>
+                        </TouchableOpacity>
+                      )}
 
-                  {dashboardData?.stats.checkInsToday !== undefined && (
-                    <Card style={styles.quickStatCard}>
-                      <View style={[styles.quickStatIcon, { backgroundColor: colors.success[50] }]}>
-                        <LogIn size={18} color={colors.success[500]} />
-                      </View>
-                      <View>
-                        <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Check-ins Today</Text>
-                        <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
-                          {dashboardData.stats.checkInsToday}
-                        </Text>
-                      </View>
-                    </Card>
-                  )}
+                      {dashboardData?.stats.checkInsToday !== undefined && (
+                        <Card style={styles.quickStatCard}>
+                          <View style={[styles.quickStatIcon, { backgroundColor: colors.success[50] }]}>
+                            <LogIn size={18} color={colors.success[500]} />
+                          </View>
+                          <View>
+                            <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Check-ins Today</Text>
+                            <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
+                              {dashboardData.stats.checkInsToday}
+                            </Text>
+                          </View>
+                        </Card>
+                      )}
 
-                  {dashboardData?.stats.totalStaff !== undefined && (
-                    <Card style={styles.quickStatCard}>
-                      <View style={[styles.quickStatIcon, { backgroundColor: colors.purple[50] }]}>
-                        <Users size={18} color={colors.purple[500]} />
-                      </View>
-                      <View>
-                        <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Staff Available</Text>
-                        <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
-                          {dashboardData.stats.availableStaff || 0}/{dashboardData.stats.totalStaff}
-                        </Text>
-                      </View>
-                    </Card>
-                  )}
+                      {dashboardData?.stats.totalStaff !== undefined && (
+                        <Card style={styles.quickStatCard}>
+                          <View style={[styles.quickStatIcon, { backgroundColor: colors.purple[50] }]}>
+                            <Users size={18} color={colors.purple[500]} />
+                          </View>
+                          <View>
+                            <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Staff Available</Text>
+                            <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
+                              {dashboardData.stats.availableStaff || 0}/{dashboardData.stats.totalStaff}
+                            </Text>
+                          </View>
+                        </Card>
+                      )}
 
-                  {dashboardData?.stats.activeTenants !== undefined && (
-                    <TouchableOpacity 
-                      onPress={() => router.push('/tenants')}
-                      activeOpacity={0.7}>
-                      <Card style={styles.quickStatCard}>
-                        <View style={[styles.quickStatIcon, { backgroundColor: colors.success[50] }]}>
-                          <Users size={18} color={colors.success[500]} />
-                        </View>
-                        <View>
-                          <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Tenant Status</Text>
-                          <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
-                            {dashboardData.stats.activeTenants} Active{dashboardData.stats.vacatedTenants ? `, ${dashboardData.stats.vacatedTenants} Vacated` : ''}
-                          </Text>
-                        </View>
-                      </Card>
-                    </TouchableOpacity>
-                  )}
+                      {dashboardData?.stats.activeTenants !== undefined && (
+                        <TouchableOpacity 
+                          onPress={() => router.push('/tenants')}
+                          activeOpacity={0.7}>
+                          <Card style={styles.quickStatCard}>
+                            <View style={[styles.quickStatIcon, { backgroundColor: colors.success[50] }]}>
+                              <Users size={18} color={colors.success[500]} />
+                            </View>
+                            <View>
+                              <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Tenant Status</Text>
+                              <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
+                                {dashboardData.stats.activeTenants} Active{dashboardData.stats.vacatedTenants ? `, ${dashboardData.stats.vacatedTenants} Vacated` : ''}
+                              </Text>
+                            </View>
+                          </Card>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
                 </View>
 
                 {/* Quick Actions */}
@@ -380,7 +392,7 @@ export default function DashboardScreen() {
                     {quickActions.map((action, index) => (
                       <TouchableOpacity
                         key={index}
-                        style={styles.quickActionButton}
+                        style={[styles.quickActionButton, isTabletLandscape && styles.quickActionButtonTablet]}
                         onPress={() => router.push(action.route as any)}
                         activeOpacity={0.7}>
                         <Card style={styles.actionCard}>
@@ -469,6 +481,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
     paddingHorizontal: spacing.sm,
   },
+  statCardTablet: {
+    minWidth: '32%',
+    flexGrow: 0,
+  },
   iconContainer: {
     width: 48,
     height: 48,
@@ -487,6 +503,20 @@ const styles = StyleSheet.create({
   },
   revenueCard: {
     marginBottom: spacing.lg,
+  },
+  overviewColumns: {
+    marginBottom: spacing.lg,
+  },
+  overviewColumnsTablet: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'flex-start',
+  },
+  overviewColumn: {
+    width: '100%',
+  },
+  overviewColumnTablet: {
+    flex: 1,
   },
   revenueSectionHeader: {
     flexDirection: 'row',
@@ -561,6 +591,9 @@ const styles = StyleSheet.create({
   },
   quickActionButton: {
     width: '48%',
+  },
+  quickActionButtonTablet: {
+    width: '23.5%',
   },
   actionCard: {
     alignItems: 'center',

@@ -11,7 +11,7 @@ services:
     expose:
       - "8000"
     env_file:
-      - .env
+      - ./api/.env
     environment:
       FORWARDED_ALLOW_IPS: "*"
     depends_on:
@@ -29,7 +29,7 @@ services:
     volumes:
       - mongo-data:/data/db
     env_file:
-      - .env
+      - ./api/.env
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
@@ -50,7 +50,7 @@ services:
     expose:
       - "8081"
     env_file:
-      - .env
+      - ./api/.env
     environment:
       ME_CONFIG_MONGODB_SERVER: mongodb
       ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
@@ -58,6 +58,7 @@ services:
       ME_CONFIG_MONGODB_AUTH_DATABASE: admin
       ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME}
       ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
+      ME_CONFIG_SITE_BASEURL: /rakesh_0406/
     depends_on:
       - mongodb
     networks:

@@ -15,13 +15,15 @@ log() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+COMPOSE=(docker-compose --env-file ./api/.env)
+
 log "Starting docker compose services"
-docker-compose up -d --build
+"${COMPOSE[@]}" up -d --build
 
 for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
   log "Seeding test user (attempt ${attempt}/${MAX_ATTEMPTS})"
 
-  if docker-compose exec -T backend python - "$EMAIL" "$PASSWORD" "$NAME" "$PHONE" <<'PY'
+    if "${COMPOSE[@]}" exec -T backend python - "$EMAIL" "$PASSWORD" "$NAME" "$PHONE" <<'PY'
 import asyncio
 import sys
 from datetime import datetime, timezone

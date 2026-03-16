@@ -25,6 +25,7 @@ class UserContextMiddleware(BaseHTTPMiddleware):
         # Read public endpoints from environment variable PUBLIC_PATHS (comma-separated)
         public_paths = {p.strip() for p in settings.PUBLIC_PATHS.split(",") if p.strip()}
         public_paths.update({
+            "/",
             "/api/v1/health",
             "/api/v1/auth/login",
             "/api/v1/auth/register",

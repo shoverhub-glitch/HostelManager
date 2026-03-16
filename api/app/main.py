@@ -321,5 +321,10 @@ app.include_router(plan.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
 
 
+@app.get("/", tags=["root"])
+async def root():
+    return {"message": "Hostel API is running"}
+
+
 # Register global exception handlers
 add_global_exception_handlers(app)

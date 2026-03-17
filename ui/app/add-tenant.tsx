@@ -31,7 +31,7 @@ import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 const FORM_CACHE_STALE_MS = 60 * 1000;
 
 export default function AddTenantScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { isTablet, contentMaxWidth, modalMaxWidth, formMaxWidth } = useResponsiveLayout();
   const router = useRouter();
   const { selectedPropertyId } = useProperty();
@@ -380,8 +380,8 @@ export default function AddTenantScreen() {
           ]}
           keyboardShouldPersistTaps="handled">
           <View style={styles.logoContainer}>
-            <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
-              <UserPlus size={addActionTokens.iconSize.userPlus.form} color={colors.action.add.background} />
+            <View style={[styles.logoCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+              <UserPlus size={addActionTokens.iconSize.userPlus.form} color={isDark ? colors.primary[300] : colors.action.add.background} />
             </View>
             <Text style={[styles.title, { color: colors.text.primary }]}>Add New Tenant</Text>
           </View>

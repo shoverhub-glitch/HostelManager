@@ -2,6 +2,8 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
 import { RefreshCw, AlertTriangle } from 'lucide-react-native';
 import { spacing, typography, radius, shadows } from '@/theme';
+import { ThemeContext } from '@/context/ThemeContext';
+import { lightTheme } from '@/theme/colors';
 
 interface Props {
   children: ReactNode;
@@ -13,6 +15,8 @@ interface State {
 }
 
 export class ErrorBoundary extends Component<Props, State> {
+  static contextType = ThemeContext;
+
   public state: State = {
     hasError: false,
     error: null,
@@ -31,27 +35,29 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   public render() {
+    const colors = (this.context as any)?.colors ?? lightTheme;
+
     if (this.state.hasError) {
       return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background.primary }]}>
           <View style={styles.content}>
-            <View style={styles.iconContainer}>
-              <AlertTriangle size={48} color="#EF4444" />
+            <View style={[styles.iconContainer, { backgroundColor: colors.danger[100] }]}>
+              <AlertTriangle size={48} color={colors.danger[500]} />
             </View>
             
-            <Text style={styles.title}>Something went wrong</Text>
-            <Text style={styles.message}>
+            <Text style={[styles.title, { color: colors.text.primary }]}>Something went wrong</Text>
+            <Text style={[styles.message, { color: colors.text.secondary }]}> 
               The application encountered an unexpected error.
             </Text>
 
             {this.state.error && (
-              <View style={styles.errorDetails}>
-                <Text style={styles.errorText}>{this.state.error.toString()}</Text>
+              <View style={[styles.errorDetails, { backgroundColor: colors.background.secondary }]}>
+                <Text style={[styles.errorText, { color: colors.text.secondary }]}>{this.state.error.toString()}</Text>
               </View>
             )}
-            <TouchableOpacity style={styles.button} onPress={this.handleReset}>
-              <RefreshCw size={20} color="#FFFFFF" style={styles.buttonIcon} />
-              <Text style={styles.buttonText}>Try Again</Text>
+            <TouchableOpacity style={[styles.button, { backgroundColor: colors.primary[500] }]} onPress={this.handleReset}>
+              <RefreshCw size={20} color={colors.white} style={styles.buttonIcon} />
+              <Text style={[styles.buttonText, { color: colors.white }]}>Try Again</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -65,7 +71,6 @@ export class ErrorBoundary extends Component<Props, State> {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
   },
   content: {
     flex: 1,
@@ -77,7 +82,6 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#FEE2E2',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.lg,
@@ -85,19 +89,16 @@ const styles = StyleSheet.create({
   title: {
     fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.bold,
-    color: '#111827',
     marginBottom: spacing.sm,
     textAlign: 'center',
   },
   message: {
     fontSize: typography.fontSize.md,
-    color: '#4B5563',
     textAlign: 'center',
     marginBottom: spacing.xl,
     lineHeight: 22,
   },
   errorDetails: {
-    backgroundColor: '#F3F4F6',
     padding: spacing.md,
     borderRadius: radius.md,
     marginBottom: spacing.xl,
@@ -106,10 +107,8 @@ const styles = StyleSheet.create({
   errorText: {
     fontFamily: 'monospace',
     fontSize: typography.fontSize.xs,
-    color: '#374151',
   },
   button: {
-    backgroundColor: '#0066FF',
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
@@ -121,7 +120,6 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   buttonText: {
-    color: '#FFFFFF',
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
   },

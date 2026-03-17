@@ -5,6 +5,7 @@ from fastapi import HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 import time
+import logging
 
 from app.database.mongodb import db
 from app.database.token_blacklist import blacklist_token, is_token_blacklisted
@@ -41,6 +42,23 @@ import re
 users_collection = db["users"]
 email_otp_collection = db["email_otps"]
 password_reset_otp_collection = db["password_reset_otps"]
+logger = logging.getLogger(__name__)
+
+PASSWORD_MIN_LENGTH = 8
+
+
+def validate_password_strength(password: str) -> str | None:
+    if len(password) < PASSWORD_MIN_LENGTH:
+        return f"Password must be at least {PASSWORD_MIN_LENGTH} characters long"
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return "Password must contain at least one lowercase letter"
+    if not re.search(r"\d", password):
+        return "Password must contain at least one number"
+    if not re.search(r"[^\w\s]", password):
+        return "Password must contain at least one special character"
+    return None
 
 
 def validate_indian_phone(phone: str) -> bool:
@@ -85,30 +103,44 @@ async def register_user_service(user: UserCreate):
             detail="Invalid Indian phone number. Format: +91XXXXXXXXXX"
         )
 
+    password_error = validate_password_strength(user.password)
+    if password_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=password_error)
+
     # SECURITY: Check if email is verified - REQUIRED for registration
     # This blocks direct API attacks without OTP verification
     otp_doc = await email_otp_collection.find_one({"email": normalized_email, "verified": True})
     if not otp_doc:
         # Log security event for audit trail
-        print(f"[SECURITY] Attempted registration without email verification: {normalized_email}")
+        logger.warning("Registration attempted without email verification")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail="Email verification required. Please complete OTP verification first."
         )
 
-    # SECURITY: Verify the OTP is still fresh (within 5 minutes)
+    # SECURITY: Verify email verification is still fresh (within 6 minutes)
     now = datetime.now(timezone.utc)
-    created_at = otp_doc.get("createdAt")
-    if created_at:
-        age_minutes = (now - created_at).total_seconds() / 60
-        # OTP expires in 5 minutes, so require verification within 6 minutes to be safe
-        if age_minutes > 6:
-            print(f"[SECURITY] OTP expired for registration attempt: {normalized_email}")
-            await email_otp_collection.delete_one({"email": normalized_email})
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, 
-                detail="Verification token expired. Please request a new OTP."
-            )
+    verification_time = otp_doc.get("verifiedAt") or otp_doc.get("updatedAt") or otp_doc.get("createdAt")
+    if not verification_time:
+        logger.warning("Missing verification timestamp during registration")
+        await email_otp_collection.delete_one({"email": normalized_email})
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification token expired. Please request a new OTP."
+        )
+
+    if verification_time.tzinfo is None:
+        verification_time = verification_time.replace(tzinfo=timezone.utc)
+
+    age_minutes = (now - verification_time).total_seconds() / 60
+    # OTP expires in 5 minutes, so require verification within 6 minutes to be safe
+    if age_minutes > 6:
+        logger.warning("Registration verification window expired")
+        await email_otp_collection.delete_one({"email": normalized_email})
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification token expired. Please request a new OTP."
+        )
 
     user_doc = {
         "name": user.name,
@@ -140,8 +172,9 @@ async def register_user_service(user: UserCreate):
     # SECURITY: Delete the verification record after successful registration
     # Prevents reuse of same verification for multiple registrations
     await email_otp_collection.delete_one({"email": normalized_email})
+    await delete_otp_attempts(normalized_email)
     
-    print(f"[SUCCESS] User registered: {user_id} ({normalized_email})")
+    logger.info("User registration successful", extra={"user_id": user_id})
     response = _build_auth_payload(user_doc, user_id)
     return JSONResponse(status_code=status.HTTP_201_CREATED, content={"data": response})
 
@@ -153,7 +186,7 @@ async def login_user_service(data: UserLogin):
     # SECURITY: Check if account is locked due to failed attempts
     is_locked, minutes_remaining = await check_login_attempts(normalized_email)
     if is_locked:
-        print(f"[SECURITY] Login attempt on locked account: {normalized_email}")
+        logger.warning("Login blocked due to temporary lockout")
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many failed login attempts. Please try again in {minutes_remaining} minutes."
@@ -170,9 +203,9 @@ async def login_user_service(data: UserLogin):
         
         # Log failed attempt
         if user:
-            print(f"[SECURITY] Failed login attempt (wrong password): {normalized_email}")
+            logger.warning("Failed login attempt (password mismatch)")
         else:
-            print(f"[SECURITY] Failed login attempt (non-existent email): {normalized_email}")
+            logger.warning("Failed login attempt (unknown email)")
         
         if failed_count >= 5:
             raise HTTPException(
@@ -188,16 +221,16 @@ async def login_user_service(data: UserLogin):
 
     # SECURITY: Additional user validation checks
     if user.get("isDeleted"):
-        print(f"[SECURITY] Login attempt on deleted account: {normalized_email}")
+        logger.warning("Login attempt on deleted account")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is no longer available")
 
     if user.get("isDisabled"):
-        print(f"[SECURITY] Login attempt on disabled account: {normalized_email}")
+        logger.warning("Login attempt on disabled account")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled. Contact support.")
 
     # Check if account requires email verification (optional for some users)
     if user.get("requiresEmailVerification") and not user.get("isEmailVerified"):
-        print(f"[SECURITY] Login attempt on unverified email: {normalized_email}")
+        logger.warning("Login attempt on unverified account")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
             detail="Please verify your email before logging in. Check your inbox for verification link."
@@ -216,7 +249,7 @@ async def login_user_service(data: UserLogin):
     user_id = str(user["_id"])
     
     # Log successful login
-    print(f"[SUCCESS] User logged in: {user_id} ({normalized_email})")
+    logger.info("User login successful", extra={"user_id": user_id})
     
     response = _build_auth_payload(user, user_id)
     return JSONResponse(status_code=status.HTTP_200_OK, content={"data": response})
@@ -234,7 +267,7 @@ async def send_email_otp_service(email: str):
     if existing_user:
         # Email already has an account - prevent duplicate registration
         auth_provider = existing_user.get("authProvider", "email")
-        print(f"[SECURITY] Attempted re-registration with existing email: {normalized_email} (Provider: {auth_provider})")
+        logger.warning("Re-registration attempt blocked for existing email", extra={"auth_provider": auth_provider})
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered. Please login with your existing account instead."
@@ -248,15 +281,13 @@ async def send_email_otp_service(email: str):
             detail=f"Please wait {cooldown_remaining} seconds before requesting another OTP"
         )
     
-    # Check if email is already verified in current registration flow
+    # If a stale verified marker exists from an incomplete flow, clear it and force fresh OTP verification.
     existing_otp = await email_otp_collection.find_one({"email": normalized_email, "verified": True})
     if existing_otp:
-        # Email already verified in this registration flow
-        print(f"[SECURITY] Attempted re-verification with already verified email: {normalized_email}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already verified. Please proceed to complete registration."
-        )
+        await email_otp_collection.delete_one({"email": normalized_email})
+
+    # Reset failed OTP attempts when issuing a fresh code.
+    await delete_otp_attempts(normalized_email)
     
     # Generate OTP and store in memory
     otp, is_new = await generate_and_store_otp(normalized_email, "registration")
@@ -265,8 +296,12 @@ async def send_email_otp_service(email: str):
     email_sent = await send_otp_email(normalized_email, otp)
     
     if not email_sent:
-        # Log warning but don't fail the request - OTP is stored in memory
-        print(f"[WARNING] Failed to send OTP email to {normalized_email}, but OTP stored in memory: {otp}")
+        await delete_otp(normalized_email)
+        logger.error("Failed to send registration OTP email")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to send OTP right now. Please try again shortly."
+        )
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
@@ -285,10 +320,25 @@ async def verify_email_otp_service(email: str, otp: str, otp_type: str = "regist
 
     normalized_email = email.strip().lower()
 
+    is_locked, minutes_remaining = await check_otp_attempts(normalized_email)
+    if is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed OTP attempts. Please try again in {minutes_remaining} minutes."
+        )
+
     # Verify OTP using in-memory store
     is_valid, error_message = await verify_otp(normalized_email, otp, otp_type=otp_type)
     if not is_valid:
+        failed_count = await increment_otp_attempts(normalized_email)
+        if failed_count >= 5:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed OTP attempts. Please request a new OTP after 10 minutes"
+            )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_message)
+
+    await reset_otp_attempts(normalized_email)
 
     if otp_type == "registration":
         # Mark OTP as verified in registration flow
@@ -301,8 +351,12 @@ async def verify_email_otp_service(email: str, otp: str, otp_type: str = "regist
             {
                 "$set": {
                     "verified": True,
+                    "verifiedAt": now,
                     "updatedAt": now
-                }
+                },
+                "$setOnInsert": {
+                    "createdAt": now,
+                },
             },
             upsert=True,
         )
@@ -428,6 +482,7 @@ async def forgot_password_service(email: str):
 
     # Generate OTP and store in memory with type password_reset
     otp, is_new = await generate_and_store_otp(normalized_email, "password_reset")
+    await delete_otp_attempts(normalized_email)
 
     # Send OTP via Zoho Zepto Mail
     email_sent = await send_otp_email(
@@ -438,8 +493,7 @@ async def forgot_password_service(email: str):
     )
     
     if not email_sent:
-        # Log warning but don't fail the request - OTP is stored in memory
-        print(f"[WARNING] Failed to send password reset OTP email to {normalized_email}, but OTP stored in memory: {otp}")
+        logger.error("Failed to send password reset OTP email")
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
@@ -459,11 +513,9 @@ async def reset_password_service(email: str, otp: str, new_password: str):
             detail="Email, OTP, and new password are required"
         )
 
-    if len(new_password) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 6 characters long"
-        )
+    password_error = validate_password_strength(new_password)
+    if password_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=password_error)
 
     normalized_email = email.strip().lower()
     now = datetime.now(timezone.utc)
@@ -501,6 +553,7 @@ async def reset_password_service(email: str, otp: str, new_password: str):
 
     # Delete the OTP from memory after successful reset
     await delete_otp(normalized_email)
+    await delete_otp_attempts(normalized_email)
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
@@ -521,11 +574,9 @@ async def change_password_service(request: Request, old_password: str, new_passw
             detail="Old password and new password are required"
         )
 
-    if len(new_password) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 6 characters long"
-        )
+    password_error = validate_password_strength(new_password)
+    if password_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=password_error)
 
     if old_password == new_password:
         raise HTTPException(

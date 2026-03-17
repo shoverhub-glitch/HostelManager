@@ -34,7 +34,7 @@ interface ManageBedsCachePayload {
 const MANAGE_BEDS_CACHE_STALE_MS = 30 * 1000;
 
 export default function ManageBedsScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { isTablet, contentMaxWidth } = useResponsiveLayout();
   const router = useRouter();
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
@@ -239,8 +239,8 @@ export default function ManageBedsScreen() {
                 return (
                   <Card key={index} style={styles.bedCard}>
                     <View style={styles.bedHeader}>
-                      <View style={[styles.bedIconContainer, { backgroundColor: colors.primary[50] }]}>
-                        <BedIcon size={24} color={colors.primary[500]} />
+                      <View style={[styles.bedIconContainer, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+                        <BedIcon size={24} color={isDark ? colors.primary[300] : colors.primary[500]} />
                       </View>
                       <View style={styles.bedInfo}>
                         <Text style={[styles.bedNumber, { color: colors.text.primary }]}>
@@ -270,8 +270,8 @@ export default function ManageBedsScreen() {
                     {bed.status === 'maintenance' && (
                       <>
                         <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
-                        <View style={[styles.maintenanceInfo, { backgroundColor: colors.warning[50] }]}>
-                          <Text style={[styles.maintenanceText, { color: colors.warning[700] }]}>
+                        <View style={[styles.maintenanceInfo, { backgroundColor: isDark ? colors.warning[900] : colors.warning[50] }]}>
+                          <Text style={[styles.maintenanceText, { color: isDark ? colors.warning[300] : colors.warning[700] }]}>
                             Under Maintenance
                           </Text>
                         </View>

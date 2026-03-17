@@ -12,7 +12,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime, timezone, timedelta
 import logging
-from pymongo.errors import OperationFailure
+from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
+from urllib.parse import urlparse
 
 import os
 from app.routes import health, auth, property, room, tenant, bed, subscription, dashboard, staff, payment, coupon, plan
@@ -34,21 +35,83 @@ if not os.path.exists(static_dir):
     os.makedirs(static_dir)
 
 # FastAPI lifespan event handler for startup tasks
+async def ensure_mongodb_connection():
+    """Return a concise startup error message if MongoDB is unreachable."""
+    logger = logging.getLogger(__name__)
+    mongo_url = os.getenv("MONGO_URL", "")
+
+    if not mongo_url:
+        return "MongoDB startup check failed: MONGO_URL is not set. Configure it in api/.env before starting the API."
+
+    try:
+        await db.command("ping")
+        return None
+    except ServerSelectionTimeoutError:
+        parsed = urlparse(mongo_url)
+        hostname = parsed.hostname or ""
+        hint = ""
+        if hostname == "mongodb":
+            hint = " Hint: 'mongodb' hostname works inside Docker network; for local uvicorn use localhost in MONGO_URL."
+        logger.error("MongoDB startup check failed: cannot connect to MongoDB server.")
+        return (
+            "MongoDB startup check failed: unable to connect. Ensure MongoDB is running and MONGO_URL points to a reachable host."
+            f"{hint}"
+        )
+    except Exception as exc:
+        logger.error(f"MongoDB startup check failed: {exc}")
+        return f"MongoDB startup check failed: {exc}"
+
+
 async def ensure_indexes():
     """Create essential indexes for production-grade queries."""
     logger = logging.getLogger(__name__)
+
+    def _to_key_pattern(keys):
+        if isinstance(keys, str):
+            return {keys: 1}
+        if isinstance(keys, tuple):
+            if len(keys) == 2 and isinstance(keys[0], str):
+                return {keys[0]: keys[1]}
+            keys = [keys]
+        if isinstance(keys, list):
+            return {field: order for field, order in keys}
+        raise ValueError(f"Unsupported index key format: {keys}")
     
     async def create_index_safe(collection, keys, **kwargs):
-        """Safely create an index, ignoring conflicts with existing indexes."""
+        """Safely create an index, handling existing/conflicting index specs."""
         try:
             await db[collection].create_index(keys, **kwargs)
         except OperationFailure as e:
-            # IndexKeySpecsConflict (code 86) means the index already exists with different specs
-            # This is safe to ignore - the index was already created
-            if e.code == 86:
+            # Index already exists with same or overlapping key specs.
+            # code 86: IndexKeySpecsConflict, code 85: IndexOptionsConflict.
+            if e.code in (85, 86):
+                ttl_value = kwargs.get("expireAfterSeconds")
+                if ttl_value is not None:
+                    try:
+                        await db.command({
+                            "collMod": collection,
+                            "index": {
+                                "keyPattern": _to_key_pattern(keys),
+                                "expireAfterSeconds": ttl_value,
+                            },
+                        })
+                        logger.info(
+                            "Updated TTL index on %s for %s to %s seconds",
+                            collection,
+                            keys,
+                            ttl_value,
+                        )
+                        return
+                    except OperationFailure as mod_err:
+                        logger.warning(
+                            "Could not update TTL index via collMod on %s for %s: %s",
+                            collection,
+                            keys,
+                            mod_err,
+                        )
                 logger.debug(f"Index already exists on {collection} for {keys}, skipping")
-            else:
-                raise
+                return
+            raise
     
     # ============ USERS COLLECTION ============
     await create_index_safe("users", "email", unique=True)
@@ -57,7 +120,8 @@ async def ensure_indexes():
     logger.info("✓ Users indexes created")
     
     # ============ TOKEN BLACKLIST COLLECTION ============
-    await create_index_safe("token_blacklist", "createdAt", expireAfterSeconds=60*60*24*7)
+    await create_index_safe("token_blacklist", "token")
+    await create_index_safe("token_blacklist", "createdAt", expireAfterSeconds=60*60*24*31)
     logger.info("✓ Token blacklist indexes created")
     
     # ============ PROPERTIES COLLECTION ============
@@ -163,6 +227,11 @@ async def ensure_indexes():
 
 @asynccontextmanager
 async def lifespan(app):
+    mongo_error = await ensure_mongodb_connection()
+    if mongo_error:
+        print(mongo_error)
+        os._exit(1)
+
     await ensure_indexes()
     
     # Initialize default subscription plans (idempotent - only creates if none exist)

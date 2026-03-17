@@ -28,8 +28,6 @@ if not PUBLIC_PATHS:
 		"/api/v1/auth/email/send-otp",
 		"/api/v1/auth/email/verify-otp",
 		"/api/v1/auth/email/resend-otp",
-		"/api/v1/auth/resend-otp",
-		"/api/v1/auth/resend-verification",
 		"/api/v1/subscription/webhook",
 	])
 # Razorpay

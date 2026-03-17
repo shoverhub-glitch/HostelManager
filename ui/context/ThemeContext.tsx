@@ -11,7 +11,7 @@ interface ThemeContextType {
   isDark: boolean;
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+export const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 const THEME_STORAGE_KEY = '@hostel_manager_theme';
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

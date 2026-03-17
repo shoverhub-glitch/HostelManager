@@ -55,7 +55,7 @@ const TENANT_DETAIL_CACHE_STALE_MS = 30 * 1000;
 const TENANT_DETAIL_FOCUS_THROTTLE_MS = 30 * 1000;
 
 export default function TenantDetailScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const router = useRouter();
   const { tenantId } = useLocalSearchParams<{ tenantId: string }>();
   const isOnline = useNetworkStatus();
@@ -651,18 +651,18 @@ export default function TenantDetailScreen() {
         <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Tenant Details</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity
-            style={[styles.iconActionButton, { backgroundColor: colors.primary[50], borderColor: colors.primary[200], opacity: !isOnline ? 0.5 : 1 }]}
+            style={[styles.iconActionButton, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50], borderColor: isDark ? colors.primary[700] : colors.primary[200], opacity: !isOnline ? 0.5 : 1 }]}
             onPress={openEditTenantModal}
             activeOpacity={0.7}
             disabled={tenantActionLoading || !isOnline}>
-            <Pencil size={16} color={colors.primary[600]} />
+            <Pencil size={16} color={isDark ? colors.primary[300] : colors.primary[600]} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.iconActionButton, { backgroundColor: colors.danger[50], borderColor: colors.danger[200], opacity: !isOnline ? 0.5 : 1 }]}
+            style={[styles.iconActionButton, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50], borderColor: isDark ? colors.danger[700] : colors.danger[200], opacity: !isOnline ? 0.5 : 1 }]}
             onPress={handleDeleteTenant}
             activeOpacity={0.7}
             disabled={tenantActionLoading || !isOnline}>
-            <Trash2 size={16} color={colors.danger[600]} />
+            <Trash2 size={16} color={isDark ? colors.danger[300] : colors.danger[600]} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1434,8 +1434,8 @@ export default function TenantDetailScreen() {
               { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
             ]}>
             {/* Icon */}
-            <View style={[styles.deleteIconContainer, { backgroundColor: colors.danger[50] }]}>
-              <Trash2 size={32} color={colors.danger[500]} />
+            <View style={[styles.deleteIconContainer, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50] }]}>
+              <Trash2 size={32} color={isDark ? colors.danger[300] : colors.danger[500]} />
             </View>
 
             {/* Title */}

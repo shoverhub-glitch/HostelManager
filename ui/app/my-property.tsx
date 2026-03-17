@@ -31,7 +31,7 @@ const maskId = (id: string): string => {
 };
 
 export default function MyPropertyScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const router = useRouter();
   const { selectedProperty, loading: propertyLoading } = useProperty();
 
@@ -97,8 +97,8 @@ export default function MyPropertyScreen() {
         showsVerticalScrollIndicator={false}>
         <Card style={styles.propertyCard}>
           <View style={styles.propertyHeader}>
-            <View style={[styles.iconContainer, { backgroundColor: colors.primary[50] }]}>
-              <Building2 size={32} color={colors.primary[500]} />
+            <View style={[styles.iconContainer, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+              <Building2 size={32} color={isDark ? colors.primary[300] : colors.primary[500]} />
             </View>
             <View style={styles.propertyInfo}>
               <Text style={[styles.propertyName, { color: colors.text.primary }]}>

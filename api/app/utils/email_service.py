@@ -2,10 +2,23 @@
 import asyncio
 import httpx
 from typing import Optional
+import logging
 from app.config.settings import ZEPTO_MAIL_API_KEY, FROM_EMAIL
 
 # Zoho Zepto Mail API endpoint - using India region endpoint
 ZEPTO_API_ENDPOINT = "https://api.zeptomail.in/v1.1/email"
+logger = logging.getLogger(__name__)
+
+
+def _get_zepto_authorization_header(api_key: str) -> str:
+    """Build Zepto auth header while tolerating env values with/without prefix."""
+    raw_key = (api_key or "").strip()
+    prefix = "Zoho-enczapikey"
+
+    if raw_key.lower().startswith(prefix.lower()):
+        raw_key = raw_key[len(prefix):].strip()
+
+    return f"{prefix} {raw_key}"
 
 
 async def send_otp_email(
@@ -25,13 +38,13 @@ async def send_otp_email(
         True if email sent successfully, False otherwise
     """
     if not ZEPTO_MAIL_API_KEY or not FROM_EMAIL:
-        print(f"[WARNING] Zepto Mail not configured. OTP: {otp} for {email}")
+        logger.warning("Zepto Mail is not configured")
         return False
 
     try:
         # Build template by OTP use-case
         if otp_type == "password_reset":
-            subject = f"Your {app_name} Password Reset Code: {otp}"
+            subject = f"Your {app_name} Password Reset Code"
             html_content = f"""
             <html>
                 <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px;">
@@ -48,7 +61,7 @@ async def send_otp_email(
                         </div>
 
                         <p style="color: #999; font-size: 13px; text-align: center; margin-bottom: 10px;">
-                            This code will expire in 10 minutes
+                            This code will expire in 5 minutes
                         </p>
 
                         <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
@@ -68,7 +81,7 @@ async def send_otp_email(
             </html>
             """
         else:
-            subject = f"Your {app_name} Verification Code: {otp}"
+            subject = f"Your {app_name} Verification Code"
             html_content = f"""
             <html>
                 <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px;">
@@ -85,7 +98,7 @@ async def send_otp_email(
                         </div>
 
                         <p style="color: #999; font-size: 13px; text-align: center; margin-bottom: 10px;">
-                            This code will expire in 10 minutes
+                            This code will expire in 5 minutes
                         </p>
 
                         <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
@@ -123,7 +136,7 @@ async def send_otp_email(
         }
 
         headers = {
-            "Authorization": ZEPTO_MAIL_API_KEY,
+            "Authorization": _get_zepto_authorization_header(ZEPTO_MAIL_API_KEY),
             "Content-Type": "application/json"
         }
 
@@ -132,17 +145,25 @@ async def send_otp_email(
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(ZEPTO_API_ENDPOINT, json=payload, headers=headers)
                 if response.status_code in [200, 201, 202]:
-                    print(f"[SUCCESS] OTP email sent to {email}")
+                    logger.info("OTP email sent successfully")
                     return True
                 else:
-                    error_text = response.text
-                    print(f"[ERROR] Failed to send OTP email. Status: {response.status_code}. Response: {error_text}")
+                    logger.error(
+                        "Failed to send OTP email",
+                        extra={
+                            "status_code": response.status_code,
+                            "response_text": response.text[:500],
+                        },
+                    )
                     return False
-        except asyncio.TimeoutError:
-            print(f"[ERROR] Timeout sending OTP email to {email}")
+        except (asyncio.TimeoutError, httpx.TimeoutException):
+            logger.error("Timeout while sending OTP email")
+            return False
+        except httpx.RequestError as request_error:
+            logger.error(f"Network error while sending OTP email: {request_error}")
             return False
     except Exception as e:
-        print(f"[ERROR] Exception sending OTP email to {email}: {str(e)}")
+        logger.exception("Unexpected error while sending OTP email")
         return False
 
 
@@ -157,7 +178,7 @@ async def send_welcome_email(email: str, name: str, app_name: str = "Hostel Mana
         True if email sent successfully, False otherwise
     """
     if not ZEPTO_MAIL_API_KEY or not FROM_EMAIL:
-        print(f"[WARNING] Zepto Mail not configured. Welcome email not sent to {email}")
+        logger.warning("Zepto Mail is not configured. Welcome email skipped")
         return False
 
     try:
@@ -212,7 +233,7 @@ async def send_welcome_email(email: str, name: str, app_name: str = "Hostel Mana
         }
 
         headers = {
-            "Authorization": f"Zoho-enczapikey {ZEPTO_MAIL_API_KEY}",
+            "Authorization": _get_zepto_authorization_header(ZEPTO_MAIL_API_KEY),
             "Content-Type": "application/json"
         }
 
@@ -221,15 +242,23 @@ async def send_welcome_email(email: str, name: str, app_name: str = "Hostel Mana
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(ZEPTO_API_ENDPOINT, json=payload, headers=headers)
                 if response.status_code in [200, 201, 202]:
-                    print(f"[SUCCESS] Welcome email sent to {email}")
+                    logger.info("Welcome email sent successfully")
                     return True
                 else:
-                    error_text = response.text
-                    print(f"[ERROR] Failed to send welcome email. Status: {response.status_code}. Response: {error_text}")
+                    logger.error(
+                        "Failed to send welcome email",
+                        extra={
+                            "status_code": response.status_code,
+                            "response_text": response.text[:500],
+                        },
+                    )
                     return False
-        except asyncio.TimeoutError:
-            print(f"[ERROR] Timeout sending welcome email to {email}")
+        except (asyncio.TimeoutError, httpx.TimeoutException):
+            logger.error("Timeout while sending welcome email")
+            return False
+        except httpx.RequestError as request_error:
+            logger.error(f"Network error while sending welcome email: {request_error}")
             return False
     except Exception as e:
-        print(f"[ERROR] Exception sending welcome email to {email}: {str(e)}")
+        logger.exception("Unexpected error while sending welcome email")
         return False

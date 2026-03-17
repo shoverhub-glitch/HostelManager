@@ -334,7 +334,7 @@ export default function DashboardScreen() {
                           activeOpacity={0.7}>
                           <Card style={styles.quickStatCard}>
                             <View style={[styles.quickStatIcon, { backgroundColor: isDark ? colors.neutral[800] : colors.primary[50] }]}>
-                              <AlertCircle size={18} color={colors.primary[500]} />
+                              <AlertCircle size={18} color={isDark ? colors.primary[300] : colors.primary[500]} />
                             </View>
                             <View>
                               <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Due Payments</Text>
@@ -348,8 +348,8 @@ export default function DashboardScreen() {
 
                       {dashboardData?.stats.checkInsToday !== undefined && (
                         <Card style={styles.quickStatCard}>
-                          <View style={[styles.quickStatIcon, { backgroundColor: colors.success[50] }]}>
-                            <LogIn size={18} color={colors.success[500]} />
+                          <View style={[styles.quickStatIcon, { backgroundColor: isDark ? colors.success[900] : colors.success[50] }]}>
+                            <LogIn size={18} color={isDark ? colors.success[300] : colors.success[500]} />
                           </View>
                           <View>
                             <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Check-ins Today</Text>
@@ -362,8 +362,8 @@ export default function DashboardScreen() {
 
                       {dashboardData?.stats.totalStaff !== undefined && (
                         <Card style={styles.quickStatCard}>
-                          <View style={[styles.quickStatIcon, { backgroundColor: colors.purple[50] }]}>
-                            <Users size={18} color={colors.purple[500]} />
+                          <View style={[styles.quickStatIcon, { backgroundColor: isDark ? colors.purple[900] : colors.purple[50] }]}>
+                            <Users size={18} color={isDark ? colors.purple[300] : colors.purple[500]} />
                           </View>
                           <View>
                             <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Staff Available</Text>
@@ -379,8 +379,8 @@ export default function DashboardScreen() {
                           onPress={() => router.push('/tenants')}
                           activeOpacity={0.7}>
                           <Card style={styles.quickStatCard}>
-                            <View style={[styles.quickStatIcon, { backgroundColor: colors.success[50] }]}>
-                              <Users size={18} color={colors.success[500]} />
+                            <View style={[styles.quickStatIcon, { backgroundColor: isDark ? colors.success[900] : colors.success[50] }]}>
+                              <Users size={18} color={isDark ? colors.success[300] : colors.success[500]} />
                             </View>
                             <View>
                               <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>Tenant Status</Text>
@@ -406,8 +406,8 @@ export default function DashboardScreen() {
                         onPress={() => router.push(action.route as any)}
                         activeOpacity={0.7}>
                         <Card style={styles.actionCard}>
-                          <View style={[styles.actionIcon, { backgroundColor: isDark ? colors.neutral[800] : colors.primary[50] }]}>
-                            <action.icon size={24} color={colors.primary[500]} />
+                          <View style={[styles.actionIcon, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+                            <action.icon size={24} color={isDark ? colors.primary[300] : colors.primary[500]} />
                           </View>
                           <Text style={[styles.actionLabel, { color: colors.text.primary }]}>
                             {action.label}
@@ -422,9 +422,9 @@ export default function DashboardScreen() {
                 {dashboardData && dashboardData.duePayments.length > 0 && (
                   <View style={styles.section}>
                     <View style={styles.sectionHeaderRow}>
-                      <SectionHeader icon={Clock} iconColor={colors.primary[500]} title="Due Soon" />
+                      <SectionHeader icon={Clock} iconColor={isDark ? colors.primary[300] : colors.primary[500]} title="Due Soon" />
                       <TouchableOpacity onPress={() => router.push('/payments')} activeOpacity={0.7}>
-                        <ArrowRight size={18} color={colors.primary[500]} />
+                        <ArrowRight size={18} color={isDark ? colors.primary[300] : colors.primary[500]} />
                       </TouchableOpacity>
                     </View>
                     {dashboardData.duePayments.map((payment) => (

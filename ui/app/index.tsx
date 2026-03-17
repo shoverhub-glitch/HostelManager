@@ -23,7 +23,7 @@ import { encryptedTokenStorage } from '@/services/encryptedTokenStorage';
 import { deviceIdService } from '@/services/deviceId';
 
 export default function LoginScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { login } = useAuth();
   const router = useRouter();
   const { isTablet, contentMaxWidth, formMaxWidth } = useResponsiveLayout();
@@ -32,8 +32,25 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
+  const [passwordSuggestion, setPasswordSuggestion] = useState<string | null>(null);
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [lockoutTimer, setLockoutTimer] = useState<number | null>(null);
+
+  const errorBackgroundColor = isLockedOut
+    ? (isDark ? colors.danger[900] : colors.danger[50])
+    : (isDark ? colors.warning[900] : colors.warning[50]);
+  const errorBorderColor = isLockedOut
+    ? (isDark ? colors.danger[700] : colors.danger[200])
+    : (isDark ? colors.warning[700] : colors.warning[200]);
+  const errorTextColor = isLockedOut
+    ? (isDark ? colors.danger[200] : colors.danger[700])
+    : (isDark ? colors.warning[200] : colors.warning[700]);
+
+  const validateEmail = (value: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(value);
+  };
 
   useEffect(() => {
     if (!lockoutTimer || lockoutTimer <= 0) {
@@ -56,8 +73,24 @@ export default function LoginScreen() {
   }, [lockoutTimer]);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      setError('Email and password are required');
+    setEmailSuggestion(null);
+    setPasswordSuggestion(null);
+
+    if (!email.trim()) {
+      setError(null);
+      setEmailSuggestion('Enter email');
+      return;
+    }
+
+    if (!validateEmail(email.trim())) {
+      setError(null);
+      setEmailSuggestion('Invalid email');
+      return;
+    }
+
+    if (!password.trim()) {
+      setError(null);
+      setPasswordSuggestion('Enter password');
       return;
     }
 
@@ -115,8 +148,8 @@ export default function LoginScreen() {
               isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
             ]}>
             <View style={styles.logoContainer}>
-              <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
-                <Building2 size={48} color={colors.primary[500]} />
+              <View style={[styles.logoCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+                <Building2 size={48} color={isDark ? colors.primary[300] : colors.primary[500]} />
               </View>
               <Text style={[styles.title, { color: colors.text.primary }]}>Hostel Manager</Text>
               <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Owner Dashboard</Text>
@@ -128,12 +161,12 @@ export default function LoginScreen() {
                 isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
               ]}>
               {error && (
-                <View style={[styles.errorContainer, { backgroundColor: isLockedOut ? colors.danger[50] : colors.warning[50], borderColor: isLockedOut ? colors.danger[200] : colors.warning[200] }]}>
-                  <Text style={[styles.errorText, { color: isLockedOut ? colors.danger[700] : colors.warning[700] }]}>
+                <View style={[styles.errorContainer, { backgroundColor: errorBackgroundColor, borderColor: errorBorderColor }]}>
+                  <Text style={[styles.errorText, { color: errorTextColor }]}>
                     {error}
                   </Text>
                   {lockoutTimer && (
-                    <Text style={[styles.errorText, { color: isLockedOut ? colors.danger[700] : colors.warning[700], marginTop: 4 }]}>
+                    <Text style={[styles.errorText, { color: errorTextColor, marginTop: 4 }]}>
                       Try again in {Math.floor(lockoutTimer / 60)}:{(lockoutTimer % 60).toString().padStart(2, '0')} minutes
                     </Text>
                   )}
@@ -149,9 +182,22 @@ export default function LoginScreen() {
                   autoCapitalize="none"
                   placeholderTextColor={colors.text.tertiary}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (emailSuggestion && (!text.trim() || validateEmail(text.trim()))) {
+                      setEmailSuggestion(null);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (email.trim() && !validateEmail(email.trim())) {
+                      setEmailSuggestion('Invalid email');
+                    }
+                  }}
                   editable={!loading && !isLockedOut}
                 />
+                {emailSuggestion && (
+                  <Text style={[styles.helperSuggestionText, { color: colors.text.secondary }]}>{emailSuggestion}</Text>
+                )}
               </View>
 
               <View style={styles.inputContainer}>
@@ -164,7 +210,17 @@ export default function LoginScreen() {
                     autoCapitalize="none"
                     placeholderTextColor={colors.text.tertiary}
                     value={password}
-                    onChangeText={setPassword}
+                    onChangeText={(text) => {
+                      setPassword(text);
+                      if (passwordSuggestion && text.trim()) {
+                        setPasswordSuggestion(null);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!password.trim()) {
+                        setPasswordSuggestion('Enter password');
+                      }
+                    }}
                     editable={!loading && !isLockedOut}
                   />
                   <TouchableOpacity
@@ -178,6 +234,9 @@ export default function LoginScreen() {
                     )}
                   </TouchableOpacity>
                 </View>
+                {passwordSuggestion && (
+                  <Text style={[styles.helperSuggestionText, { color: colors.text.secondary }]}>{passwordSuggestion}</Text>
+                )}
                 <TouchableOpacity
                   style={styles.forgotPasswordLink}
                   onPress={() => router.push('/forgot-password' as any)}
@@ -308,6 +367,11 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
+  },
+  helperSuggestionText: {
+    marginTop: spacing.xs,
+    fontSize: 11,
+    lineHeight: 14,
   },
   actionButton: {
     borderRadius: radius.md,

@@ -56,6 +56,34 @@ class TenantService:
                 return current_month_anchor - relativedelta(months=1)
             return current_month_anchor
 
+    @classmethod
+    def _calculate_due_date_for_join_date(cls, anchor_day: int, join_date: date, today: date) -> date:
+        """
+        Calculate initial due date based on selected join date.
+
+        Rules:
+        - past join date: schedule next month on anchor day.
+        - future join date: schedule this month on anchor day (or next month if current month's anchor already passed).
+        - today's join date: falls back to standard initial due-date logic.
+
+        Uses relativedelta(day=anchor_day) so months with fewer days are clamped safely.
+        """
+        current_month_anchor = cls._get_current_month_anchor(anchor_day, today)
+
+        if join_date < today:
+            return current_month_anchor + relativedelta(months=1)
+
+        if join_date > today:
+            if current_month_anchor > today:
+                return current_month_anchor
+            return current_month_anchor + relativedelta(months=1)
+
+        return cls._calculate_initial_due_date(
+            anchor_day=anchor_day,
+            billing_status=BillingStatus.DUE.value,
+            today=today,
+        )
+
     async def get_tenants(
         self,
         property_id: str = None,
@@ -203,6 +231,10 @@ class TenantService:
         
         tenant_data["isDeleted"] = False
 
+        today_date = datetime.now(timezone.utc).date()
+        join_date_value = tenant_data.get("joinDate")
+        join_date = self._coerce_to_date(join_date_value) if join_date_value else today_date
+
         # Validate bed is available if provided
         bed_id = tenant_data.get("bedId")
         if bed_id:
@@ -220,6 +252,10 @@ class TenantService:
             # Ensure billing_config is a BillingConfig model, not a dict
             if isinstance(billing_config, dict):
                 billing_config = BillingConfig(**billing_config)
+
+            if join_date != today_date and billing_config.status != BillingStatus.DUE.value:
+                billing_config = billing_config.model_copy(update={"status": BillingStatus.DUE.value})
+
             # Convert to dict for MongoDB
             tenant_data["billingConfig"] = billing_config.model_dump()
         elif not auto_generate:
@@ -236,18 +272,29 @@ class TenantService:
         # Create payment only if autoGeneratePayments is True and billingConfig exists
         if auto_generate and billing_config:
             anchor_day = billing_config.anchorDay
-            today_date = datetime.now(timezone.utc).date()
-            due_date = self._calculate_initial_due_date(
-                anchor_day=anchor_day,
-                billing_status=billing_config.status,
-                today=today_date,
-            )
+
+            if join_date != today_date:
+                # For past/future join dates we always create the first payment as due and schedule by join date rules.
+                due_date = self._calculate_due_date_for_join_date(
+                    anchor_day=anchor_day,
+                    join_date=join_date,
+                    today=today_date,
+                )
+                initial_status = BillingStatus.DUE.value
+            else:
+                due_date = self._calculate_initial_due_date(
+                    anchor_day=anchor_day,
+                    billing_status=billing_config.status,
+                    today=today_date,
+                )
+                initial_status = billing_config.status
+
             payment = PaymentCreate(
                 tenantId=tenant_data["id"],
                 propertyId=tenant_data["propertyId"],
                 bed=tenant_data.get("bedId"),
                 amount=tenant_data["rent"],
-                status=billing_config.status,
+                status=initial_status,
                 dueDate=due_date,
                 method=billing_config.method or PaymentMethod.CASH.value
             )

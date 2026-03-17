@@ -1,29 +1,60 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-/**
- * Encrypted Token Storage Service
- * 
- * IMPORTANT: This currently uses AsyncStorage for compatibility.
- * For production, install and use react-native-encrypted-storage:
- * 
- * Installation:
- * npm install react-native-encrypted-storage
- * npx expo prebuild --clean
- * 
- * Then replace the imports below with:
- * import EncryptedStorage from 'react-native-encrypted-storage';
- */
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 const ACCESS_TOKEN_KEY = '@hostel_manager:access_token';
 const REFRESH_TOKEN_KEY = '@hostel_manager:refresh_token';
 const TOKEN_EXPIRY_KEY = '@hostel_manager:token_expiry';
 const DEVICE_ID_KEY = '@hostel_manager:device_id_token';
+const SECURE_STORE_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainService: 'hostel_manager_auth',
+};
 
-/**
- * Encrypted storage wrapper
- * Currently uses AsyncStorage, should be upgraded to EncryptedStorage for production
- */
-const storage = AsyncStorage; // TODO: Replace with EncryptedStorage after npm install
+const USE_SECURE_STORE = Platform.OS !== 'web';
+
+async function secureSetItem(key: string, value: string): Promise<void> {
+  if (USE_SECURE_STORE) {
+    try {
+      await SecureStore.setItemAsync(key, value, SECURE_STORE_OPTIONS);
+      return;
+    } catch {
+      // Fallback to AsyncStorage when secure storage is unavailable.
+    }
+  }
+  await AsyncStorage.setItem(key, value);
+}
+
+async function secureGetItem(key: string): Promise<string | null> {
+  if (USE_SECURE_STORE) {
+    try {
+      const secureValue = await SecureStore.getItemAsync(key, SECURE_STORE_OPTIONS);
+      if (secureValue !== null) {
+        return secureValue;
+      }
+    } catch {
+      // Fall through to legacy fallback.
+    }
+  }
+
+  // Legacy fallback and migration from AsyncStorage.
+  const legacyValue = await AsyncStorage.getItem(key);
+  if (legacyValue !== null) {
+    await secureSetItem(key, legacyValue);
+    await AsyncStorage.removeItem(key);
+  }
+  return legacyValue;
+}
+
+async function secureRemoveItem(key: string): Promise<void> {
+  if (USE_SECURE_STORE) {
+    try {
+      await SecureStore.deleteItemAsync(key, SECURE_STORE_OPTIONS);
+    } catch {
+      // Continue to AsyncStorage cleanup.
+    }
+  }
+  await AsyncStorage.removeItem(key);
+}
 
 export const encryptedTokenStorage = {
   /**
@@ -31,7 +62,7 @@ export const encryptedTokenStorage = {
    */
   async setAccessToken(token: string): Promise<void> {
     try {
-      await storage.setItem(ACCESS_TOKEN_KEY, token);
+      await secureSetItem(ACCESS_TOKEN_KEY, token);
     } catch (error) {
       console.error('Failed to store access token:', error);
       throw error;
@@ -43,7 +74,7 @@ export const encryptedTokenStorage = {
    */
   async getAccessToken(): Promise<string | null> {
     try {
-      return await storage.getItem(ACCESS_TOKEN_KEY);
+      return await secureGetItem(ACCESS_TOKEN_KEY);
     } catch (error) {
       console.error('Failed to retrieve access token:', error);
       return null;
@@ -56,7 +87,7 @@ export const encryptedTokenStorage = {
    */
   async setRefreshToken(token: string): Promise<void> {
     try {
-      await storage.setItem(REFRESH_TOKEN_KEY, token);
+      await secureSetItem(REFRESH_TOKEN_KEY, token);
     } catch (error) {
       console.error('Failed to store refresh token:', error);
       throw error;
@@ -68,7 +99,7 @@ export const encryptedTokenStorage = {
    */
   async getRefreshToken(): Promise<string | null> {
     try {
-      return await storage.getItem(REFRESH_TOKEN_KEY);
+      return await secureGetItem(REFRESH_TOKEN_KEY);
     } catch (error) {
       console.error('Failed to retrieve refresh token:', error);
       return null;
@@ -80,7 +111,7 @@ export const encryptedTokenStorage = {
    */
   async setTokenExpiry(expiresAt: number): Promise<void> {
     try {
-      await storage.setItem(TOKEN_EXPIRY_KEY, expiresAt.toString());
+      await secureSetItem(TOKEN_EXPIRY_KEY, expiresAt.toString());
     } catch (error) {
       console.error('Failed to store token expiry:', error);
       throw error;
@@ -92,7 +123,7 @@ export const encryptedTokenStorage = {
    */
   async getTokenExpiry(): Promise<number | null> {
     try {
-      const expiry = await storage.getItem(TOKEN_EXPIRY_KEY);
+      const expiry = await secureGetItem(TOKEN_EXPIRY_KEY);
       return expiry ? parseInt(expiry, 10) : null;
     } catch (error) {
       console.error('Failed to retrieve token expiry:', error);
@@ -106,7 +137,7 @@ export const encryptedTokenStorage = {
    */
   async setDeviceIdForTokens(deviceId: string): Promise<void> {
     try {
-      await storage.setItem(DEVICE_ID_KEY, deviceId);
+      await secureSetItem(DEVICE_ID_KEY, deviceId);
     } catch (error) {
       console.error('Failed to store device ID:', error);
       throw error;
@@ -118,7 +149,7 @@ export const encryptedTokenStorage = {
    */
   async getDeviceIdForTokens(): Promise<string | null> {
     try {
-      return await storage.getItem(DEVICE_ID_KEY);
+      return await secureGetItem(DEVICE_ID_KEY);
     } catch (error) {
       console.error('Failed to retrieve device ID:', error);
       return null;
@@ -132,10 +163,10 @@ export const encryptedTokenStorage = {
   async clearTokens(): Promise<void> {
     try {
       await Promise.all([
-        storage.removeItem(ACCESS_TOKEN_KEY),
-        storage.removeItem(REFRESH_TOKEN_KEY),
-        storage.removeItem(TOKEN_EXPIRY_KEY),
-        storage.removeItem(DEVICE_ID_KEY),
+        secureRemoveItem(ACCESS_TOKEN_KEY),
+        secureRemoveItem(REFRESH_TOKEN_KEY),
+        secureRemoveItem(TOKEN_EXPIRY_KEY),
+        secureRemoveItem(DEVICE_ID_KEY),
       ]);
     } catch (error) {
       console.error('Failed to clear tokens:', error);
@@ -185,21 +216,3 @@ export const encryptedTokenStorage = {
     }
   },
 };
-
-/**
- * NOTE: To upgrade to encrypted storage:
- * 
- * 1. Install dependency:
- *    npm install react-native-encrypted-storage
- *    npx expo prebuild --clean
- * 
- * 2. Replace the `storage` variable above with:
- *    import EncryptedStorage from 'react-native-encrypted-storage';
- *    const storage = EncryptedStorage;
- * 
- * 3. Update method signatures if needed (EncryptedStorage is async by default)
- * 
- * This will automatically encrypt all tokens on the device using:
- * - iOS: Keychain
- * - Android: Keystore
- */

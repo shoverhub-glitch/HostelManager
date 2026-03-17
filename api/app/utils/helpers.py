@@ -16,15 +16,12 @@ REFRESH_TOKEN_EXPIRE_MINUTES = settings.REFRESH_TOKEN_EXPIRE_MINUTES
 if not SECRET_KEY or len(SECRET_KEY) < 32:
 	raise RuntimeError("JWT_SECRET must be set and at least 32 characters long for security.")
 
-if not SECRET_KEY or len(SECRET_KEY) < 32:
-	raise RuntimeError("JWT_SECRET must be set and at least 32 characters long for security.")
-
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 
 
 # OAuth2 scheme for JWT Bearer token
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
 	try:

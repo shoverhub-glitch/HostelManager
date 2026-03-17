@@ -1,5 +1,4 @@
 from fastapi import APIRouter, status, Request, HTTPException
-from app.utils.rate_limit import rate_limit_dep
 from app.utils.rate_limit import rate_limit_dep, sensitive_action_limit
 from app.services.auth_service import (
     register_user_service,
@@ -49,7 +48,8 @@ async def send_email_otp(request: Request, payload: EmailSendOTPRequest):
 
 
 @router.post("/email/resend-otp", status_code=status.HTTP_200_OK, summary="Check OTP resend cooldown status", tags=["auth"])
-async def check_resend_status(payload: EmailSendOTPRequest):
+@sensitive_action_limit
+async def check_resend_status(request: Request, payload: EmailSendOTPRequest):
     """Check if OTP can be resent or get cooldown remaining time"""
     normalized_email = payload.email.strip().lower()
     cooldown_remaining = await get_resend_cooldown_remaining(normalized_email)
@@ -65,7 +65,8 @@ async def check_resend_status(payload: EmailSendOTPRequest):
 
 
 @router.post("/email/verify-otp", status_code=status.HTTP_200_OK, summary="Verify email OTP", tags=["auth"])
-async def verify_email_otp(payload: EmailVerifyOTPRequest):
+@sensitive_action_limit
+async def verify_email_otp(request: Request, payload: EmailVerifyOTPRequest):
     return await verify_email_otp_service(payload.email, payload.otp)
 
 
@@ -91,15 +92,18 @@ async def forgot_password(request: Request, payload: ForgotPasswordRequest):
 
 
 @router.post("/verify-reset-otp", status_code=status.HTTP_200_OK, summary="Verify password reset OTP", tags=["auth"])
-async def verify_reset_otp(payload: EmailVerifyOTPRequest):
+@sensitive_action_limit
+async def verify_reset_otp(request: Request, payload: EmailVerifyOTPRequest):
     return await verify_email_otp_service(payload.email, payload.otp, otp_type="password_reset")
 
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK, summary="Reset password with OTP", tags=["auth"])
-async def reset_password(payload: ResetPasswordRequest):
+@sensitive_action_limit
+async def reset_password(request: Request, payload: ResetPasswordRequest):
     return await reset_password_service(payload.email, payload.otp, payload.newPassword)
 
 
 @router.post("/change-password", status_code=status.HTTP_200_OK, summary="Change password for authenticated user", tags=["auth"])
+@sensitive_action_limit
 async def change_password(request: Request, payload: ChangePasswordRequest):
     return await change_password_service(request, payload.oldPassword, payload.newPassword)

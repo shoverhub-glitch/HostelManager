@@ -20,7 +20,7 @@ import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { authService } from '@/services/apiClient';
 
 export default function ForgotPasswordScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const router = useRouter();
   const { isTablet, contentMaxWidth, formMaxWidth } = useResponsiveLayout();
   const otpInputRefs = useRef<Array<TextInput | null>>([]);
@@ -40,6 +40,15 @@ export default function ForgotPasswordScreen() {
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
+  };
+
+  const validatePasswordStrength = (value: string) => {
+    if (value.length < 8) return 'Password must be at least 8 characters';
+    if (!/[A-Z]/.test(value)) return 'Password must include at least one uppercase letter';
+    if (!/[a-z]/.test(value)) return 'Password must include at least one lowercase letter';
+    if (!/\d/.test(value)) return 'Password must include at least one number';
+    if (!/[^\w\s]/.test(value)) return 'Password must include at least one special character';
+    return null;
   };
 
   const handleSendOTP = async () => {
@@ -114,8 +123,9 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleResetPassword = async () => {
-    if (!password || password.length < 6) {
-      setError('Password must be at least 6 characters');
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -260,7 +270,7 @@ export default function ForgotPasswordScreen() {
                 borderColor: colors.border.medium,
               },
             ]}
-            placeholder="Min 6 characters"
+            placeholder="At least 8 chars, upper/lower/number/symbol"
             secureTextEntry={!showPassword}
             autoCapitalize="none"
             placeholderTextColor={colors.text.tertiary}
@@ -353,8 +363,8 @@ export default function ForgotPasswordScreen() {
             </TouchableOpacity>
 
             <View style={styles.header}>
-              <View style={[styles.iconCircle, { backgroundColor: colors.primary[50] }]}>
-                <KeyRound size={40} color={colors.primary[500]} />
+              <View style={[styles.iconCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+                <KeyRound size={40} color={isDark ? colors.primary[300] : colors.primary[500]} />
               </View>
               <Text style={[styles.title, { color: colors.text.primary }]}>Reset Password</Text>
               <Text style={[styles.subtitle, { color: colors.text.secondary }]}>

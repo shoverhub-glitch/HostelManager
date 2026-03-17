@@ -22,7 +22,7 @@ import { encryptedTokenStorage } from '@/services/encryptedTokenStorage';
 import { deviceIdService } from '@/services/deviceId';
 
 export default function RegisterScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { login } = useAuth();
   const router = useRouter();
   const { isTablet, contentMaxWidth, formMaxWidth } = useResponsiveLayout();
@@ -40,8 +40,10 @@ export default function RegisterScreen() {
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [phoneSuggestion, setPhoneSuggestion] = useState<string | null>(null);
+  const [passwordSuggestion, setPasswordSuggestion] = useState<string | null>(null);
+  const [confirmPasswordSuggestion, setConfirmPasswordSuggestion] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
-  const [emailAlreadyVerified, setEmailAlreadyVerified] = useState(false);
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -52,6 +54,17 @@ export default function RegisterScreen() {
     const phoneRegex = /^\+91[6-9]\d{9}$/;
     return phoneRegex.test(phone.trim());
   };
+
+  const validatePasswordStrength = (value: string) => {
+    if (value.length < 8) return 'Min 8 characters';
+    if (!/[A-Z]/.test(value)) return 'Add uppercase letter';
+    if (!/[a-z]/.test(value)) return 'Add lowercase letter';
+    if (!/\d/.test(value)) return 'Add a number';
+    if (!/[^\w\s]/.test(value)) return 'Add special character';
+    return null;
+  };
+
+  const PHONE_HINT = 'Use +91XXXXXXXXXX';
 
   const handleSendOTP = async () => {
     if (!email.trim()) {
@@ -73,7 +86,6 @@ export default function RegisterScreen() {
     try {
       setLoading(true);
       setError(null);
-      setEmailAlreadyVerified(false);
       await authService.sendEmailOTP({ email: email.trim() });
       setOtpSent(true);
       setResendCooldown(45); // Start 45-second cooldown
@@ -86,11 +98,6 @@ export default function RegisterScreen() {
         setError(`Please wait ${seconds} seconds before requesting another OTP`);
       } else if (err?.code === 'CONFLICT' || err?.details?.status === 409) {
         setError('Email already exists');
-      } else if (err?.message?.includes('Email already verified')) {
-        // Email is already verified in this flow
-        setEmailAlreadyVerified(true);
-        setOtpSent(true);
-        setError(null);
       } else {
         setError(err?.message || 'Failed to send OTP. Please try again.');
       }
@@ -163,13 +170,11 @@ export default function RegisterScreen() {
     }
   };
 
-  const handleProceedWithVerifiedEmail = () => {
-    // Email was already verified, mark it as verified and proceed
-    setEmailVerified(true);
-    setError(null);
-  };
-
   const handleRegister = async () => {
+    setPhoneSuggestion(null);
+    setPasswordSuggestion(null);
+    setConfirmPasswordSuggestion(null);
+
     if (!name.trim()) {
       setError('Name is required');
       return;
@@ -186,17 +191,21 @@ export default function RegisterScreen() {
     }
 
     if (!phone.trim() || !validatePhone(phone.trim())) {
-      setError('Please enter a valid Indian phone number (+91XXXXXXXXXX)');
+      setError(null);
+      setPhoneSuggestion(PHONE_HINT);
       return;
     }
 
-    if (!password || password.length < 6) {
-      setError('Password must be at least 6 characters');
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) {
+      setError(null);
+      setPasswordSuggestion(passwordError);
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError(null);
+      setConfirmPasswordSuggestion('Must match password');
       return;
     }
 
@@ -252,8 +261,8 @@ export default function RegisterScreen() {
               isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
             ]}>
             <View style={styles.header}>
-              <View style={[styles.iconCircle, { backgroundColor: colors.primary[50] }]}>
-                <UserPlus size={addActionTokens.iconSize.userPlus.auth} color={colors.action.add.background} />
+              <View style={[styles.iconCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+                <UserPlus size={addActionTokens.iconSize.userPlus.auth} color={isDark ? colors.primary[300] : colors.action.add.background} />
               </View>
               <Text style={[styles.title, { color: colors.text.primary }]}>Create Account</Text>
               <Text style={[styles.subtitle, { color: colors.text.secondary }]}> 
@@ -273,18 +282,6 @@ export default function RegisterScreen() {
                   { backgroundColor: colors.danger[50], borderColor: colors.danger[200] },
                 ]}>
                 <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
-              </View>
-            )}
-
-            {emailVerified && (
-              <View
-                style={[
-                  styles.successContainer,
-                  { backgroundColor: colors.success[50], borderColor: colors.success[200] },
-                ]}>
-                <Text style={[styles.successText, { color: colors.success[700] }]}>
-                  ✓ Email verified successfully
-                </Text>
               </View>
             )}
 
@@ -324,7 +321,7 @@ export default function RegisterScreen() {
                 placeholderTextColor={colors.text.tertiary}
                 value={email}
                 onChangeText={setEmail}
-                editable={!loading && !emailVerified && !emailAlreadyVerified}
+                editable={!loading && !emailVerified}
               />
             </View>
 
@@ -347,38 +344,7 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             )}
 
-            {otpSent && !emailVerified && emailAlreadyVerified && (
-              <>
-                <View style={[styles.successCard, { backgroundColor: colors.success[50], borderColor: colors.success[200] }]}>
-                  <Text style={[styles.successIcon]}>✓</Text>
-                  <Text style={[styles.successTitle, { color: colors.success[700] }]}>
-                    Email Already Verified
-                  </Text>
-                  <Text style={[styles.successMessage, { color: colors.success[600] }]}>
-                    Your email has already been verified. Please proceed to complete your registration by entering other details below.
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={[
-                    styles.primaryButton,
-                    { backgroundColor: colors.primary[500], opacity: loading ? 0.6 : 1 },
-                  ]}
-                  onPress={handleProceedWithVerifiedEmail}
-                  activeOpacity={0.8}
-                  disabled={loading}>
-                  {loading ? (
-                    <ActivityIndicator color={colors.white} size="small" />
-                  ) : (
-                    <Text style={[styles.primaryButtonText, { color: colors.white }]}>
-                      Proceed to Registration
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </>
-            )}
-
-            {otpSent && !emailVerified && !emailAlreadyVerified && (
+            {otpSent && !emailVerified && (
               <>
                 <Text style={[styles.label, { color: colors.text.primary }]}>
                   Enter 6-digit OTP
@@ -445,7 +411,7 @@ export default function RegisterScreen() {
               <>
                 <View style={styles.inputContainer}>
                   <Text style={[styles.label, { color: colors.text.primary }]}>
-                    Phone Number (India) *
+                    Phone Number *
                   </Text>
                   <TextInput
                     style={[
@@ -460,9 +426,26 @@ export default function RegisterScreen() {
                     keyboardType="phone-pad"
                     placeholderTextColor={colors.text.tertiary}
                     value={phone}
-                    onChangeText={setPhone}
+                    onChangeText={(text) => {
+                      setPhone(text);
+                      if (phoneSuggestion && (!text || validatePhone(text.trim()))) {
+                        setPhoneSuggestion(null);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (phone.trim() && !validatePhone(phone.trim())) {
+                        setPhoneSuggestion(PHONE_HINT);
+                      } else {
+                        setPhoneSuggestion(null);
+                      }
+                    }}
                     editable={!loading}
                   />
+                  {phoneSuggestion && (
+                    <Text style={[styles.helperSuggestionText, { color: colors.text.secondary }]}>
+                      {phoneSuggestion}
+                    </Text>
+                  )}
                 </View>
 
                 <View style={styles.inputContainer}>
@@ -482,7 +465,22 @@ export default function RegisterScreen() {
                       autoCapitalize="none"
                       placeholderTextColor={colors.text.tertiary}
                       value={password}
-                      onChangeText={setPassword}
+                      onChangeText={(text) => {
+                        setPassword(text);
+                        if (passwordSuggestion && (!text || !validatePasswordStrength(text))) {
+                          setPasswordSuggestion(null);
+                        }
+                        if (confirmPasswordSuggestion && confirmPassword === text) {
+                          setConfirmPasswordSuggestion(null);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (password) {
+                          setPasswordSuggestion(validatePasswordStrength(password));
+                        } else {
+                          setPasswordSuggestion(null);
+                        }
+                      }}
                       editable={!loading}
                     />
                     <TouchableOpacity
@@ -496,6 +494,11 @@ export default function RegisterScreen() {
                       )}
                     </TouchableOpacity>
                   </View>
+                  {passwordSuggestion && (
+                    <Text style={[styles.helperSuggestionText, { color: colors.text.secondary }]}>
+                      {passwordSuggestion}
+                    </Text>
+                  )}
                 </View>
 
                 <View style={styles.inputContainer}>
@@ -517,7 +520,19 @@ export default function RegisterScreen() {
                       autoCapitalize="none"
                       placeholderTextColor={colors.text.tertiary}
                       value={confirmPassword}
-                      onChangeText={setConfirmPassword}
+                      onChangeText={(text) => {
+                        setConfirmPassword(text);
+                        if (!text || text === password) {
+                          setConfirmPasswordSuggestion(null);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (confirmPassword && confirmPassword !== password) {
+                          setConfirmPasswordSuggestion('Must match password');
+                        } else {
+                          setConfirmPasswordSuggestion(null);
+                        }
+                      }}
                       editable={!loading}
                     />
                     <TouchableOpacity
@@ -531,6 +546,11 @@ export default function RegisterScreen() {
                       )}
                     </TouchableOpacity>
                   </View>
+                  {confirmPasswordSuggestion && (
+                    <Text style={[styles.helperSuggestionText, { color: colors.text.secondary }]}> 
+                      {confirmPasswordSuggestion}
+                    </Text>
+                  )}
                 </View>
 
                 <TouchableOpacity
@@ -619,17 +639,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
   },
-  successContainer: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  successText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
-  },
   inputContainer: {
     marginBottom: spacing.md,
   },
@@ -702,6 +711,11 @@ const styles = StyleSheet.create({
   },
   linkTextBold: {
     fontWeight: typography.fontWeight.semibold,
+  },
+  helperSuggestionText: {
+    marginTop: spacing.xs,
+    fontSize: 11,
+    lineHeight: 14,
   },
   successCard: {
     borderRadius: radius.md,

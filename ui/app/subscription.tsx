@@ -40,21 +40,34 @@ interface SubscriptionCachePayload {
 
 const SUBSCRIPTION_CACHE_STALE_MS = 2 * 60 * 1000;
 
-const PLAN_THEMES: Record<string, { borderColor: string; iconBg: string; accentColor: string; icon: any }> = {
-  free: { borderColor: '#94A3B8', iconBg: '#E2E8F0', accentColor: '#64748B', icon: Crown },
-  pro: { borderColor: '#6366F1', iconBg: '#EEF2FF', accentColor: '#6366F1', icon: Trophy },
-  premium: { borderColor: '#8B5CF6', iconBg: '#F3E8FF', accentColor: '#8B5CF6', icon: Gem },
-};
+const getPlanTheme = (planName: string, colors: any, isDark: boolean) => {
+  const freeTheme = {
+    borderColor: isDark ? colors.neutral[600] : colors.neutral[400],
+    iconBg: isDark ? colors.neutral[800] : colors.neutral[200],
+    accentColor: isDark ? colors.neutral[200] : colors.neutral[600],
+    icon: Crown,
+  };
+  const proTheme = {
+    borderColor: isDark ? colors.primary[400] : colors.primary[500],
+    iconBg: isDark ? colors.primary[900] : colors.primary[50],
+    accentColor: isDark ? colors.primary[300] : colors.primary[500],
+    icon: Trophy,
+  };
+  const premiumTheme = {
+    borderColor: isDark ? colors.purple[400] : colors.purple[500],
+    iconBg: isDark ? colors.purple[900] : colors.purple[50],
+    accentColor: isDark ? colors.purple[300] : colors.purple[500],
+    icon: Gem,
+  };
 
-const getPlanTheme = (planName: string) => {
   const name = planName.toLowerCase();
-  if (name.includes('premium')) return PLAN_THEMES.premium;
-  if (name.includes('pro')) return PLAN_THEMES.pro;
-  return PLAN_THEMES.free;
+  if (name.includes('premium')) return premiumTheme;
+  if (name.includes('pro')) return proTheme;
+  return freeTheme;
 };
 
 export default function SubscriptionScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { isTablet, contentMaxWidth } = useResponsiveLayout();
   const { width: windowWidth } = useWindowDimensions();
   const router = useRouter();
@@ -151,7 +164,7 @@ export default function SubscriptionScreen() {
   };
 
   const renderPlanPage = (plan: PlanMetadata, index: number) => {
-    const theme = getPlanTheme(plan.name);
+    const theme = getPlanTheme(plan.name, colors, isDark);
     const isCurrent = plan.name.toLowerCase() === currentPlan.toLowerCase();
     const planDisplayName = plan.display_name || plan.name.charAt(0).toUpperCase() + plan.name.slice(1);
     const PlanIcon = theme.icon;
@@ -278,9 +291,9 @@ export default function SubscriptionScreen() {
             <ActivityIndicator size="large" color={colors.primary[500]} />
           </View>
         ) : error ? (
-          <TouchableOpacity style={[styles.errorCard, { backgroundColor: colors.danger[50] }]} onPress={fetchSubscriptionData}>
-            <AlertCircle size={20} color={colors.danger[500]} />
-            <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
+          <TouchableOpacity style={[styles.errorCard, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50] }]} onPress={fetchSubscriptionData}>
+            <AlertCircle size={20} color={isDark ? colors.danger[300] : colors.danger[500]} />
+            <Text style={[styles.errorText, { color: isDark ? colors.danger[300] : colors.danger[700] }]}>{error}</Text>
           </TouchableOpacity>
         ) : (
           <>

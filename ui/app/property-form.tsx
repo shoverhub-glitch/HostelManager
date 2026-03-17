@@ -23,7 +23,7 @@ import { useAuth } from '@/context/AuthContext';
 import UpgradeModal from '@/components/UpgradeModal';
 
 export default function PropertyFormScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { isTablet, contentMaxWidth, formMaxWidth } = useResponsiveLayout();
   const router = useRouter();
   const { propertyId } = useLocalSearchParams<{ propertyId?: string }>();
@@ -139,8 +139,8 @@ export default function PropertyFormScreen() {
             <>
               <View style={styles.logoContainer}>
                 {/* Do not show ownerId or property id in the form UI */}
-                <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
-                  <Building2 size={48} color={colors.primary[500]} />
+                <View style={[styles.logoCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+                  <Building2 size={48} color={isDark ? colors.primary[300] : colors.primary[500]} />
                 </View>
                 <Text style={[styles.title, { color: colors.text.primary }]}>
                   {isEdit ? 'Update Property' : 'Create Property'}

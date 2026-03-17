@@ -43,7 +43,7 @@ function normalizeErrorMessage(message?: string): string {
 }
 
 export default function ManageRoomsScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const router = useRouter();
   const { isTablet, isLargeTablet, contentMaxWidth, modalMaxWidth } = useResponsiveLayout();
   const roomCardWidth = isLargeTablet ? '31.5%' : isTablet ? '48.5%' : '100%';
@@ -295,8 +295,8 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
                 ] as any}>
                 <View style={styles.roomCardContent}>
                   <View style={styles.roomHeader}>
-                    <View style={[styles.roomIconContainer, { backgroundColor: room.active === false ? colors.neutral[100] : colors.primary[100] }]}>
-                      <DoorOpen size={24} color={room.active === false ? colors.text.tertiary : colors.primary[600]} />
+                    <View style={[styles.roomIconContainer, { backgroundColor: room.active === false ? (isDark ? colors.neutral[800] : colors.neutral[100]) : (isDark ? colors.primary[900] : colors.primary[100]) }]}>
+                      <DoorOpen size={24} color={room.active === false ? colors.text.tertiary : (isDark ? colors.primary[300] : colors.primary[600])} />
                     </View>
                     <View style={styles.roomInfo}>
                       <View style={styles.roomNameRow}>
@@ -304,9 +304,9 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
                           Room {room.roomNumber}
                         </Text>
                         {room.active === false && (
-                          <View style={[styles.archivedBadge, { backgroundColor: colors.warning[100] }]}>
-                            <Archive size={12} color={colors.warning[600]} />
-                            <Text style={[styles.archivedBadgeText, { color: colors.warning[600] }]}>
+                          <View style={[styles.archivedBadge, { backgroundColor: isDark ? colors.warning[900] : colors.warning[100] }]}>
+                            <Archive size={12} color={isDark ? colors.warning[300] : colors.warning[600]} />
+                            <Text style={[styles.archivedBadgeText, { color: isDark ? colors.warning[300] : colors.warning[600] }]}>
                               Archived
                             </Text>
                           </View>
@@ -319,18 +319,18 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
                     {room.active !== false && (
                       <View style={styles.roomActionIcons}>
                         <TouchableOpacity
-                          style={[styles.roomIconButton, { backgroundColor: colors.primary[50] }]}
+                          style={[styles.roomIconButton, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}
                           onPress={() => handleEditRoom(room)}
                           activeOpacity={0.6}
                           disabled={!isOnline}>
-                          <Edit size={16} color={colors.primary[600]} />
+                          <Edit size={16} color={isDark ? colors.primary[300] : colors.primary[600]} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={[styles.roomIconButton, { backgroundColor: colors.danger[50] }]}
+                          style={[styles.roomIconButton, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50] }]}
                           onPress={() => handleDeleteRoom(room)}
                           activeOpacity={0.6}
                           disabled={!isOnline}>
-                          <Trash2 size={16} color={colors.danger[600]} />
+                          <Trash2 size={16} color={isDark ? colors.danger[300] : colors.danger[600]} />
                         </TouchableOpacity>
                       </View>
                     )}
@@ -338,8 +338,8 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
 
                   <View style={[styles.roomStatsContainer, { backgroundColor: room.active === false ? colors.background.primary : colors.background.tertiary }]}>
                     <View style={styles.statItem}>
-                      <View style={[styles.statIconContainer, { backgroundColor: colors.success[50] }]}>
-                        <IndianRupee size={16} color={colors.success[600]} />
+                      <View style={[styles.statIconContainer, { backgroundColor: isDark ? colors.success[900] : colors.success[50] }]}>
+                        <IndianRupee size={16} color={isDark ? colors.success[300] : colors.success[600]} />
                       </View>
                       <View>
                         <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Price</Text>
@@ -352,8 +352,8 @@ const showEmptyState = !!selectedProperty && !loading && rooms.length === 0 && !
                     <View style={styles.statDivider} />
 
                     <View style={styles.statItem}>
-                      <View style={[styles.statIconContainer, { backgroundColor: colors.primary[50] }]}>
-                        <Bed size={16} color={colors.primary[600]} />
+                      <View style={[styles.statIconContainer, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+                        <Bed size={16} color={isDark ? colors.primary[300] : colors.primary[600]} />
                       </View>
                       <View>
                         <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Beds</Text>

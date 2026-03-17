@@ -37,7 +37,7 @@ export default function ArchiveWarningModal({
   onUpgrade,
   action,
 }: ArchiveWarningModalProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const archiveReason = reason || archivedReason;
 
   const getTitle = () => {
@@ -57,13 +57,13 @@ export default function ArchiveWarningModal({
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={[styles.overlay, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
-        <View style={[styles.modal, { backgroundColor: colors.white }]}>
+        <View style={[styles.modal, { backgroundColor: colors.background.secondary }]}>
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <X size={24} color={colors.text.primary} />
           </TouchableOpacity>
 
-          <View style={[styles.iconContainer, { backgroundColor: colors.danger[50] }]}>
-            <Lock size={48} color={colors.danger[500]} />
+          <View style={[styles.iconContainer, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50] }]}>
+            <Lock size={48} color={isDark ? colors.danger[300] : colors.danger[500]} />
           </View>
 
           <Text style={[styles.title, { color: colors.text.primary }]}>
@@ -77,7 +77,7 @@ export default function ArchiveWarningModal({
           {archiveReason && (
             <Card style={[styles.reasonCard, { backgroundColor: colors.background.tertiary }] as any}>
               <View style={styles.reasonHeader}>
-                <AlertTriangle size={16} color={colors.warning[500]} />
+                <AlertTriangle size={16} color={isDark ? colors.warning[300] : colors.warning[500]} />
                 <Text style={[styles.reasonTitle, { color: colors.text.secondary }]}>
                   Archival Reason
                 </Text>

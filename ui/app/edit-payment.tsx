@@ -287,8 +287,8 @@ export default function EditPaymentScreen() {
           ]}
           keyboardShouldPersistTaps="handled">
           <View style={styles.logoContainer}>
-            <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
-              <Wallet size={48} color={colors.primary[500]} />
+            <View style={[styles.logoCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+              <Wallet size={48} color={isDark ? colors.primary[300] : colors.primary[500]} />
             </View>
             <Text style={[styles.title, { color: colors.text.primary }]}>Edit Payment</Text>
             <Text style={[styles.subtitle, { color: colors.text.secondary }]}>

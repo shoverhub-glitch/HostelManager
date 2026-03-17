@@ -20,7 +20,7 @@ import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { authService } from '@/services/apiClient';
 
 export default function ChangePasswordScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const router = useRouter();
   const { isTablet, contentMaxWidth, formMaxWidth } = useResponsiveLayout();
 
@@ -35,14 +35,24 @@ export default function ChangePasswordScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const validatePasswordStrength = (value: string) => {
+    if (value.length < 8) return 'Password must be at least 8 characters';
+    if (!/[A-Z]/.test(value)) return 'Password must include at least one uppercase letter';
+    if (!/[a-z]/.test(value)) return 'Password must include at least one lowercase letter';
+    if (!/\d/.test(value)) return 'Password must include at least one number';
+    if (!/[^\w\s]/.test(value)) return 'Password must include at least one special character';
+    return null;
+  };
+
   const handleChangePassword = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
       setError('All fields are required');
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError('New password must be at least 6 characters');
+    const passwordError = validatePasswordStrength(newPassword);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -104,8 +114,8 @@ export default function ChangePasswordScreen() {
             </TouchableOpacity>
 
             <View style={styles.header}>
-              <View style={[styles.iconCircle, { backgroundColor: colors.primary[50] }]}>
-                <KeyRound size={40} color={colors.primary[500]} />
+              <View style={[styles.iconCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+                <KeyRound size={40} color={isDark ? colors.primary[300] : colors.primary[500]} />
               </View>
               <Text style={[styles.title, { color: colors.text.primary }]}>Change Password</Text>
               <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
@@ -173,7 +183,7 @@ export default function ChangePasswordScreen() {
                       borderColor: colors.border.medium,
                     },
                   ]}
-                  placeholder="Minimum 6 characters"
+                  placeholder="At least 8 chars, upper/lower/number/symbol"
                   secureTextEntry={!showNewPassword}
                   autoCapitalize="none"
                   placeholderTextColor={colors.text.tertiary}

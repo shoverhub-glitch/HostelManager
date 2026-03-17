@@ -530,19 +530,19 @@ export const authService = {
   async resendVerification(
     email: string
   ): Promise<ApiResponse<{ message: string }>> {
-    return await request<{ message: string }>('POST', '/auth/resend-verification', { email }, false) as ApiResponse<{ message: string }>;
+    return await request<{ message: string }>('POST', '/auth/email/resend-otp', { email }, false) as ApiResponse<{ message: string }>;
   },
 
   async verifyOTP(
     data: VerifyOTPRequest
   ): Promise<ApiResponse<VerifyOTPResponse>> {
-    return await request<VerifyOTPResponse>('POST', '/auth/verify-otp', data, false) as ApiResponse<VerifyOTPResponse>;
+    return await request<VerifyOTPResponse>('POST', '/auth/email/verify-otp', data, false) as ApiResponse<VerifyOTPResponse>;
   },
 
   async resendOTP(
     data: ResendOTPRequest
   ): Promise<ApiResponse<EmailSendOTPResponse>> {
-    return await request<EmailSendOTPResponse>('POST', '/auth/resend-otp', data, false) as ApiResponse<EmailSendOTPResponse>;
+    return await request<EmailSendOTPResponse>('POST', '/auth/email/resend-otp', data, false) as ApiResponse<EmailSendOTPResponse>;
   },
 
   async forgotPassword(

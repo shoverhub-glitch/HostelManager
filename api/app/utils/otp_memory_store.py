@@ -1,6 +1,6 @@
 """In-memory OTP storage with expiration and resend cooldown"""
 from datetime import datetime, timedelta, timezone
-import random
+import secrets
 from typing import Optional, Tuple
 
 # In-memory storage structure: {email: {otp, created_at, expires_at, last_sent_at, resend_cooldown_expires_at}}
@@ -34,8 +34,8 @@ async def generate_and_store_otp(email: str, otp_type: str = "registration") -> 
             remaining_seconds = int((resend_cooldown_expires - now).total_seconds())
             return stored.get("otp", ""), False
     
-    # Generate new OTP
-    otp = str(random.randint(100000, 999999))
+    # Generate cryptographically secure 6-digit OTP.
+    otp = f"{secrets.randbelow(900000) + 100000}"
     expires_at = now + timedelta(minutes=5)
     resend_cooldown_expires_at = now + timedelta(seconds=45)
     
@@ -99,6 +99,13 @@ async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tu
     if stored["expires_at"] < now:
         del otp_store[normalized_email]
         return False, "OTP expired. Please request a new OTP"
+
+    # Enforce temporary lock before evaluating OTP match.
+    locked_until = stored.get("locked_until")
+    if locked_until and locked_until > now:
+        remaining_seconds = int((locked_until - now).total_seconds())
+        minutes_remaining = (remaining_seconds + 59) // 60
+        return False, f"Too many failed attempts. Please try again in {minutes_remaining} minutes"
     
     # Check if OTP matches
     if stored["otp"] != otp:
@@ -112,14 +119,6 @@ async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tu
         
         remaining_attempts = 5 - stored["attempt_count"]
         return False, f"Invalid OTP. {remaining_attempts} attempt(s) remaining"
-    
-    # Check if locked
-    if "locked_until" in stored:
-        locked_until = stored.get("locked_until")
-        if locked_until and locked_until > now:
-            remaining_seconds = int((locked_until - now).total_seconds())
-            minutes_remaining = (remaining_seconds + 59) // 60
-            return False, f"Too many failed attempts. Please try again in {minutes_remaining} minutes"
     
     return True, None
 

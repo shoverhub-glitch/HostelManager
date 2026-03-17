@@ -35,7 +35,7 @@ const FLOOR_OPTIONS = [
 ];
 
 export default function RoomFormScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { isTablet, contentMaxWidth, modalMaxWidth, formMaxWidth } = useResponsiveLayout();
   const router = useRouter();
   const { roomId } = useLocalSearchParams<{ roomId?: string }>();
@@ -271,8 +271,8 @@ export default function RoomFormScreen() {
           ]}
           keyboardShouldPersistTaps="handled">
           <View style={styles.logoContainer}>
-            <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
-              <DoorOpen size={32} color={colors.primary[500]} />
+            <View style={[styles.logoCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+              <DoorOpen size={32} color={isDark ? colors.primary[300] : colors.primary[500]} />
             </View>
             <Text style={[styles.title, { color: colors.text.primary }]}>
               {isEdit ? 'Edit Room Details' : 'Create Room'}

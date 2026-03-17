@@ -33,6 +33,92 @@ const PAYMENT_STATUSES = [
 ];
 const PAYMENT_METHODS = ['Cash', 'Online', 'Bank Transfer', 'UPI', 'Cheque'];
 
+type JoinDateTiming = 'past' | 'today' | 'future';
+
+const parseDateOnly = (value: string): Date | null => {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.slice(0, 10);
+  const parts = normalized.split('-').map(Number);
+  if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
+    return null;
+  }
+
+  const [year, month, day] = parts;
+  return new Date(year, month - 1, day);
+};
+
+const getClampedDate = (year: number, monthIndex: number, day: number): Date => {
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  return new Date(year, monthIndex, Math.min(day, daysInMonth));
+};
+
+const getJoinDateTiming = (joinDateValue: string): JoinDateTiming => {
+  const selectedJoinDate = parseDateOnly(joinDateValue);
+  if (!selectedJoinDate) {
+    return 'today';
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (selectedJoinDate < today) {
+    return 'past';
+  }
+  if (selectedJoinDate > today) {
+    return 'future';
+  }
+  return 'today';
+};
+
+const getAnchorTiming = (anchorDayValue: number): JoinDateTiming => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const currentMonthAnchor = getClampedDate(today.getFullYear(), today.getMonth(), anchorDayValue);
+
+  if (currentMonthAnchor < today) {
+    return 'past';
+  }
+  if (currentMonthAnchor > today) {
+    return 'future';
+  }
+  return 'today';
+};
+
+const getScheduledDueDate = (anchorDayValue: number, joinTiming: JoinDateTiming): Date => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const currentMonthAnchor = getClampedDate(today.getFullYear(), today.getMonth(), anchorDayValue);
+
+  if (joinTiming === 'past') {
+    return getClampedDate(today.getFullYear(), today.getMonth() + 1, anchorDayValue);
+  }
+
+  if (joinTiming === 'future') {
+    if (currentMonthAnchor > today) {
+      return currentMonthAnchor;
+    }
+    return getClampedDate(today.getFullYear(), today.getMonth() + 1, anchorDayValue);
+  }
+
+  if (currentMonthAnchor < today) {
+    return getClampedDate(today.getFullYear(), today.getMonth() + 1, anchorDayValue);
+  }
+
+  return currentMonthAnchor;
+};
+
+const formatScheduleDate = (targetDate: Date): string =>
+  targetDate.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
 interface TenantWithLatestPayment extends Tenant {
   latestPayment?: Payment;
 }
@@ -50,7 +136,7 @@ export default function AddPaymentScreen() {
   const [phone, setPhone] = useState(typeof params.phone === 'string' ? params.phone : '');
   const [address] = useState(typeof params.address === 'string' ? params.address : '');
   const [rent, setRent] = useState(typeof params.rent === 'string' ? params.rent : ''); // Rent remains unchanged
-  const [joinDate, setJoinDate] = useState(typeof params.joinDate === 'string' ? params.joinDate : '');
+  const [joinDate] = useState(typeof params.joinDate === 'string' ? params.joinDate : '');
   const [roomId] = useState(typeof params.roomId === 'string' ? params.roomId : '');
   const [bedId] = useState(typeof params.bedId === 'string' ? params.bedId : '');
   const [propertyId] = useState(typeof params.propertyId === 'string' ? params.propertyId : selectedPropertyId);
@@ -69,20 +155,33 @@ export default function AddPaymentScreen() {
   const [showAnchorDayPicker, setShowAnchorDayPicker] = useState(false);
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [statusAutoUpdateNotice, setStatusAutoUpdateNotice] = useState<string | null>(null);
+
+  const joinDateTiming = getJoinDateTiming(joinDate);
+  const anchorTiming = getAnchorTiming(anchorDay);
+  const shouldHideStatus = joinDateTiming !== 'today' || anchorTiming !== 'today';
+  const effectiveStatus: 'paid' | 'due' = shouldHideStatus ? 'due' : status;
+  const nextScheduledDueDate = getScheduledDueDate(anchorDay, joinDateTiming);
+  const nextScheduledDueDateLabel = formatScheduleDate(nextScheduledDueDate);
 
   useEffect(() => {
     if (joinDate) {
       // Extract day of month from joinDate
-      const joinDateObj = new Date(joinDate);
-      setAnchorDay(joinDateObj.getDate());
+      const joinDateObj = parseDateOnly(joinDate);
+      if (joinDateObj) {
+        setAnchorDay(joinDateObj.getDate());
+      }
     }
   }, [joinDate]);
+
+  useEffect(() => {
+    if (shouldHideStatus && status !== 'due') {
+      setStatus('due');
+    }
+  }, [shouldHideStatus, status]);
 
   const handleStatusChange = (newStatus: 'paid' | 'due') => {
     if (newStatus === 'paid' || newStatus === 'due') {
       setStatus(newStatus);
-      setStatusAutoUpdateNotice(null);
     }
   };
 
@@ -113,7 +212,7 @@ export default function AddPaymentScreen() {
           rent: rent,
           joinDate,
         },
-        status,
+        status: effectiveStatus,
         anchorDay,
       };
       // Call backend to create tenant (tenantStatus will default to 'active' in backend)
@@ -125,7 +224,7 @@ export default function AddPaymentScreen() {
       // Only include billingConfig if auto-generating payments
       if (autoGeneratePayments) {
         tenantPayload.billingConfig = {
-          status,
+          status: effectiveStatus,
           billingCycle: 'monthly',
           anchorDay: anchorDay,
           method: paymentMethod,
@@ -160,11 +259,11 @@ export default function AddPaymentScreen() {
       joinDate && 
       roomId && 
       bedId && 
-      status && 
+      effectiveStatus && 
       !isNaN(parseFloat(rent)) && 
       parseFloat(rent) > 0;
 
-    const isPaymentMethodValid = !autoGeneratePayments || status !== 'paid' || !!paymentMethod;
+    const isPaymentMethodValid = !autoGeneratePayments || effectiveStatus !== 'paid' || !!paymentMethod;
     return baseValid && isPaymentMethodValid;
   };
 
@@ -223,8 +322,8 @@ export default function AddPaymentScreen() {
           ]}
           keyboardShouldPersistTaps="handled">
           <View style={styles.logoContainer}>
-            <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
-              <Wallet size={32} color={colors.primary[500]} />
+            <View style={[styles.logoCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+              <Wallet size={32} color={isDark ? colors.primary[300] : colors.primary[500]} />
             </View>
             <Text style={[styles.title, { color: colors.text.primary }]}>Record Payment</Text>
           </View>
@@ -239,28 +338,29 @@ export default function AddPaymentScreen() {
                 <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
               </View>
             )}
-            {/* Status */}
-            <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Status *</Text>
-              <TouchableOpacity
-                style={[
-                  styles.pickerButton, 
-                  { 
-                    backgroundColor: !autoGeneratePayments ? colors.neutral[700] : colors.background.secondary, 
-                    borderColor: colors.border.medium 
-                  }
-                ]} 
-                onPress={() => setShowStatusPicker(true)}
-                activeOpacity={0.7}
-                disabled={loading || !autoGeneratePayments}>
-                <Text style={[styles.pickerButtonText, { color: !autoGeneratePayments ? colors.text.tertiary : colors.text.primary }]}> 
-                  {status === 'paid' ? 'Paid' : 'Due'}
-                </Text>
-                <ChevronDown size={20} color={colors.text.tertiary} />
-              </TouchableOpacity>
-            </View>
+            {!shouldHideStatus && (
+              <View style={styles.inputContainer}>
+                <Text style={[styles.label, { color: colors.text.primary }]}>Status *</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.pickerButton,
+                    {
+                      backgroundColor: !autoGeneratePayments ? colors.neutral[700] : colors.background.secondary,
+                      borderColor: colors.border.medium,
+                    },
+                  ]}
+                  onPress={() => setShowStatusPicker(true)}
+                  activeOpacity={0.7}
+                  disabled={loading || !autoGeneratePayments}>
+                  <Text style={[styles.pickerButtonText, { color: !autoGeneratePayments ? colors.text.tertiary : colors.text.primary }]}>
+                    {status === 'paid' ? 'Paid' : 'Due'}
+                  </Text>
+                  <ChevronDown size={20} color={colors.text.tertiary} />
+                </TouchableOpacity>
+              </View>
+            )}
 
-            {autoGeneratePayments && status === 'paid' && (
+            {autoGeneratePayments && effectiveStatus === 'paid' && (
               <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: colors.text.primary }]}>Payment Method *</Text>
                 <TouchableOpacity
@@ -294,11 +394,32 @@ export default function AddPaymentScreen() {
                 {/* Anchor Day */}
                 <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: colors.text.primary }]}>When is rent due? *</Text>
-                {status === 'due' ? (
+                {shouldHideStatus ? (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.pickerButton, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium }]}
+                      onPress={() => setShowAnchorDayPicker(true)}
+                      activeOpacity={0.7}
+                      disabled={loading}>
+                      <Text style={[styles.pickerButtonText, { color: colors.text.primary }]}> 
+                        Day {anchorDay} • Every Month
+                      </Text>
+                      <ChevronDown size={20} color={colors.text.tertiary} />
+                    </TouchableOpacity>
+                    <View style={[styles.scheduleHintBox, { backgroundColor: colors.primary[50], borderColor: colors.primary[200] }]}>
+                      <Text style={[styles.scheduleHintText, { color: colors.primary[700] }]}>
+                        Payment will be generated on {nextScheduledDueDateLabel}.
+                      </Text>
+                      <Text style={[styles.infoNote, { color: colors.text.secondary }]}>
+                        Status and method are set automatically.
+                      </Text>
+                    </View>
+                  </>
+                ) : status === 'due' ? (
                   // For monthly + due: lock to today (rent is due today)
                   <View style={[styles.infoBox, { backgroundColor: colors.primary[50], borderColor: colors.primary[200] }]}>
                     <Text style={[styles.infoValue, { color: colors.primary[700] }]}>
-                      📅 Day {anchorDay} • Every Month
+                      Day {anchorDay} • Every Month
                     </Text>
                     <Text style={[styles.infoNote, { color: colors.text.secondary }]}>
                       Automatically set to today (rent is due today)
@@ -312,26 +433,20 @@ export default function AddPaymentScreen() {
                     activeOpacity={0.7}
                     disabled={loading}>
                     <Text style={[styles.pickerButtonText, { color: colors.text.primary }]}>
-                      📅 Day {anchorDay} • Every Month
+                      Day {anchorDay} • Every Month
                     </Text>
                     <ChevronDown size={20} color={colors.text.tertiary} />
                   </TouchableOpacity>
                 )}
-                {status !== 'due' && (
+                {!shouldHideStatus && status !== 'due' && (
                   <Text style={[styles.helperText, { color: colors.text.secondary, marginTop: spacing.sm }]}>
                     Same day each month
                   </Text>
                 )}
 
-                {status === 'due' && (
+                {!shouldHideStatus && status === 'due' && (
                   <Text style={[styles.helperText, { color: colors.text.secondary, marginTop: spacing.sm }]}>
                     A due payment record is created immediately for this cycle.
-                  </Text>
-                )}
-
-                {statusAutoUpdateNotice && (
-                  <Text style={[styles.helperText, { color: colors.warning[700], marginTop: spacing.sm }]}>
-                    {statusAutoUpdateNotice}
                   </Text>
                 )}
               </View>
@@ -472,7 +587,6 @@ export default function AddPaymentScreen() {
                     style={[styles.modalOption, { borderBottomColor: colors.border.light }]}
                     onPress={() => {
                       setAnchorDay(day);
-                      setStatusAutoUpdateNotice(null);
                       setShowAnchorDayPicker(false);
                     }}
                     activeOpacity={0.7}>
@@ -784,6 +898,17 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radius.lg,
     borderWidth: 1,
+  },
+  scheduleHintBox: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  scheduleHintText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
   },
   infoLabel: {
     fontSize: typography.fontSize.sm,

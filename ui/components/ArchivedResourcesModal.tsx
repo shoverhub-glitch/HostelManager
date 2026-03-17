@@ -38,7 +38,7 @@ export default function ArchivedResourcesModal({
   loading = false,
   onUpgrade,
 }: ArchivedResourcesModalProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
 
   const formatDate = (dateString: string) => {
     try {
@@ -75,11 +75,11 @@ export default function ArchivedResourcesModal({
     const days = daysUntilExpiration(item.expiresAt);
     const icon =
       type === 'property' ? (
-        <Building2 size={20} color={colors.primary[500]} />
+        <Building2 size={20} color={isDark ? colors.primary[300] : colors.primary[500]} />
       ) : type === 'room' ? (
-        <MessageSquare size={20} color={colors.warning[500]} />
+        <MessageSquare size={20} color={isDark ? colors.warning[300] : colors.warning[500]} />
       ) : (
-        <Users size={20} color={colors.success[500]} />
+        <Users size={20} color={isDark ? colors.success[300] : colors.success[500]} />
       );
 
     return (
@@ -159,8 +159,8 @@ export default function ArchivedResourcesModal({
           </View>
         ) : !hasArchived ? (
           <View style={styles.emptyContainer}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.success[50] }]}>
-              <MessageSquare size={40} color={colors.success[500]} />
+            <View style={[styles.emptyIcon, { backgroundColor: isDark ? colors.success[900] : colors.success[50] }]}>
+              <MessageSquare size={40} color={isDark ? colors.success[300] : colors.success[500]} />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>
               No Archived Resources
@@ -175,14 +175,14 @@ export default function ArchivedResourcesModal({
             showsVerticalScrollIndicator={false}
           >
             <View
-              style={[styles.warningBanner, { backgroundColor: colors.warning[50], borderColor: colors.warning[200] }]}
+              style={[styles.warningBanner, { backgroundColor: isDark ? colors.warning[900] : colors.warning[50], borderColor: isDark ? colors.warning[700] : colors.warning[200] }]}
             >
-              <AlertTriangle size={20} color={colors.warning[700]} />
+              <AlertTriangle size={20} color={isDark ? colors.warning[300] : colors.warning[700]} />
               <View style={styles.warningContent}>
-                <Text style={[styles.warningTitle, { color: colors.warning[900] }]}>
+                <Text style={[styles.warningTitle, { color: isDark ? colors.warning[200] : colors.warning[900] }]}>
                   {totalArchived} resource{totalArchived !== 1 ? 's' : ''} archived
                 </Text>
-                <Text style={[styles.warningText, { color: colors.warning[700] }]}>
+                <Text style={[styles.warningText, { color: isDark ? colors.warning[300] : colors.warning[700] }]}>
                   These were archived during your subscription downgrade. You have{' '}
                   <Text style={{ fontWeight: 'bold' }}>
                     {archivedData.grace_period_days} days

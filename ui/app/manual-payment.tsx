@@ -286,8 +286,8 @@ export default function ManualPaymentScreen() {
           ]}
           keyboardShouldPersistTaps="handled">
           <View style={styles.logoContainer}>
-            <View style={[styles.logoCircle, { backgroundColor: colors.primary[50] }]}>
-              <Wallet size={32} color={colors.primary[500]} />
+            <View style={[styles.logoCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
+              <Wallet size={32} color={isDark ? colors.primary[300] : colors.primary[500]} />
             </View>
             <Text style={[styles.title, { color: colors.text.primary }]}>Create Manual Payment</Text>
           </View>

@@ -148,18 +148,12 @@ async def register_user_service(user: UserCreate):
         "phone": user.phone,
         "password": hash_password(user.password),
         "role": "propertyowner",
-        "isVerified": True,
         "isEmailVerified": True,
         "isDeleted": False,
         "lastLogin": None,
         "createdAt": now,
         "updatedAt": now,
-        "deviceId": None,
-        "deviceType": None,
-        "osVersion": None,
-        "appVersion": None,
         "propertyIds": [],
-        "propertyLimit": 3,
     }
 
     result = await users_collection.insert_one(user_doc)

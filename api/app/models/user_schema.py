@@ -10,18 +10,11 @@ class UserInDB(BaseModel):
     phone: Optional[str] = None
     password: str  # hashed
     role: str = Field(default="propertyowner")
-    isVerified: bool = False
     isEmailVerified: bool = False
     isDeleted: bool = False
     lastLogin: Optional[datetime] = None    
     createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    # Device tracking fields for future scalability
-    deviceId: Optional[str] = None
-    deviceType: Optional[str] = None
-    osVersion: Optional[str] = None
-    appVersion: Optional[str] = None
-    propertyLimit: int = 3
     propertyIds: Optional[list[str]] = Field(default_factory=list)
 
 class UserOut(BaseModel):

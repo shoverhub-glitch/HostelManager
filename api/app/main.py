@@ -16,7 +16,7 @@ from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 from urllib.parse import urlparse
 
 import os
-from app.routes import health, auth, property, room, tenant, bed, subscription, dashboard, staff, payment, coupon, plan
+from app.routes import health, auth, property, room, tenant, bed, subscription, dashboard, staff, payment, coupon, plan, admin
 from app.utils.rate_limit import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -411,6 +411,7 @@ app.include_router(payment.router, prefix=API_PREFIX)
 app.include_router(subscription.router, prefix=API_PREFIX)
 app.include_router(coupon.router, prefix=API_PREFIX)
 app.include_router(plan.router, prefix=API_PREFIX)
+app.include_router(admin.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
 
 

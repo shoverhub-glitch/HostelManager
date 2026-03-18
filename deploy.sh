@@ -5,11 +5,27 @@ EMAIL="${EMAIL:-testuser@test.com}"
 PASSWORD="${PASSWORD:-testuser123}"
 NAME="${NAME:-Test User}"
 PHONE="${PHONE:-+919876543210}"
+
+SEED_ADMIN="${SEED_ADMIN:-true}"
+ADMIN_NAME="${ADMIN_NAME:-Platform Admin}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-ChangeMe@123}"
+ADMIN_PHONE="${ADMIN_PHONE:-+919876543210}"
+ADMIN_GRANT_BY="${ADMIN_GRANT_BY:-email}"
+SKIP_ADMIN_ENV_UPDATE="${SKIP_ADMIN_ENV_UPDATE:-true}"
+
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-20}"
 RETRY_DELAY_SECONDS="${RETRY_DELAY_SECONDS:-3}"
 
 log() {
   printf '[deploy] %s\n' "$1"
+}
+
+is_true() {
+    case "${1,,}" in
+        true|1|yes|y) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,7 +68,6 @@ async def seed_user(email: str, password: str, name: str, phone: str) -> None:
                     "phone": phone,
                     "password": hash_password(password),
                     "role": "propertyowner",
-                    "isVerified": True,
                     "isEmailVerified": True,
                     "isDeleted": False,
                     "updatedAt": now,
@@ -68,18 +83,12 @@ async def seed_user(email: str, password: str, name: str, phone: str) -> None:
             "phone": phone,
             "password": hash_password(password),
             "role": "propertyowner",
-            "isVerified": True,
             "isEmailVerified": True,
             "isDeleted": False,
             "lastLogin": None,
             "createdAt": now,
             "updatedAt": now,
-            "deviceId": None,
-            "deviceType": None,
-            "osVersion": None,
-            "appVersion": None,
             "propertyIds": [],
-            "propertyLimit": 3,
         }
         result = await users_collection.insert_one(user_doc)
         user_id = str(result.inserted_id)
@@ -111,9 +120,44 @@ if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))
 PY
   then
+        admin_ready=true
+        if is_true "$SEED_ADMIN"; then
+            log "Seeding admin user (attempt ${attempt}/${MAX_ATTEMPTS})"
+            admin_cmd=(
+                python create_admin.py
+                --name "$ADMIN_NAME"
+                --email "$ADMIN_EMAIL"
+                --password "$ADMIN_PASSWORD"
+                --phone "$ADMIN_PHONE"
+                --grant-by "$ADMIN_GRANT_BY"
+            )
+
+            if is_true "$SKIP_ADMIN_ENV_UPDATE"; then
+                admin_cmd+=(--skip-env-update)
+            fi
+
+            if ! "${COMPOSE[@]}" exec -T backend "${admin_cmd[@]}"; then
+                admin_ready=false
+            fi
+        fi
+
+        if ! $admin_ready; then
+            if [[ "$attempt" -lt "$MAX_ATTEMPTS" ]]; then
+                log "Admin setup not ready yet. Retrying in ${RETRY_DELAY_SECONDS}s"
+                sleep "$RETRY_DELAY_SECONDS"
+                continue
+            fi
+            printf '[deploy] Failed to seed admin user after %s attempts\n' "$MAX_ATTEMPTS" >&2
+            exit 1
+        fi
+
     log "Success: test user is ready"
     printf 'Email: %s\n' "$EMAIL"
     printf 'Password: %s\n' "$PASSWORD"
+        if is_true "$SEED_ADMIN"; then
+            log "Success: admin user is ready"
+            printf 'Admin Email: %s\n' "$ADMIN_EMAIL"
+        fi
     exit 0
   fi
 

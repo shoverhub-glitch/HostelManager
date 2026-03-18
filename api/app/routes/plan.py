@@ -9,21 +9,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.models.plan_schema import Plan, PlanCreate, PlanUpdate
 from app.services.plan_service import PlanService
-from app.utils.helpers import get_current_user
+from app.utils.helpers import require_admin_user
 
 
 router = APIRouter(prefix="/admin/plans", tags=["Admin - Plans"])
 
 
-# TODO: Add admin role check middleware
-# For now, all authenticated users can access these routes
-# In production, add: dependencies=[Depends(require_admin_role)]
-
-
 @router.post("", response_model=Plan, status_code=status.HTTP_201_CREATED)
 async def create_plan(
     plan_data: PlanCreate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_admin_user)
 ):
     """
     Create a new subscription plan (Admin only)
@@ -70,7 +65,7 @@ async def create_plan(
 @router.get("", response_model=List[Plan])
 async def list_plans(
     active_only: bool = False,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_admin_user)
 ):
     """
     List all subscription plans (Admin view)
@@ -92,7 +87,7 @@ async def list_plans(
 
 @router.get("/stats")
 async def get_plan_stats(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_admin_user)
 ):
     """
     Get statistics about plans and their usage (Admin only)
@@ -115,7 +110,7 @@ async def get_plan_stats(
 @router.get("/{plan_name}", response_model=Plan)
 async def get_plan(
     plan_name: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_admin_user)
 ):
     """
     Get a specific plan by name (Admin view)
@@ -135,7 +130,7 @@ async def get_plan(
 async def update_plan(
     plan_name: str,
     update_data: PlanUpdate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_admin_user)
 ):
     """
     Update an existing plan (Admin only)
@@ -179,7 +174,7 @@ async def update_plan(
 @router.delete("/{plan_name}")
 async def delete_plan(
     plan_name: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_admin_user)
 ):
     """
     Delete a plan (Admin only)
@@ -210,7 +205,7 @@ async def delete_plan(
 @router.post("/{plan_name}/activate", response_model=Plan)
 async def activate_plan(
     plan_name: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_admin_user)
 ):
     """
     Activate a plan (Admin only)
@@ -229,7 +224,7 @@ async def activate_plan(
 @router.post("/{plan_name}/deactivate", response_model=Plan)
 async def deactivate_plan(
     plan_name: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_admin_user)
 ):
     """
     Deactivate a plan (Admin only)
@@ -254,7 +249,7 @@ async def deactivate_plan(
 
 @router.post("/initialize")
 async def initialize_default_plans(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_admin_user)
 ):
     """
     Initialize default plans (Admin only)

@@ -9,6 +9,7 @@ from app.config import settings
 import logging
 from jose import JWTError, ExpiredSignatureError
 from starlette.responses import JSONResponse
+from app.database.token_blacklist import is_token_blacklisted
 
 class UserContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -52,6 +53,10 @@ class UserContextMiddleware(BaseHTTPMiddleware):
         is_public = request.url.path in public_paths or any(
             request.url.path.startswith(prefix) for prefix in public_prefixes
         )
+
+        # Safety guard: admin namespaces must never be public even if env is misconfigured.
+        if request.url.path.startswith("/api/v1/admin") or request.url.path.startswith("/api/v1/coupons/admin"):
+            is_public = False
         
         if is_public:
             # Allow public access, skip authentication
@@ -61,13 +66,25 @@ class UserContextMiddleware(BaseHTTPMiddleware):
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ", 1)[1]
             try:
+                if await is_token_blacklisted(token):
+                    logger.info("Rejected blacklisted token")
+                    return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Token has been revoked"})
+
                 payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                if payload.get("type") != "access":
+                    logger.warning("Rejected non-access token on protected endpoint")
+                    return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid token type"})
+
                 user_id = payload.get("sub")
                 if user_id is None:
                     logger.warning("JWT missing 'sub' claim.")
                     return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid authentication credentials"})
                 user = await db["users"].find_one({"_id": ObjectId(user_id)})
                 if user:
+                    if user.get("isDeleted") or user.get("isDisabled"):
+                        logger.warning("Rejected token for deleted/disabled user")
+                        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"detail": "Account is not active"})
+
                     role = user.get("role")
                     owned_properties = await db["properties"].find(
                         build_owner_query(user_id),

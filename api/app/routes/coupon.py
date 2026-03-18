@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from typing import Optional
 from datetime import datetime
 from app.services.coupon_service import CouponService
-from app.utils.helpers import get_current_user
+from app.utils.helpers import get_current_user, require_admin_user
 
 router = APIRouter(prefix="/coupons", tags=["coupons"])
 
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/coupons", tags=["coupons"])
 @router.post("/admin/create")
 async def create_coupon(
     payload: dict = Body(...),
-    user_id: str = Depends(get_current_user)
+    admin_user: dict = Depends(require_admin_user)
 ):
     """
     Admin endpoint: Create a new coupon
@@ -68,7 +68,7 @@ async def create_coupon(
 @router.get("/admin/list")
 async def list_coupons(
     is_active: Optional[bool] = Query(None),
-    user_id: str = Depends(get_current_user)
+    admin_user: dict = Depends(require_admin_user)
 ):
     """Admin endpoint: List all coupons"""
     try:
@@ -86,7 +86,7 @@ async def list_coupons(
 @router.get("/admin/{code}")
 async def get_coupon(
     code: str,
-    user_id: str = Depends(get_current_user)
+    admin_user: dict = Depends(require_admin_user)
 ):
     """Admin endpoint: Get coupon details and stats"""
     try:
@@ -114,7 +114,7 @@ async def get_coupon(
 async def update_coupon(
     code: str,
     payload: dict = Body(...),
-    user_id: str = Depends(get_current_user)
+    admin_user: dict = Depends(require_admin_user)
 ):
     """
     Admin endpoint: Update coupon
@@ -141,7 +141,7 @@ async def update_coupon(
 @router.delete("/admin/{code}")
 async def delete_coupon(
     code: str,
-    user_id: str = Depends(get_current_user)
+    admin_user: dict = Depends(require_admin_user)
 ):
     """Admin endpoint: Delete coupon"""
     try:

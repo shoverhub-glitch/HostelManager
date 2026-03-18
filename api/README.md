@@ -22,6 +22,46 @@
    uvicorn app.main:app --reload
    ```
 
+## Create Admin User
+
+Use the built-in CLI to create a secure admin account and grant admin access through settings instead of a hardcoded role.
+
+```bash
+python create_admin.py --name "Platform Admin" --email admin@example.com --grant-by email
+```
+
+You can also store temporary defaults in `api/.env` and then run:
+
+```bash
+python create_admin.py
+```
+
+Supported env defaults:
+
+```env
+ADMIN_BOOTSTRAP_NAME=Platform Admin
+ADMIN_BOOTSTRAP_EMAIL=admin@example.com
+ADMIN_BOOTSTRAP_PASSWORD=Str0ng!Passw0rd
+ADMIN_BOOTSTRAP_PHONE=+919876543210
+ADMIN_BOOTSTRAP_ROLE=propertyowner
+ADMIN_BOOTSTRAP_GRANT_BY=email
+```
+
+The script will:
+- create the user if it does not exist
+- update the user if the email already exists
+- add the account to `ADMIN_ACCESS_EMAILS` by default
+
+Useful options:
+
+```bash
+python create_admin.py --name "Platform Admin" --email admin@example.com --password "Str0ng!Pass" --phone +919876543210
+python create_admin.py --name "Ops Admin" --email ops@example.com --grant-by user-id
+python create_admin.py --name "Existing User" --email existing@example.com --skip-env-update
+```
+
+For the safest setup, prefer `--grant-by email` or `--grant-by user-id` and leave broad role-based admin access disabled.
+
 ## Environment
 
 - Configure `.env` for MongoDB and debug settings.

@@ -36,3 +36,19 @@ if not PUBLIC_PATHS:
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET")
+
+
+# Admin security configuration
+# Access is granted when user matches ANY configured selector below.
+# Keep ADMIN_ACCESS_FAIL_CLOSED=true to avoid accidental broad access.
+ADMIN_ACCESS_ROLES = os.environ.get("ADMIN_ACCESS_ROLES", "admin")
+ADMIN_ACCESS_EMAILS = os.environ.get("ADMIN_ACCESS_EMAILS", "")
+ADMIN_ACCESS_USER_IDS = os.environ.get("ADMIN_ACCESS_USER_IDS", "")
+ADMIN_ACCESS_FAIL_CLOSED = os.environ.get("ADMIN_ACCESS_FAIL_CLOSED", "true").lower() == "true"
+
+# Optional extra controls for admin endpoints.
+ADMIN_ALLOWED_IPS = os.environ.get("ADMIN_ALLOWED_IPS", "")
+ADMIN_REQUIRE_API_KEY = os.environ.get("ADMIN_REQUIRE_API_KEY", "false").lower() == "true"
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
+ADMIN_API_KEY_HEADER = os.environ.get("ADMIN_API_KEY_HEADER", "X-Admin-Secret")
+TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() == "true"

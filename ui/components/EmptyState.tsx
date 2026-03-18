@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { LucideIcon } from 'lucide-react-native';
-import { spacing, typography } from '@/theme';
+import { colors, spacing } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 
 interface EmptyStateProps {
@@ -56,13 +57,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   title: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: spacing.xl,
   },
@@ -72,7 +74,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   actionText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
 });

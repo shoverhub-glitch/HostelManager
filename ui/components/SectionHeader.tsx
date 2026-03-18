@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { LucideIcon } from 'lucide-react-native';
-import { spacing, typography } from '@/theme';
+import { colors, spacing } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 
 interface SectionHeaderProps {
@@ -34,8 +35,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   title: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
     marginLeft: spacing.sm,
   },
 });

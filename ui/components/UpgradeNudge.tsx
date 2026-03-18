@@ -1,7 +1,8 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Sparkles } from 'lucide-react-native';
-import { spacing, typography, radius } from '@/theme';
+import { spacing, radius } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 
 interface UpgradeNudgeProps {
@@ -40,7 +41,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   message: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.bodyMedium,
     marginLeft: spacing.sm,
     flex: 1,
   },

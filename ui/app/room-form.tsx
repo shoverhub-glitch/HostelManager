@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { DoorOpen, ChevronLeft, ChevronDown } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, textPresets } from '@/theme';
+import { typography } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -492,10 +493,10 @@ export default function RoomFormScreen() {
                       {
                         color:
                           floor === option ? colors.primary[500] : colors.text.primary,
-                        fontWeight:
+                        fontFamily:
                           floor === option
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
+                            ? typography.fontFamily.semiBold
+                            : typography.fontFamily.regular,
                       },
                     ]}>
                     {option}
@@ -651,8 +652,8 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   placeholder: {
     width: 40,
@@ -678,12 +679,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    marginBottom: 0,
+    ...textPresets.h2,
+    color: colors.text.primary,
   },
   subtitle: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     marginTop: spacing.xs,
     textAlign: 'center',
   },
@@ -703,19 +704,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   errorText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.danger[700],
   },
   inputContainer: {
     marginBottom: spacing.xl,
   },
   label: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   fieldNote: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.hint,
+    color: colors.text.tertiary,
     marginTop: spacing.xs,
     fontStyle: 'italic',
   },
@@ -723,7 +725,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
     borderWidth: 1,
   },
   pickerButton: {
@@ -736,7 +739,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pickerButtonText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
   },
   submitButton: {
     borderRadius: radius.md,
@@ -747,8 +751,8 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   submitButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
   offlineWarning: {
     borderRadius: radius.md,
@@ -758,8 +762,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   offlineWarningText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.warning[900],
   },
   modalOverlay: {
     flex: 1,
@@ -776,8 +780,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
     textAlign: 'center',
   },
   modalScrollView: {
@@ -789,7 +793,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalOptionText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
   },
   modalCloseButton: {
     padding: spacing.lg,
@@ -797,8 +802,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCloseButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.secondary,
   },
   bedChangeModalContent: {
     borderRadius: radius.lg,
@@ -807,15 +812,15 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
   },
   bedChangeModalTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
+    color: colors.text.primary,
     marginBottom: spacing.md,
     textAlign: 'center',
   },
   bedChangeModalMessage: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     marginBottom: spacing.lg,
-    lineHeight: 22,
   },
   tenantsList: {
     borderRadius: radius.md,
@@ -835,12 +840,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tenantName: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   tenantBed: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.tertiary,
   },
   actionBadge: {
     paddingHorizontal: spacing.md,
@@ -848,8 +854,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   actionBadgeText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.badge,
   },
   infoBox: {
     padding: spacing.md,
@@ -857,7 +862,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   infoText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     textAlign: 'center',
   },
   bedChangeModalActions: {
@@ -872,7 +878,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bedChangeModalButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.primary,
   },
 });

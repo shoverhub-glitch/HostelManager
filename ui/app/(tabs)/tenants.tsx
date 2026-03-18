@@ -19,8 +19,9 @@ import Skeleton from '@/components/Skeleton';
 import ApiErrorCard from '@/components/ApiErrorCard';
 import FAB from '@/components/FAB';
 import UpgradeModal from '@/components/UpgradeModal';
-import { Search, Filter, Phone, Users, Archive, LogOut } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { Search, Filter, Phone, Users, Archive, LogOut, ChevronLeft, ChevronRight, Check } from 'lucide-react-native';
+import { spacing, radius } from '@/theme';
+import { typography } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
@@ -28,7 +29,7 @@ import { tenantService } from '@/services/apiClient';
 import type { Tenant, PaginatedResponse } from '@/services/apiTypes';
 import { cacheKeys, getScreenCache, setScreenCache, clearScreenCache } from '@/services/screenCache';
 
-const TENANTS_CACHE_STALE_MS = 30 * 1000;
+const TENANTS_CACHE_STALE_MS   = 30 * 1000;
 const MAX_ERROR_MESSAGE_LENGTH = 220;
 
 function normalizeErrorMessage(message?: string): string {
@@ -41,57 +42,52 @@ function normalizeErrorMessage(message?: string): string {
 }
 
 export default function TenantsScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const router = useRouter();
   const { isTablet, contentMaxWidth, modalMaxWidth } = useResponsiveLayout();
   const { selectedProperty, selectedPropertyId, loading: propertyLoading } = useProperty();
-  
-  // Initialize with cached data synchronously to avoid glitch
+
   const { initialTenants, initialTotal } = (() => {
     if (!selectedPropertyId) return { initialTenants: [], initialTotal: 0 };
-    const cacheKey = cacheKeys.tenants(selectedPropertyId, 1, '', 'all');
+    const cacheKey      = cacheKeys.tenants(selectedPropertyId, 1, '', 'all');
     const cachedResponse = getScreenCache<PaginatedResponse<Tenant>>(cacheKey, TENANTS_CACHE_STALE_MS);
     return {
       initialTenants: cachedResponse?.data || [],
-      initialTotal: cachedResponse?.meta?.total || 0
+      initialTotal:   cachedResponse?.meta?.total || 0,
     };
   })();
-  
-  const [tenants, setTenants] = useState<Tenant[]>(initialTenants);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [total, setTotal] = useState(initialTotal);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  const [tenants,               setTenants]               = useState<Tenant[]>(initialTenants);
+  const [loading,               setLoading]               = useState(false);
+  const [refreshing,            setRefreshing]            = useState(false);
+  const [error,                 setError]                 = useState<string | null>(null);
+  const [total,                 setTotal]                 = useState(initialTotal);
+  const [showUpgradeModal,      setShowUpgradeModal]      = useState(false);
   const [showStatusFilterModal, setShowStatusFilterModal] = useState(false);
-  
-  // Filter & Pagination
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'vacated'>('all');
-  const [sortBy, setSortBy] = useState<'latest' | 'oldest'>('latest');
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 50;
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastFocusRefreshRef = useRef<number>(Date.now());
-  const isFetchingRef = useRef(false);
-  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tenantsCountRef = useRef(initialTenants.length);
+  const [searchQuery,           setSearchQuery]           = useState('');
+  const [selectedStatus,        setSelectedStatus]        = useState<'all' | 'active' | 'vacated'>('all');
+  const [sortBy,                setSortBy]                = useState<'latest' | 'oldest'>('latest');
+  const [currentPage,           setCurrentPage]           = useState(1);
+
+  const pageSize             = 50;
+  const searchTimeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastFocusRefreshRef  = useRef<number>(Date.now());
+  const isFetchingRef        = useRef(false);
+  const loadingTimeoutRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tenantsCountRef      = useRef(initialTenants.length);
   const hasMountedSearchEffectRef = useRef(false);
 
-  useEffect(() => {
-    tenantsCountRef.current = tenants.length;
-  }, [tenants.length]);
+  useEffect(() => { tenantsCountRef.current = tenants.length; }, [tenants.length]);
 
-  const fetchTenants = useCallback(async (page: number = 1, search: string = '', status: string = 'all', forceNetwork: boolean = false, sort: string = 'latest') => {
-    if (!selectedPropertyId) {
-      setLoading(false);
-      return;
-    }
-
-    // Prevent concurrent fetches
-    if (isFetchingRef.current) {
-      return;
-    }
+  const fetchTenants = useCallback(async (
+    page: number = 1,
+    search: string = '',
+    status: string = 'all',
+    forceNetwork: boolean = false,
+    sort: string = 'latest',
+  ) => {
+    if (!selectedPropertyId) { setLoading(false); return; }
+    if (isFetchingRef.current) return;
 
     const cacheKey = cacheKeys.tenants(selectedPropertyId, page, search, status);
     if (!forceNetwork) {
@@ -106,33 +102,23 @@ export default function TenantsScreen() {
 
     try {
       isFetchingRef.current = true;
-      // Only show loading if we don't already have data
       if (!tenantsCountRef.current) {
         setLoading(true);
-        
-        // Set a timeout to auto-dismiss skeleton after 8 seconds
-        if (loadingTimeoutRef.current) {
-          clearTimeout(loadingTimeoutRef.current);
-        }
+        if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
         loadingTimeoutRef.current = setTimeout(() => {
           setLoading(false);
-          if (!tenantsCountRef.current) {
+          if (!tenantsCountRef.current)
             setError('Request is taking longer than expected. Please try again.');
-          }
         }, 8000);
       }
       setError(null);
-      
-      const statusFilter = status !== 'all' ? status : undefined;
-      
-      // ONLY fetch tenants - rooms & beds data now included in response
-      const tenantsRes = await tenantService.getTenants(selectedPropertyId, search || undefined, statusFilter, page, pageSize, sort as 'latest' | 'oldest');
 
-      // Clear timeout if we got data back
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-        loadingTimeoutRef.current = null;
-      }
+      const statusFilter = status !== 'all' ? status : undefined;
+      const tenantsRes   = await tenantService.getTenants(
+        selectedPropertyId, search || undefined, statusFilter, page, pageSize, sort as 'latest' | 'oldest'
+      );
+
+      if (loadingTimeoutRef.current) { clearTimeout(loadingTimeoutRef.current); loadingTimeoutRef.current = null; }
 
       if (tenantsRes.data) {
         setTenants(tenantsRes.data);
@@ -140,12 +126,7 @@ export default function TenantsScreen() {
         setScreenCache(cacheKey, tenantsRes);
       }
     } catch (err: any) {
-      // Clear timeout on error
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-        loadingTimeoutRef.current = null;
-      }
-      
+      if (loadingTimeoutRef.current) { clearTimeout(loadingTimeoutRef.current); loadingTimeoutRef.current = null; }
       if (err?.code === 'SUBSCRIPTION_LIMIT_EXCEEDED' || err?.details?.status === 402) {
         setShowUpgradeModal(true);
       } else {
@@ -157,173 +138,137 @@ export default function TenantsScreen() {
     }
   }, [selectedPropertyId, sortBy]);
 
-  // Fetch data on property change or initial mount
   useEffect(() => {
-    if (!selectedPropertyId || propertyLoading) {
-      return;
-    }
-
-    // Check for cached data first
-    const cacheKey = cacheKeys.tenants(selectedPropertyId, 1, '', 'all');
+    if (!selectedPropertyId || propertyLoading) return;
+    const cacheKey       = cacheKeys.tenants(selectedPropertyId, 1, '', 'all');
     const cachedResponse = getScreenCache<PaginatedResponse<Tenant>>(cacheKey, TENANTS_CACHE_STALE_MS);
-    
     if (!cachedResponse && tenantsCountRef.current === 0) {
-      // Only show skeleton if we have no cached data and no current data
-      setLoading(true);
-      setTenants([]);
-      setTotal(0);
+      setLoading(true); setTenants([]); setTotal(0);
       fetchTenants(1, '', 'all', false, sortBy);
     }
   }, [selectedPropertyId, propertyLoading, fetchTenants, sortBy]);
 
-  // Debounced search handler
   useEffect(() => {
-    if (!hasMountedSearchEffectRef.current) {
-      hasMountedSearchEffectRef.current = true;
-      return;
-    }
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
+    if (!hasMountedSearchEffectRef.current) { hasMountedSearchEffectRef.current = true; return; }
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(() => {
-      setCurrentPage(1); // Reset to first page on new search
+      setCurrentPage(1);
       fetchTenants(1, searchQuery, selectedStatus, false, sortBy);
-    }, 500); // 500ms debounce
-
-    return () => {
-      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    };
+    }, 500);
+    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [searchQuery, selectedStatus, sortBy, fetchTenants]);
 
-  // Cleanup loading timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-      }
-    };
-  }, []);
+  useEffect(() => () => { if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current); }, []);
 
   useFocusEffect(
     useCallback(() => {
       if (!propertyLoading && selectedPropertyId) {
-        const cacheKey = cacheKeys.tenants(selectedPropertyId, currentPage, searchQuery, selectedStatus);
-        const hasFreshCache = !!getScreenCache<PaginatedResponse<Tenant>>(cacheKey, TENANTS_CACHE_STALE_MS);
-        const now = Date.now();
-        const timeSinceLastRefresh = now - lastFocusRefreshRef.current;
-        const shouldRefreshBecauseCacheMissing = !hasFreshCache;
-        const shouldRefreshByThrottle = timeSinceLastRefresh > TENANTS_CACHE_STALE_MS;
-
-        if (shouldRefreshBecauseCacheMissing || shouldRefreshByThrottle) {
+        const cacheKey        = cacheKeys.tenants(selectedPropertyId, currentPage, searchQuery, selectedStatus);
+        const hasFreshCache   = !!getScreenCache<PaginatedResponse<Tenant>>(cacheKey, TENANTS_CACHE_STALE_MS);
+        const now             = Date.now();
+        const timeSince       = now - lastFocusRefreshRef.current;
+        if (!hasFreshCache || timeSince > TENANTS_CACHE_STALE_MS) {
           lastFocusRefreshRef.current = now;
-          fetchTenants(currentPage, searchQuery, selectedStatus, shouldRefreshBecauseCacheMissing, sortBy);
+          fetchTenants(currentPage, searchQuery, selectedStatus, !hasFreshCache, sortBy);
         }
       }
     }, [propertyLoading, selectedPropertyId, currentPage, searchQuery, selectedStatus, sortBy, fetchTenants])
   );
 
-  const handleRetry = () => {
-    fetchTenants(currentPage, searchQuery, selectedStatus, true, sortBy);
-  };
+  const handleRetry   = () => fetchTenants(currentPage, searchQuery, selectedStatus, true, sortBy);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-
-    // Clear only tenants cache to avoid forcing unrelated screens to refetch
     if (selectedPropertyId) {
       clearScreenCache(`tenants:${selectedPropertyId}:`);
     } else {
       clearScreenCache('tenants:');
     }
-    
-    // Reset pagination and filters
-    setCurrentPage(1);
-    setSearchQuery('');
-    setSelectedStatus('all');
-    setSortBy('latest');
-    setTenants([]);
-    setTotal(0);
-    
-    // Re-fetch tenants
+    setCurrentPage(1); setSearchQuery(''); setSelectedStatus('all'); setSortBy('latest');
+    setTenants([]); setTotal(0);
     if (selectedPropertyId) {
-      try {
-        await fetchTenants(1, '', 'all', true, 'latest');
-      } finally {
-        setRefreshing(false);
-      }
-    } else {
-      setRefreshing(false);
-    }
+      try { await fetchTenants(1, '', 'all', true, 'latest'); }
+      finally { setRefreshing(false); }
+    } else { setRefreshing(false); }
   }, [selectedPropertyId, fetchTenants]);
 
-  const handleFabPress = () => {
-    router.push('/add-tenant');
-  };
+  const handleFabPress = () => router.push('/add-tenant');
 
   const handleSelectStatusFilter = (status: 'all' | 'active' | 'vacated') => {
-    setShowStatusFilterModal(false);
-    setCurrentPage(1);
-    setSelectedStatus(status);
+    setShowStatusFilterModal(false); setCurrentPage(1); setSelectedStatus(status);
   };
 
   const handleSelectSort = (sort: 'latest' | 'oldest') => {
-    setCurrentPage(1);
-    setSortBy(sort);
+    setCurrentPage(1); setSortBy(sort);
     fetchTenants(1, searchQuery, selectedStatus, true, sort);
   };
 
-  const handleAddRoom = () => {
-    router.push('/room-form');
-  };
-
-  const getRoomInfo = (tenant: Tenant) => {
-    // Show only room number
-    if (tenant.roomNumber) {
-      return `Room ${tenant.roomNumber}`;
-    }
-    return 'N/A';
-  };
+  const getRoomInfo = (tenant: Tenant) =>
+    tenant.roomNumber ? `Room ${tenant.roomNumber}` : 'N/A';
 
   const showEmptyState = !!selectedProperty && !loading && tenants.length === 0 && !error;
+  const filtersActive  = selectedStatus !== 'all' || sortBy !== 'latest';
+  const totalPages     = Math.ceil(total / pageSize);
 
   return (
     <ScreenContainer edges={['top']}>
+
+      {/* ── Screen Header ── */}
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Tenants</Text>
-        <Text style={{ fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.medium as any, color: colors.text.secondary }}>
-          {loading && tenants.length === 0 ? '0' : total} Total
-        </Text>
+        <View style={[styles.countPill, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[100] }]}>
+          <Text style={[styles.countText, { color: colors.text.secondary }]}>
+            {loading && tenants.length === 0 ? '—' : total} total
+          </Text>
+        </View>
       </View>
 
+      {/* ── Search + Filter ── */}
       <View style={styles.searchContainer}>
-        <View style={[styles.searchBar, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium }]}>
-          <Search size={20} color={colors.text.tertiary} />
+        <View style={[
+          styles.searchBar,
+          { backgroundColor: colors.background.secondary, borderColor: colors.border.medium },
+        ]}>
+          <Search size={18} color={colors.text.tertiary} strokeWidth={1.5} />
           <TextInput
-            style={[styles.searchInput, { color: colors.text.primary }]}
-            placeholder="Search by name, phone..."
+            style={[styles.searchInput, { color: colors.text.primary, fontFamily: typography.fontFamily.regular }]}
+            placeholder="Search by name, phone…"
             placeholderTextColor={colors.text.tertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
             editable={!!selectedProperty && !loading && !error}
           />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.clearBtn, { color: colors.text.tertiary }]}>✕</Text>
+            </TouchableOpacity>
+          )}
         </View>
         <TouchableOpacity
           style={[
             styles.filterButton,
             {
-              backgroundColor: selectedStatus !== 'all' || sortBy !== 'latest' ? colors.primary[100] : colors.primary[50],
-              borderColor: selectedStatus !== 'all' || sortBy !== 'latest' ? colors.primary[300] : colors.primary[100]
-            }
+              backgroundColor: filtersActive
+                ? (isDark ? colors.primary[900] : colors.primary[50])
+                : colors.background.secondary,
+              borderColor: filtersActive ? colors.primary[400] : colors.border.medium,
+            },
           ]}
           activeOpacity={0.7}
           onPress={() => setShowStatusFilterModal(true)}
           disabled={loading || !selectedProperty || !!error}>
-          <Filter size={20} color={selectedStatus !== 'all' || sortBy !== 'latest' ? colors.primary[700] : colors.primary[500]} />
+          <Filter
+            size={18}
+            color={filtersActive ? colors.primary[500] : colors.text.secondary}
+            strokeWidth={1.5}
+          />
+          {filtersActive && (
+            <View style={[styles.filterDot, { backgroundColor: colors.primary[500] }]} />
+          )}
         </TouchableOpacity>
       </View>
 
+      {/* ── List ── */}
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
@@ -331,16 +276,17 @@ export default function TenantsScreen() {
         ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={handleRefresh}
             colors={[colors.primary[500]]}
             tintColor={colors.primary[500]}
           />
         }>
-          {loading && tenants.length === 0 ? (
+
+        {loading && tenants.length === 0 ? (
           <Skeleton height={200} count={3} />
-        ) : (error && selectedProperty) ? (
+        ) : error && selectedProperty ? (
           <ApiErrorCard error={error} onRetry={handleRetry} />
         ) : !selectedProperty ? (
           <EmptyState
@@ -360,217 +306,284 @@ export default function TenantsScreen() {
           />
         ) : (
           <>
-            {tenants.map((tenant) => {
-              return (
-                <Card key={tenant.id} style={[styles.tenantCard, tenant.archived === true ? { opacity: 0.6 } : {}] as any}>
-                  <TouchableOpacity
-                    onPress={() => router.push(`/tenant-detail?tenantId=${tenant.id}`)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.tenantHeader}>
-                      <View style={[styles.avatar, { backgroundColor: tenant.archived === true ? colors.neutral[200] : colors.primary[500] }]}>
-                        <Text style={[styles.avatarText, { color: colors.white }]}>
-                          {tenant.name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .join('')}
-                        </Text>
-                      </View>
-                      <View style={styles.tenantInfo}>
-                        <View style={styles.tenantNameRow}>
-                          <Text style={[styles.tenantName, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{tenant.name}</Text>
-                          {tenant.tenantStatus === 'vacated' && (
-                            <View style={[styles.archivedBadge, { backgroundColor: colors.danger[100] }]}>
-                              <LogOut size={12} color={colors.danger[600]} />
-                              <Text style={[styles.archivedBadgeText, { color: colors.danger[600] }]}>Vacated</Text>
-                            </View>
-                          )}
-                          {tenant.archived === true && (
-                            <View style={[styles.archivedBadge, { backgroundColor: colors.warning[100] }]}>
-                              <Archive size={12} color={colors.warning[600]} />
-                              <Text style={[styles.archivedBadgeText, { color: colors.warning[600] }]}>Archived</Text>
-                            </View>
-                          )}
-                        </View>
-                        <View style={styles.phoneRow}>
-                          <Phone size={13} color={tenant.archived === true ? colors.text.tertiary : colors.primary[500]} />
-                          <Text style={[styles.phoneText, { color: colors.text.secondary }]} numberOfLines={1} ellipsizeMode="tail">{tenant.phone}</Text>
-                        </View>
-                      </View>
+            {tenants.map((tenant) => (
+              <Card
+                key={tenant.id}
+                style={[styles.tenantCard, tenant.archived === true && { opacity: 0.6 }] as any}>
+                <TouchableOpacity
+                  onPress={() => router.push(`/tenant-detail?tenantId=${tenant.id}`)}
+                  activeOpacity={0.7}>
+
+                  {/* Tenant header row */}
+                  <View style={styles.tenantHeader}>
+                    <View style={[
+                      styles.avatar,
+                      {
+                        backgroundColor: tenant.archived === true
+                          ? colors.neutral[400]
+                          : colors.primary[500],
+                      },
+                    ]}>
+                      <Text style={[styles.avatarText, { color: colors.white }]}>
+                        {tenant.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+                      </Text>
                     </View>
 
-                    <View style={styles.detailsRow}>
-                      <View style={styles.detailItem}>
-                        <Text style={[styles.detailLabel, { color: colors.text.tertiary }]}>Room</Text>
-                        <Text style={[styles.detailValue, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{getRoomInfo(tenant)}</Text>
+                    <View style={styles.tenantInfo}>
+                      <View style={styles.tenantNameRow}>
+                        <Text
+                          style={[styles.tenantName, { color: colors.text.primary }]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail">
+                          {tenant.name}
+                        </Text>
+                        {tenant.tenantStatus === 'vacated' && (
+                          <View style={[styles.badge, {
+                            backgroundColor: isDark ? colors.danger[900] : colors.danger[50],
+                            borderColor:     isDark ? colors.danger[700] : colors.danger[200],
+                          }]}>
+                            <LogOut size={10} color={isDark ? colors.danger[300] : colors.danger[600]} strokeWidth={2} />
+                            <Text style={[styles.badgeText, {
+                              color: isDark ? colors.danger[300] : colors.danger[700],
+                            }]}>
+                              Vacated
+                            </Text>
+                          </View>
+                        )}
+                        {tenant.archived === true && (
+                          <View style={[styles.badge, {
+                            backgroundColor: isDark ? colors.warning[900] : colors.warning[50],
+                            borderColor:     isDark ? colors.warning[700] : colors.warning[200],
+                          }]}>
+                            <Archive size={10} color={isDark ? colors.warning[300] : colors.warning[600]} strokeWidth={2} />
+                            <Text style={[styles.badgeText, {
+                              color: isDark ? colors.warning[300] : colors.warning[700],
+                            }]}>
+                              Archived
+                            </Text>
+                          </View>
+                        )}
                       </View>
-                      <View style={styles.detailItem}>
-                        <Text style={[styles.detailLabel, { color: colors.text.tertiary }]}>Rent</Text>
-                        <Text style={[styles.detailValue, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{tenant.rent}</Text>
-                      </View>
-                      <View style={styles.detailItem}>
-                        <Text style={[styles.detailLabel, { color: colors.text.tertiary }]}>Since</Text>
-                        <Text style={[styles.detailValue, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">{tenant.joinDate}</Text>
+
+                      <View style={styles.phoneRow}>
+                        <Phone
+                          size={12}
+                          color={tenant.archived === true ? colors.text.tertiary : colors.primary[500]}
+                          strokeWidth={1.5}
+                        />
+                        <Text style={[styles.phoneText, { color: colors.text.secondary }]}
+                          numberOfLines={1} ellipsizeMode="tail">
+                          {tenant.phone}
+                        </Text>
                       </View>
                     </View>
-                  </TouchableOpacity>
-                </Card>
-              );
-            })}
-            
-            {/* Pagination Controls */}
+                  </View>
+
+                  {/* Details row */}
+                  <View style={[styles.detailsRow, { borderTopColor: colors.border.light }]}>
+                    {[
+                      { label: 'Room',  value: getRoomInfo(tenant)  },
+                      { label: 'Rent',  value: tenant.rent          },
+                      { label: 'Since', value: tenant.joinDate      },
+                    ].map((item) => (
+                      <View key={item.label} style={styles.detailItem}>
+                        <Text style={[styles.detailLabel, { color: colors.text.tertiary }]}>
+                          {item.label.toUpperCase()}
+                        </Text>
+                        <Text style={[styles.detailValue, { color: colors.text.primary }]}
+                          numberOfLines={1} ellipsizeMode="tail">
+                          {item.value}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                </TouchableOpacity>
+              </Card>
+            ))}
+
+            {/* ── Pagination ── */}
             {total > pageSize && (
-              <View style={[styles.paginationContainer, { backgroundColor: colors.background.secondary, borderTopColor: colors.border.light }]}>
+              <View style={[
+                styles.paginationRow,
+                { backgroundColor: colors.background.secondary, borderTopColor: colors.border.light },
+              ]}>
                 <TouchableOpacity
                   style={[
-                    styles.paginationButton,
+                    styles.pageBtn,
                     {
-                      backgroundColor: currentPage === 1 ? colors.neutral[100] : colors.primary[500],
-                      borderColor: colors.border.medium
-                    }
+                      backgroundColor: currentPage === 1
+                        ? colors.background.tertiary
+                        : colors.primary[500],
+                      borderColor: currentPage === 1 ? colors.border.medium : colors.primary[500],
+                    },
                   ]}
                   onPress={() => {
                     if (currentPage > 1) {
-                      const newPage = currentPage - 1;
-                      setCurrentPage(newPage);
-                      fetchTenants(newPage, searchQuery, selectedStatus, true, sortBy);
+                      const p = currentPage - 1; setCurrentPage(p);
+                      fetchTenants(p, searchQuery, selectedStatus, true, sortBy);
                     }
                   }}
                   disabled={currentPage === 1}
                   activeOpacity={0.7}>
-                  <Text style={[styles.paginationButtonText, { color: currentPage === 1 ? colors.text.tertiary : colors.white }]}>
-                    ← Previous
+                  <ChevronLeft
+                    size={16}
+                    color={currentPage === 1 ? colors.text.tertiary : colors.white}
+                    strokeWidth={2}
+                  />
+                  <Text style={[styles.pageBtnText, {
+                    color: currentPage === 1 ? colors.text.tertiary : colors.white,
+                  }]}>
+                    Prev
                   </Text>
                 </TouchableOpacity>
-                
-                <View style={styles.paginationInfo}>
-                  <Text style={[styles.paginationText, { color: colors.text.primary }]}>
-                    Page {currentPage} of {Math.ceil(total / pageSize)}
+
+                <View style={styles.pageInfo}>
+                  <Text style={[styles.pageInfoText, { color: colors.text.primary }]}>
+                    {currentPage} / {totalPages}
                   </Text>
                 </View>
-                
+
                 <TouchableOpacity
                   style={[
-                    styles.paginationButton,
+                    styles.pageBtn,
                     {
-                      backgroundColor: currentPage >= Math.ceil(total / pageSize) ? colors.neutral[100] : colors.primary[500],
-                      borderColor: colors.border.medium
-                    }
+                      backgroundColor: currentPage >= totalPages
+                        ? colors.background.tertiary
+                        : colors.primary[500],
+                      borderColor: currentPage >= totalPages ? colors.border.medium : colors.primary[500],
+                    },
                   ]}
                   onPress={() => {
-                    if (currentPage < Math.ceil(total / pageSize)) {
-                      const newPage = currentPage + 1;
-                      setCurrentPage(newPage);
-                      fetchTenants(newPage, searchQuery, selectedStatus, true, sortBy);
+                    if (currentPage < totalPages) {
+                      const p = currentPage + 1; setCurrentPage(p);
+                      fetchTenants(p, searchQuery, selectedStatus, true, sortBy);
                     }
                   }}
-                  disabled={currentPage >= Math.ceil(total / pageSize)}
+                  disabled={currentPage >= totalPages}
                   activeOpacity={0.7}>
-                  <Text style={[styles.paginationButtonText, { color: currentPage >= Math.ceil(total / pageSize) ? colors.text.tertiary : colors.white }]}>
-                    Next →
+                  <Text style={[styles.pageBtnText, {
+                    color: currentPage >= totalPages ? colors.text.tertiary : colors.white,
+                  }]}>
+                    Next
                   </Text>
+                  <ChevronRight
+                    size={16}
+                    color={currentPage >= totalPages ? colors.text.tertiary : colors.white}
+                    strokeWidth={2}
+                  />
                 </TouchableOpacity>
               </View>
             )}
           </>
         )}
       </ScrollView>
+
       {selectedProperty && !showEmptyState && <FAB onPress={handleFabPress} />}
+
       <UpgradeModal
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
         onSelectPlan={() => setShowUpgradeModal(false)}
       />
 
+      {/* ── Filter Modal ── */}
       <Modal
         visible={showStatusFilterModal}
         transparent
         animationType="fade"
         onRequestClose={() => setShowStatusFilterModal(false)}>
-        <View style={[styles.filterModalOverlay, isTablet && styles.filterModalOverlayTablet]}>
-          <View
-            style={[
-              styles.filterModalContainer,
-              isTablet && styles.filterModalContainerTablet,
-              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
-            ]}> 
-            <Text style={[styles.filterModalTitle, { color: colors.text.primary }]}>Sort By</Text>
+        <View style={[
+          styles.modalOverlay,
+          isTablet && styles.modalOverlayTablet,
+        ]}>
+          <View style={[
+            styles.modalSheet,
+            isTablet && styles.modalSheetTablet,
+            { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+          ]}>
 
-            {[
-              { label: 'Latest First', value: 'latest' as const, icon: '↓' },
-              { label: 'Oldest First', value: 'oldest' as const, icon: '↑' },
-            ].map((option) => {
-              const selected = sortBy === option.value;
+            {/* Sort section */}
+            <Text style={[styles.modalSectionTitle, { color: colors.text.primary }]}>Sort by</Text>
+            {([
+              { label: 'Latest first', value: 'latest' as const },
+              { label: 'Oldest first', value: 'oldest' as const },
+            ] as const).map((opt) => {
+              const selected = sortBy === opt.value;
               return (
                 <TouchableOpacity
-                  key={option.value}
+                  key={opt.value}
                   style={[
                     styles.filterOption,
                     {
-                      borderColor: selected ? colors.primary[500] : colors.border.medium,
-                      backgroundColor: selected ? colors.primary[50] : colors.background.primary,
+                      borderColor:     selected ? colors.primary[400] : colors.border.medium,
+                      backgroundColor: selected
+                        ? (isDark ? colors.primary[900] : colors.primary[50])
+                        : colors.background.primary,
                     },
                   ]}
-                  onPress={() => {
-                    handleSelectSort(option.value);
-                    setShowStatusFilterModal(false);
-                  }}
+                  onPress={() => { handleSelectSort(opt.value); setShowStatusFilterModal(false); }}
                   activeOpacity={0.7}>
-                  <Text
-                    style={[
-                      styles.filterOptionText,
-                      {
-                        color: selected ? colors.primary[700] : colors.text.primary,
-                        fontWeight: selected ? typography.fontWeight.semibold : typography.fontWeight.regular,
-                      },
-                    ]}>
-                    {option.icon} {option.label}
+                  <Text style={[styles.filterOptionText, {
+                    color:      selected ? colors.primary[isDark ? 300 : 700] : colors.text.primary,
+                    fontFamily: selected
+                      ? typography.fontFamily.semiBold
+                      : typography.fontFamily.regular,
+                  }]}>
+                    {opt.label}
                   </Text>
+                  {selected && (
+                    <Check size={16} color={colors.primary[500]} strokeWidth={2.5} />
+                  )}
                 </TouchableOpacity>
               );
             })}
 
-            <View style={[styles.filterDivider, { backgroundColor: colors.border.light }]} />
+            <View style={[styles.modalDivider, { backgroundColor: colors.border.light }]} />
 
-            <Text style={[styles.filterModalTitle, { color: colors.text.primary }]}>Filter by Status</Text>
-
-            {[
-              { label: 'All Tenants', value: 'all' as const },
-              { label: 'Active', value: 'active' as const },
-              { label: 'Vacated', value: 'vacated' as const },
-            ].map((option) => {
-              const selected = selectedStatus === option.value;
+            {/* Status section */}
+            <Text style={[styles.modalSectionTitle, { color: colors.text.primary }]}>Filter by status</Text>
+            {([
+              { label: 'All tenants', value: 'all'     as const },
+              { label: 'Active',      value: 'active'  as const },
+              { label: 'Vacated',     value: 'vacated' as const },
+            ] as const).map((opt) => {
+              const selected = selectedStatus === opt.value;
               return (
                 <TouchableOpacity
-                  key={option.value}
+                  key={opt.value}
                   style={[
                     styles.filterOption,
                     {
-                      borderColor: selected ? colors.primary[500] : colors.border.medium,
-                      backgroundColor: selected ? colors.primary[50] : colors.background.primary,
+                      borderColor:     selected ? colors.primary[400] : colors.border.medium,
+                      backgroundColor: selected
+                        ? (isDark ? colors.primary[900] : colors.primary[50])
+                        : colors.background.primary,
                     },
                   ]}
-                  onPress={() => handleSelectStatusFilter(option.value)}
+                  onPress={() => handleSelectStatusFilter(opt.value)}
                   activeOpacity={0.7}>
-                  <Text
-                    style={[
-                      styles.filterOptionText,
-                      {
-                        color: selected ? colors.primary[700] : colors.text.primary,
-                        fontWeight: selected ? typography.fontWeight.semibold : typography.fontWeight.regular,
-                      },
-                    ]}>
-                    {option.label}
+                  <Text style={[styles.filterOptionText, {
+                    color:      selected ? colors.primary[isDark ? 300 : 700] : colors.text.primary,
+                    fontFamily: selected
+                      ? typography.fontFamily.semiBold
+                      : typography.fontFamily.regular,
+                  }]}>
+                    {opt.label}
                   </Text>
+                  {selected && (
+                    <Check size={16} color={colors.primary[500]} strokeWidth={2.5} />
+                  )}
                 </TouchableOpacity>
               );
             })}
 
+            {/* Cancel */}
             <TouchableOpacity
-              style={[styles.filterModalCloseButton, { borderTopColor: colors.border.light }]}
+              style={[styles.modalCancelBtn, { borderTopColor: colors.border.light }]}
               onPress={() => setShowStatusFilterModal(false)}
               activeOpacity={0.7}>
-              <Text style={[styles.filterModalCloseText, { color: colors.text.secondary }]}>Cancel</Text>
+              <Text style={[styles.modalCancelText, { color: colors.text.secondary }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -579,207 +592,277 @@ export default function TenantsScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  scrollContent: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xxxl,
-    paddingTop: spacing.sm,
-  },
+  // ── Header ───────────────────────────────────────────────────────────────
   header: {
-    flexDirection: 'row',
+    flexDirection:  'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems:     'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.xxl,
-    fontWeight: typography.fontWeight.bold,
-  },
-    headerCount: {
-      fontSize: typography.fontSize.sm,
-      fontWeight: typography.fontWeight.medium,
-    },
-  searchContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-    gap: spacing.sm,
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: spacing.sm,
-    fontSize: typography.fontSize.md,
-  },
-  filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  tenantCard: {
-    marginBottom: spacing.sm,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  tenantHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  avatarText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
-  },
-  tenantInfo: {
-    flex: 1,
-  },
-  tenantName: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
-    marginBottom: spacing.xs,
-  },
-  phoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  phoneText: {
-    fontSize: typography.fontSize.sm,
+    paddingVertical:   spacing.md,
   },
 
-  detailsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
+  headerTitle: {
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.xxl,
+    letterSpacing: typography.letterSpacing.tight,
   },
-  detailItem: {
-    flex: 1,
-  },
-  detailLabel: {
-    fontSize: typography.fontSize.xs,
-    marginBottom: spacing.xs,
-  },
-  detailValue: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  paginationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+
+  countPill: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    marginTop: spacing.md,
-    borderTopWidth: 1,
+    paddingVertical:   4,
+    borderRadius:      radius.full,
   },
-  paginationButton: {
+
+  countText: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize:   typography.fontSize.sm,
+  },
+
+  // ── Search ───────────────────────────────────────────────────────────────
+  searchContainer: {
+    flexDirection:     'row',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    minWidth: 100,
-    alignItems: 'center',
+    marginBottom:      spacing.md,
+    gap:               spacing.sm,
+  },
+
+  searchBar: {
+    flex:              1,
+    flexDirection:     'row',
+    alignItems:        'center',
+    borderRadius:      radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical:   spacing.sm,
+    borderWidth:       0.5,
+    gap:               spacing.sm,
+  },
+
+  searchInput: {
+    flex:     1,
+    fontSize: typography.fontSize.md,
+  },
+
+  clearBtn: {
+    fontSize:   typography.fontSize.sm,
+    paddingLeft: 4,
+  },
+
+  filterButton: {
+    width:          44,
+    height:         44,
+    borderRadius:   radius.md,
+    alignItems:     'center',
     justifyContent: 'center',
+    borderWidth:    0.5,
+    position:       'relative',
   },
-  paginationButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+
+  filterDot: {
+    position:     'absolute',
+    top:          8,
+    right:        8,
+    width:        6,
+    height:       6,
+    borderRadius: radius.full,
   },
-  paginationInfo: {
-    flex: 1,
-    alignItems: 'center',
+
+  // ── List ─────────────────────────────────────────────────────────────────
+  scrollContent: {
+    paddingHorizontal: spacing.md,
+    paddingBottom:     spacing.xxxl,
+    paddingTop:        spacing.sm,
   },
-  paginationText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+
+  tenantCard: {
+    marginBottom:      spacing.sm,
+    paddingVertical:   spacing.md,
+    paddingHorizontal: spacing.md,
   },
+
+  tenantHeader: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    marginBottom:  spacing.md,
+  },
+
+  avatar: {
+    width:          44,
+    height:         44,
+    borderRadius:   radius.full,
+    alignItems:     'center',
+    justifyContent: 'center',
+    marginRight:    spacing.md,
+  },
+
+  avatarText: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize:   typography.fontSize.md,
+  },
+
+  tenantInfo: { flex: 1 },
+
   tenantNameRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.xs,
+    alignItems:    'center',
+    gap:           spacing.sm,
+    marginBottom:  spacing.xs,
+    flexWrap:      'wrap',
   },
-  archivedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+
+  tenantName: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize:   typography.fontSize.md,
+    flexShrink: 1,
+  },
+
+  badge: {
+    flexDirection:     'row',
+    alignItems:        'center',
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
-    gap: spacing.xs,
+    paddingVertical:   2,
+    borderRadius:      radius.full,
+    borderWidth:       0.5,
+    gap:               3,
   },
-  archivedBadgeText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+
+  badgeText: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize:   typography.fontSize.xs,
   },
-  filterModalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
+
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing.xs,
+  },
+
+  phoneText: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.sm,
+  },
+
+  // ── Detail row ───────────────────────────────────────────────────────────
+  detailsRow: {
+    flexDirection:  'row',
+    gap:            spacing.sm,
+    borderTopWidth: 0.5,
+    paddingTop:     spacing.md,
+  },
+
+  detailItem: { flex: 1 },
+
+  detailLabel: {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom:  spacing.xs,
+  },
+
+  detailValue: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize:   typography.fontSize.sm,
+  },
+
+  // ── Pagination ───────────────────────────────────────────────────────────
+  paginationRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical:   spacing.md,
+    marginTop:         spacing.md,
+    borderTopWidth:    0.5,
+    borderRadius:      radius.md,
+  },
+
+  pageBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical:   spacing.sm,
+    borderRadius:      radius.md,
+    borderWidth:       0.5,
+    minWidth:          80,
+    justifyContent:    'center',
+  },
+
+  pageBtnText: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize:   typography.fontSize.sm,
+  },
+
+  pageInfo:     { flex: 1, alignItems: 'center' },
+
+  pageInfoText: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize:   typography.fontSize.sm,
+  },
+
+  // ── Filter Modal ─────────────────────────────────────────────────────────
+  modalOverlay: {
+    flex:            1,
+    justifyContent:  'flex-end',
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
-  filterModalOverlayTablet: {
-    justifyContent: 'center',
+
+  modalOverlayTablet: {
+    justifyContent:    'center',
     paddingHorizontal: spacing.lg,
   },
-  filterModalContainer: {
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-    gap: spacing.sm,
+
+  modalSheet: {
+    borderTopLeftRadius:  radius.xl ?? 20,
+    borderTopRightRadius: radius.xl ?? 20,
+    paddingHorizontal:    spacing.lg,
+    paddingTop:           spacing.lg,
+    paddingBottom:        spacing.xl,
+    gap:                  spacing.sm,
   },
-  filterModalContainerTablet: {
-    width: '100%',
-    alignSelf: 'center',
-    borderBottomLeftRadius: radius.xl,
-    borderBottomRightRadius: radius.xl,
+
+  modalSheetTablet: {
+    width:                    '100%',
+    alignSelf:                'center',
+    borderBottomLeftRadius:   radius.xl ?? 20,
+    borderBottomRightRadius:  radius.xl ?? 20,
   },
-  filterModalTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    marginBottom: spacing.sm,
+
+  modalSectionTitle: {
+    fontFamily:   typography.fontFamily.bold,
+    fontSize:     typography.fontSize.md,
+    marginBottom: spacing.xs,
   },
+
   filterOption: {
-    borderWidth: 1,
-    borderRadius: radius.md,
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    borderWidth:       0.5,
+    borderRadius:      radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical:   spacing.md,
   },
+
   filterOptionText: {
     fontSize: typography.fontSize.md,
   },
-  filterDivider: {
-    height: 1,
-    marginVertical: spacing.md,
+
+  modalDivider: {
+    height:        0.5,
+    marginVertical: spacing.sm,
   },
-  filterModalCloseButton: {
-    marginTop: spacing.sm,
-    borderTopWidth: 1,
-    alignItems: 'center',
-    paddingTop: spacing.md,
+
+  modalCancelBtn: {
+    marginTop:   spacing.sm,
+    borderTopWidth: 0.5,
+    alignItems:  'center',
+    paddingTop:  spacing.md,
   },
-  filterModalCloseText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.medium,
+
+  modalCancelText: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize:   typography.fontSize.md,
   },
 });
-

@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 import secrets
 from typing import Optional, Tuple
+from app.config import settings
 
 # In-memory storage structure: {email: {otp, created_at, expires_at, last_sent_at, resend_cooldown_expires_at}}
 otp_store: dict = {}
@@ -35,7 +36,10 @@ async def generate_and_store_otp(email: str, otp_type: str = "registration") -> 
             return stored.get("otp", ""), False
     
     # Generate cryptographically secure 6-digit OTP.
-    otp = f"{secrets.randbelow(900000) + 100000}"
+    if settings.DEMO_MODE:
+        otp = settings.DEMO_OTP
+    else:
+        otp = f"{secrets.randbelow(900000) + 100000}"
     expires_at = now + timedelta(minutes=5)
     resend_cooldown_expires_at = now + timedelta(seconds=45)
     
@@ -83,6 +87,8 @@ async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tu
         Tuple of (is_valid, error_message)
     """
     normalized_email = email.strip().lower()
+    if settings.DEMO_MODE and otp == settings.DEMO_OTP:
+        return True, None
     stored = await get_otp(normalized_email)
     
     if not stored:

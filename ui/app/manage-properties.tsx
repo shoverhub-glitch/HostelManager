@@ -12,21 +12,20 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import ScreenContainer from '@/components/ScreenContainer';
 import Card from '@/components/Card';
 import ArchiveWarningModal from '@/components/ArchiveWarningModal';
 import FAB from '@/components/FAB';
 import EmptyState from '@/components/EmptyState';
 import Skeleton from '@/components/Skeleton';
-import ApiErrorCard from '@/components/ApiErrorCard';
 import { ChevronLeft, Building2, MapPin, Trash2, Edit, Archive, AlertTriangle, X } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, textPresets } from '@/theme';
+import { typography } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { propertyService } from '@/services/apiClient';
-import { clearScreenCache, cacheKeys } from '@/services/screenCache';
+import { clearScreenCache } from '@/services/screenCache';
 
 export default function ManagePropertiesScreen() {
   const { colors } = useTheme();
@@ -465,14 +464,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: typography.fontSize.xxl,
-    fontWeight: typography.fontWeight.bold,
-    letterSpacing: -0.5,
+    ...textPresets.h2,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   headerSubtitle: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.regular,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   addHeaderButton: {
     width: 40,
@@ -524,10 +522,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   propertyName: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.h4,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
-    letterSpacing: -0.3,
   },
   statusBadge: {
     flexDirection: 'row',
@@ -539,8 +536,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   statusBadgeText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.badge,
+    color: colors.warning[700],
   },
   addressSection: {
     flexDirection: 'row',
@@ -549,10 +546,10 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   addressText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     flex: 1,
     lineHeight: 20,
-    fontWeight: typography.fontWeight.regular,
   },
   detailsRow: {
     flexDirection: 'row',
@@ -570,15 +567,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   detailLabel: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.medium,
+    ...textPresets.label,
+    color: colors.text.tertiary,
     marginBottom: spacing.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   detailValue: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   divider: {
     width: 1,
@@ -591,8 +586,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   statusText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.badge,
+    color: colors.success[700],
   },
   actionButtons: {
     flexDirection: 'row',
@@ -615,9 +610,8 @@ const styles = StyleSheet.create({
     // Color set dynamically
   },
   actionButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
-    letterSpacing: -0.2,
+    ...textPresets.buttonSm,
+    color: colors.primary[600],
   },
   overlay: {
     flex: 1,
@@ -648,14 +642,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   deleteTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
     textAlign: 'center',
     marginBottom: spacing.md,
   },
   deleteDescription: {
-    fontSize: typography.fontSize.md,
-    lineHeight: 22,
+    ...textPresets.body,
+    color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
@@ -671,8 +665,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   warningTitle: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.danger[500],
   },
   warningList: {
     gap: spacing.sm,
@@ -688,8 +682,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   warningText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
+    ...textPresets.caption,
+    color: colors.danger[500],
   },
   deleteButtonContainer: {
     flexDirection: 'row',
@@ -704,8 +698,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancelButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.primary,
   },
   deleteButtonConfirm: {
     flex: 1,
@@ -717,7 +711,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   deleteButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
 });

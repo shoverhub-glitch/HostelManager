@@ -14,8 +14,10 @@ FROM_EMAIL = os.environ.get("FROM_EMAIL")
 ENV = os.environ.get("ENV", "production")
 # Zoho Zepto Mail Configuration
 ZEPTO_MAIL_API_KEY = os.environ.get("ZEPTO_MAIL_API_KEY")
-
+DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
+DEMO_OTP = os.environ.get("DEMO_OTP", "130499")
 PUBLIC_PATHS = os.environ.get("PUBLIC_PATHS")
+
 if not PUBLIC_PATHS:
 	PUBLIC_PATHS = ",".join([
 		"/api/v1/health",

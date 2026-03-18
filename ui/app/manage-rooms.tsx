@@ -19,7 +19,8 @@ import EmptyState from '@/components/EmptyState';
 import Skeleton from '@/components/Skeleton';
 import ApiErrorCard from '@/components/ApiErrorCard';
 import { ChevronLeft, DoorOpen, Bed, IndianRupee, Eye, Archive, Trash2, Edit } from 'lucide-react-native';
-import { spacing, typography, radius } from '@/theme';
+import { spacing, radius, colors} from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -523,8 +524,8 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
 
   roomCard: {
@@ -542,7 +543,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   roomFloor: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   roomStatsContainer: {
     flexDirection: 'row',
@@ -564,12 +566,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   statLabel: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.label,
+    color: colors.text.secondary,
     marginBottom: 2,
   },
   statValue: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   statDivider: {
     width: 1,
@@ -585,8 +588,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   viewBedsButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
+    color: colors.white,
   },
   divider: {
     height: 1,
@@ -605,12 +608,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   detailLabel: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.label,
     marginLeft: spacing.xs,
   },
   detailValue: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   roomNameRow: {
     flexDirection: 'row',
@@ -639,8 +642,8 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   archivedBadgeText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.badge,
+    color: colors.warning[600],
   },
   actionsContainer: {
     flexDirection: 'row',
@@ -657,13 +660,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   actionText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
     marginLeft: spacing.xs,
   },
   propertyName: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
   },
   placeholder: {
     width: 40,
@@ -684,8 +686,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   roomNumber: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   paginationContainer: {
     flexDirection: 'row',
@@ -706,16 +708,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   paginationButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
+    color: colors.white,
   },
   paginationInfo: {
     flex: 1,
     alignItems: 'center',
   },
   paginationText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   modalOverlay: {
     flex: 1,
@@ -730,14 +732,14 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   modalTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
     marginBottom: spacing.md,
   },
   modalMessage: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     marginBottom: spacing.lg,
-    lineHeight: 22,
   },
   warningBox: {
     padding: spacing.md,
@@ -746,12 +748,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   warningTitle: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.bodyMedium,
+    color: colors.danger[500],
     marginBottom: spacing.sm,
   },
   warningText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     lineHeight: 20,
   },
   modalActions: {
@@ -769,7 +772,7 @@ const styles = StyleSheet.create({
     // backgroundColor set inline
   },
   modalButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.primary,
   },
 });

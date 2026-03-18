@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { AlertCircle } from 'lucide-react-native';
-import { spacing, typography, radius } from '@/theme';
+import { spacing, radius,  } from '@/theme';
+import { typography ,textPresets} from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 
 interface LimitBannerProps {
@@ -49,12 +50,11 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
   },
   message: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.bodyMedium,
     marginLeft: spacing.sm,
     flex: 1,
   },
   upgradeText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.buttonSm,
   },
 });

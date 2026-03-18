@@ -18,7 +18,8 @@ import {
   DoorOpen,
   Users,
 } from 'lucide-react-native';
-import { spacing, typography, radius } from '@/theme';
+import { spacing, radius, colors} from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 
@@ -179,8 +180,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   headerTitle: {
-    fontSize: typography.fontSize.xxl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
+    color: colors.text.primary,
   },
   loadingContainer: {
     flex: 1,
@@ -209,8 +210,8 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   propertyName: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   addressRow: {
@@ -218,7 +219,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addressText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     marginLeft: spacing.xs,
     flex: 1,
   },
@@ -234,19 +236,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   detailLabel: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.label,
+    color: colors.text.secondary,
     marginBottom: spacing.xs,
   },
   detailValue: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   section: {
     marginBottom: spacing.lg,
   },
   sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
     marginBottom: spacing.md,
   },
   optionCard: {
@@ -274,11 +277,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   optionTitle: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   optionDescription: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
 });

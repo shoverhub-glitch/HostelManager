@@ -13,7 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Building2, ChevronLeft } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, colors,  } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -267,8 +268,8 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   placeholder: {
     width: 40,
@@ -300,12 +301,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    fontSize: typography.fontSize.xxl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   subtitle: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     textAlign: 'center',
   },
   formContainer: {
@@ -319,22 +321,23 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   errorText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.danger[700],
   },
   inputContainer: {
     marginBottom: spacing.xl,
   },
   label: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   input: {
+    ...textPresets.body,
+    color: colors.text.primary,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    fontSize: typography.fontSize.md,
     borderWidth: 1,
   },
   submitButton: {
@@ -346,8 +349,8 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   submitButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
   offlineWarning: {
     borderRadius: radius.md,
@@ -357,7 +360,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   offlineWarningText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.warning[900],
   },
 });

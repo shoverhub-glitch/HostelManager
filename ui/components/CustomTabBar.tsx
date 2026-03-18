@@ -1,7 +1,8 @@
 import { View, TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { shadows, typography } from '@/theme';
+import { colors, shadows } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -122,8 +123,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   label: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.tab,
+    color: colors.text.tertiary,
     marginTop: 4,
   },
 });

@@ -27,17 +27,32 @@ class SubscriptionService:
     async def get_subscription(owner_id: str):
         """Get active subscription for owner, creating default if not exists"""
         try:
-            # Find active subscription (highest tier that is active)
-            doc = await db["subscriptions"].find_one(
-                {"ownerId": owner_id, "status": "active"},
-                sort=[("plan", -1)]  # Sort by plan name descending to get premium > pro > free
-            )
-            if doc:
-                return Subscription(**doc)
+            # Plan order for sorting: premium > pro > free
+            # Since we can't easily sort by a custom map in MongoDB find_one,
+            # we'll fetch all active and sort in Python
+            docs = await db["subscriptions"].find(
+                {"ownerId": owner_id, "status": "active"}
+            ).to_list(length=None)
+            
+            if docs:
+                plan_order = {"premium": 2, "pro": 1, "free": 0}
+                docs.sort(key=lambda x: plan_order.get(x.get("plan", "free"), -1), reverse=True)
+                return Subscription(**docs[0])
         except Exception as e:
             logger.error(f"Error retrieving subscription: {str(e)}")
         
-        # If not found or error, create default free subscription
+        # If not found or error, check if any subscription exists at all
+        existing_any = await db["subscriptions"].find_one({"ownerId": owner_id})
+        if existing_any:
+            # If one exists but isn't active, activate it or return it
+            await db["subscriptions"].update_one(
+                {"_id": existing_any["_id"]},
+                {"$set": {"status": "active", "updatedAt": datetime.now().isoformat()}}
+            )
+            existing_any["status"] = "active"
+            return Subscription(**existing_any)
+
+        # If truly not found, create default free subscription
         now = datetime.now().isoformat()
         
         # Fetch free plan from database
@@ -66,10 +81,16 @@ class SubscriptionService:
             tenantLimit=free_limits['tenants'],
             staffLimit=free_limits['staff'],
             createdAt=now,
-            updatedAt=now
+            updatedAt=now,
+            autoRenewal=False
         )
         try:
-            await db["subscriptions"].insert_one(sub.model_dump())
+            # Use upsert to prevent duplicates
+            await db["subscriptions"].update_one(
+                {"ownerId": owner_id, "plan": "free"},
+                {"$set": sub.model_dump()},
+                upsert=True
+            )
         except Exception as e:
             logger.error(f"Error creating default subscription: {str(e)}")
         return sub
@@ -78,7 +99,7 @@ class SubscriptionService:
     async def update_subscription(owner_id: str, plan: str, period: int = 1):
         """
         Update subscription plan with dynamic period support.
-        Updates the single subscription document for the user.
+        Ensures only one subscription is active for the user.
         
         Args:
             owner_id: User ID
@@ -87,9 +108,10 @@ class SubscriptionService:
         """
         try:
             now = datetime.now().isoformat()
+            plan = plan.lower()
             
-            # Fetch plan from database
-            plan_doc = await db.plans.find_one({"name": plan.lower()})
+            # Fetch plan details from database
+            plan_doc = await db.plans.find_one({"name": plan})
             if not plan_doc:
                 plan_doc = get_default_plan(plan)
                 if not plan_doc:
@@ -107,7 +129,7 @@ class SubscriptionService:
             if plan == 'free':
                 period = 0
             
-            # Validate period for non-free plans (periods dict has string keys from DB)
+            # Validate period for non-free plans
             periods_dict = plan_data.get('periods', {})
             period_str = str(period)
             if plan != 'free' and period_str not in periods_dict:
@@ -116,50 +138,49 @@ class SubscriptionService:
             price = periods_dict.get(period_str, 0) if plan != 'free' else 0
             period_end = datetime.now() + timedelta(days=period * 30 if period > 0 else 365)
             
-            # Update the single subscription document for this user
+            # 1. Mark all other subscriptions for this owner as inactive
+            await db["subscriptions"].update_many(
+                {"ownerId": owner_id, "plan": {"$ne": plan}},
+                {"$set": {"status": "inactive", "updatedAt": now, "autoRenewal": False}}
+            )
+            
+            # 2. Upsert the target subscription to active
+            sub_data = {
+                "plan": plan,
+                "status": "active",
+                "period": period,
+                "price": price,
+                "propertyLimit": plan_data['properties'],
+                "roomLimit": plan_data['rooms'],
+                "tenantLimit": plan_data['tenants'],
+                "staffLimit": plan_data['staff'],
+                "currentPeriodStart": now,
+                "currentPeriodEnd": period_end.isoformat(),
+                "autoRenewal": True if plan != 'free' else False,
+                "updatedAt": now
+            }
+            
             result = await db["subscriptions"].find_one_and_update(
-                {"ownerId": owner_id},
-                {"$set": {
-                    "plan": plan,
-                    "status": "active",
-                    "period": period,
-                    "price": price,
-                    "propertyLimit": plan_data['properties'],
-                    "roomLimit": plan_data['rooms'],
-                    "tenantLimit": plan_data['tenants'],
-                    "staffLimit": plan_data['staff'],
-                    "currentPeriodStart": now,
-                    "currentPeriodEnd": period_end.isoformat(),
-                    "autoRenewal": True if plan != 'free' else False,
-                    "updatedAt": now
-                }},
+                {"ownerId": owner_id, "plan": plan},
+                {"$set": sub_data},
+                upsert=True,
                 return_document=True
             )
             
             if result:
+                # Ensure createdAt exists (if it was an upsert-insert)
+                if "createdAt" not in result:
+                    await db["subscriptions"].update_one(
+                        {"_id": result["_id"]},
+                        {"$set": {"createdAt": now}}
+                    )
+                    result["createdAt"] = now
                 return Subscription(**result)
             
-            # If subscription doesn't exist, create it
-            sub = Subscription(
-                ownerId=owner_id,
-                plan=plan,
-                period=period,
-                status='active',
-                price=price,
-                currentPeriodStart=now,
-                currentPeriodEnd=period_end.isoformat(),
-                propertyLimit=plan_data['properties'],
-                roomLimit=plan_data['rooms'],
-                tenantLimit=plan_data['tenants'],
-                staffLimit=plan_data['staff'],
-                autoRenewal=True if plan != 'free' else False,
-                createdAt=now,
-                updatedAt=now
-            )
-            await db["subscriptions"].insert_one(sub.model_dump())
-            return sub
+            raise ValueError("Failed to update or create subscription")
+            
         except Exception as e:
-            logger.error(f"Error updating subscription: {str(e)}")
+            logger.error(f"Error updating subscription for {owner_id} to {plan}: {str(e)}")
             raise ValueError(f"Failed to update subscription: {str(e)}")
 
     @staticmethod

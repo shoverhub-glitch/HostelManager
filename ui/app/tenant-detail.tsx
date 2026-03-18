@@ -19,7 +19,6 @@ import {
   ChevronLeft,
   User,
   Phone,
-  Mail,
   MapPin,
   Wallet,
   Calendar,
@@ -30,8 +29,8 @@ import {
   CheckCircle,
   ChevronDown,
 } from 'lucide-react-native';
-import { Bed as BedIcon } from 'lucide-react-native';
-import { spacing, typography, radius, shadows, addActionTokens } from '@/theme';
+import { spacing, radius, shadows, addActionTokens, colors } from '@/theme';
+import { typography, textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
@@ -68,6 +67,11 @@ export default function TenantDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  
+  const [loadingPayments, setLoadingPayments] = useState(false);
+  const [paymentsPage, setPaymentsPage] = useState(1);
+  const [hasMorePayments, setHasMorePayments] = useState(false);
+  const PAYMENTS_PAGE_SIZE = 20;
 
   const [showEditBillingModal, setShowEditBillingModal] = useState(false);
   const [editAnchorDay, setEditAnchorDay] = useState<number>(1);
@@ -142,23 +146,11 @@ export default function TenantDetailScreen() {
       if (tenantRes.data) {
         setTenant(tenantRes.data);
         
-        // Only fetch payments/room data if tenant exists
-        const [paymentsRes, roomRes] = await Promise.all([
-          paymentService.getPayments(tenantRes.data.propertyId, { tenantId, page: 1, pageSize: 50 }),
+        // Fetch initial batch of payments and room data
+        const [_, roomRes] = await Promise.all([
+          fetchPayments(tenantRes.data.propertyId, 1, true),
           tenantRes.data.roomId ? roomService.getRoomById(tenantRes.data.roomId) : Promise.resolve({ data: null }),
         ]);
-
-        if (paymentsRes.data) {
-          const tenantPayments = paymentsRes.data
-            .sort((a, b) => new Date(b.dueDate ?? '').getTime() - new Date(a.dueDate ?? '').getTime());
-          setPayments(tenantPayments);
-
-          setScreenCache(cacheKey, {
-            tenant: tenantRes.data,
-            payments: tenantPayments,
-            room: roomRes?.data || null,
-          });
-        }
 
         if (roomRes?.data) {
           setRoom(roomRes.data);
@@ -173,6 +165,51 @@ export default function TenantDetailScreen() {
       setError(err?.message || 'Failed to load tenant details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPayments = async (propertyId: string, page: number, reset = false) => {
+    if (!tenantId) return;
+    
+    try {
+      setLoadingPayments(true);
+      const res = await paymentService.getPayments(propertyId, { 
+        tenantId, 
+        page, 
+        pageSize: PAYMENTS_PAGE_SIZE 
+      });
+      
+      const newPayments = res.data || [];
+      const sortedNew = newPayments.sort((a, b) => new Date(b.dueDate ?? '').getTime() - new Date(a.dueDate ?? '').getTime());
+      
+      if (reset) {
+        setPayments(sortedNew);
+      } else {
+        setPayments(prev => [...prev, ...sortedNew]);
+      }
+      
+      setHasMorePayments(newPayments.length === PAYMENTS_PAGE_SIZE);
+      setPaymentsPage(page);
+      
+      // Update cache with latest tenant data and all current payments
+      if (tenant) {
+        const cacheKey = cacheKeys.tenantDetail(tenantId);
+        setScreenCache(cacheKey, {
+          tenant,
+          payments: reset ? sortedNew : [...payments, ...sortedNew],
+          room,
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching payments:', err);
+    } finally {
+      setLoadingPayments(false);
+    }
+  };
+
+  const handleLoadMorePayments = () => {
+    if (!loadingPayments && hasMorePayments && tenant) {
+      fetchPayments(tenant.propertyId, paymentsPage + 1);
     }
   };
 
@@ -300,8 +337,10 @@ export default function TenantDetailScreen() {
       });
 
       setShowEditBillingModal(false);
+      Alert.alert('Success', 'Billing configuration updated successfully.');
     } catch (err: any) {
       console.error('Failed to update billing config:', err);
+      Alert.alert('Error', err?.message || 'Failed to update billing configuration');
     } finally {
       setEditLoading(false);
     }
@@ -420,9 +459,10 @@ export default function TenantDetailScreen() {
   };
 
   const handleMarkAsPaid = async () => {
-    if (!latestPayment) return;
+    const { latestPayment: currentLatest } = calculateFinancialSummary();
+    if (!currentLatest) return;
 
-    router.push(`/edit-payment?paymentId=${latestPayment.id}`);
+    router.push(`/edit-payment?paymentId=${currentLatest.id}`);
   };
 
   const handleGenerateDue = () => {
@@ -951,6 +991,23 @@ export default function TenantDetailScreen() {
                       </View>
                     </Card>
                   ))}
+                  
+                  {hasMorePayments && (
+                    <TouchableOpacity 
+                      style={[styles.loadMoreButton, { borderColor: colors.border.medium }]}
+                      onPress={handleLoadMorePayments}
+                      disabled={loadingPayments}
+                      activeOpacity={0.7}
+                    >
+                      {loadingPayments ? (
+                        <ActivityIndicator size="small" color={colors.primary[500]} />
+                      ) : (
+                        <Text style={[styles.loadMoreText, { color: colors.primary[500] }]}>
+                          Load Older Payments
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
                 </>
               )}
             </View>
@@ -1628,8 +1685,8 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   headerActions: {
     flexDirection: 'row',
@@ -1669,20 +1726,20 @@ const styles = StyleSheet.create({
     marginRight: spacing.lg,
   },
   avatarText: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.white,
   },
   profileInfo: {
     flex: 1,
     gap: spacing.sm,
   },
   tenantName: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
   },
   tenantStatus: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
+    ...textPresets.bodyMedium,
+    color: colors.text.secondary,
   },
   divider: {
     height: 1,
@@ -1698,11 +1755,12 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   contactLabel: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.medium,
+    ...textPresets.bodyMedium,
+    color: colors.text.secondary,
   },
   contactText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
   },
 
   section: {
@@ -1729,8 +1787,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
+    color: colors.text.primary,
   },
   addButton: {
     flexDirection: 'row',
@@ -1742,8 +1800,7 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   addButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
   },
   summaryCard: {
     paddingVertical: spacing.lg,
@@ -1757,12 +1814,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   summaryLabel: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     marginBottom: spacing.sm,
   },
   summaryValue: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
   },
   emptyPaymentCard: {
     paddingVertical: spacing.xl,
@@ -1780,12 +1837,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   paymentAmount: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: 2,
   },
   paymentMethod: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   paymentDetails: {
     gap: 2,
@@ -1796,11 +1854,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   paymentDetailLabel: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.caption,
+    color: colors.text.tertiary,
   },
   paymentDetailValue: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.medium,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   actionButton: {
     flexDirection: 'row',
@@ -1812,8 +1871,8 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   actionButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
+    color: colors.white,
   },
   nextDueContainer: {
     flexDirection: 'row',
@@ -1826,8 +1885,7 @@ const styles = StyleSheet.create({
     ...shadows.md,
   },
   nextDueText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
   },
   billingCard: {
     paddingVertical: spacing.lg,
@@ -1850,12 +1908,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   billingLabel: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.secondary,
   },
   billingValue: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   statusBadge: {
     paddingHorizontal: spacing.md,
@@ -1863,8 +1921,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   statusBadgeText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.badge,
   },
   infoBanner: {
     borderRadius: radius.md,
@@ -1875,11 +1932,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   infoBannerText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.secondary,
   },
   noBillingText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     textAlign: 'center',
     paddingVertical: spacing.lg,
   },
@@ -1895,8 +1953,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   modalScrollContent: {
     paddingHorizontal: spacing.xl,
@@ -1949,22 +2007,21 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
   },
   toggleHint: {
-    fontSize: typography.fontSize.xs,
-    marginTop: spacing.xs,
+    ...textPresets.hint,
   },
   inputContainer: {
     marginBottom: spacing.xl,
   },
   label: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   textInput: {
+    ...textPresets.body,
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    fontSize: typography.fontSize.md,
     borderWidth: 1,
   },
   pickerButton: {
@@ -1977,7 +2034,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pickerButtonText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
   },
   submitButton: {
     borderRadius: radius.md,
@@ -1988,8 +2045,8 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   submitButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
   pickerOverlay: {
     flex: 1,
@@ -2017,8 +2074,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   pickerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
     textAlign: 'center',
   },
   pickerScrollView: {
@@ -2030,7 +2087,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   pickerOptionText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
   },
   pickerCloseButton: {
     padding: spacing.lg,
@@ -2038,8 +2095,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pickerCloseButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.secondary,
   },
   infoBox: {
     padding: spacing.md,
@@ -2047,18 +2104,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   infoLabel: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.secondary,
     marginBottom: spacing.xs,
   },
   infoValue: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   infoNote: {
-    fontSize: typography.fontSize.xs,
-    marginTop: spacing.xs,
+    ...textPresets.hint,
   },
   // Delete Confirmation Modal Styles
   deleteModalOverlay: {
@@ -2085,15 +2141,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   deleteModalTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   deleteModalMessage: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: spacing.lg,
-    lineHeight: 1.5,
   },
   deleteWarning: {
     borderLeftWidth: 4,
@@ -2104,8 +2160,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   deleteWarningText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.danger[700],
   },
   deleteModalButtons: {
     flexDirection: 'row',
@@ -2120,8 +2176,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   deleteCancelButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   deleteConfirmButton: {
     flex: 1,
@@ -2131,13 +2187,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   deleteConfirmButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
   modalOptionContent: {
     gap: spacing.xs,
   },
   pickerOptionSubtext: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.caption,
+    color: colors.text.secondary,
+  },
+  loadMoreButton: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: radius.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  loadMoreText: {
+    ...textPresets.buttonSm,
+    color: colors.primary[500],
   },
 });

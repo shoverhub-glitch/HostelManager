@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Wallet, ChevronLeft, ChevronDown } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, colors } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -452,10 +453,6 @@ export default function ManualPaymentScreen() {
                       styles.modalOptionText,
                       {
                         color: selectedTenantId === tenant.id ? colors.primary[500] : colors.text.primary,
-                        fontWeight:
-                          selectedTenantId === tenant.id
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
                       },
                     ]}>
                     {tenant.name}
@@ -505,10 +502,6 @@ export default function ManualPaymentScreen() {
                       styles.modalOptionText,
                       {
                         color: status === item.value ? colors.primary[500] : colors.text.primary,
-                        fontWeight:
-                          status === item.value
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
                       },
                     ]}>
                     {item.label}
@@ -556,10 +549,6 @@ export default function ManualPaymentScreen() {
                       styles.modalOptionText,
                       {
                         color: method === item ? colors.primary[500] : colors.text.primary,
-                        fontWeight:
-                          method === item
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
                       },
                     ]}>
                     {item}
@@ -596,8 +585,8 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   placeholder: {
     width: 40,
@@ -633,9 +622,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    marginBottom: 0,
+    ...textPresets.h2,
+    color: colors.text.primary,
   },
   formContainer: {
     width: '100%',
@@ -648,22 +636,23 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   errorText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.danger[700],
   },
   inputContainer: {
     marginBottom: spacing.xl,
   },
   label: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   input: {
+    ...textPresets.body,
+    color: colors.text.primary,
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    fontSize: typography.fontSize.md,
     borderWidth: 1,
   },
   pickerButton: {
@@ -676,12 +665,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pickerButtonText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
     flex: 1,
     marginRight: spacing.sm,
   },
   helperText: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.hint,
+    color: colors.text.secondary,
     marginTop: -spacing.lg,
     marginBottom: spacing.xl,
   },
@@ -694,8 +685,8 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   submitButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
   offlineWarning: {
     borderRadius: radius.md,
@@ -705,8 +696,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   offlineWarningText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.warning[900],
   },
   modalOverlay: {
     flex: 1,
@@ -734,8 +725,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
     textAlign: 'center',
   },
   modalScrollView: {
@@ -747,10 +738,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalOptionText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
   },
   modalOptionSubtext: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     marginTop: spacing.xs,
   },
   modalCloseButton: {
@@ -759,7 +752,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCloseButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.secondary,
   },
 });

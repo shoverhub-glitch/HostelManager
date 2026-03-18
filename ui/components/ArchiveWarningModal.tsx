@@ -12,7 +12,8 @@ import {
   ArrowRight,
   X,
 } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, textPresets } from '@/theme';
+import { typography } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import Card from '@/components/Card';
 
@@ -180,14 +181,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
     textAlign: 'center',
     marginBottom: spacing.md,
   },
   description: {
-    fontSize: typography.fontSize.md,
-    lineHeight: 22,
+    ...textPresets.body,
+    color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
@@ -202,13 +203,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   reasonTitle: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.hint,
+    color: colors.text.secondary,
     marginLeft: spacing.sm,
   },
   reasonText: {
-    fontSize: typography.fontSize.sm,
-    lineHeight: 18,
+    ...textPresets.caption,
+    color: colors.text.primary,
   },
   featureList: {
     gap: spacing.md,
@@ -219,7 +220,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   featureText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.body,
+    color: colors.text.secondary,
     marginLeft: spacing.md,
     flex: 1,
   },
@@ -235,8 +237,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.primary,
   },
   upgradeButton: {
     flex: 1,
@@ -245,7 +247,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   upgradeButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
 });

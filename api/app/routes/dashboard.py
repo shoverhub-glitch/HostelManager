@@ -20,160 +20,115 @@ async def get_dashboard_stats(request: Request, property_id: str):
     payments_col = getCollection("payments")
     staff_col = getCollection("staff")
     
-    # Count tenants for this property - separate active and vacated
-    # Handle tenants with missing tenantStatus field (treat as 'active' by default)
-    active_tenants_count = await tenants_col.count_documents({
-        "propertyId": property_id,
-        "archived": {"$ne": True},
-        "$or": [
-            {"tenantStatus": "active"},
-            {"tenantStatus": {"$exists": False}}  # Existing tenants without the field default to active
-        ]
-    })
-    vacated_tenants_count = await tenants_col.count_documents({
-        "propertyId": property_id,
-        "archived": {"$ne": True},
-        "tenantStatus": "vacated"
-    })
-    tenants_count = active_tenants_count  # Count only active tenants
-    
-    # Count beds and occupancy
-    total_beds = await beds_col.count_documents({"propertyId": property_id})
-    occupied_beds = await beds_col.count_documents({
-        "propertyId": property_id,
-        "status": "occupied"
-    })
-    
-    occupancy_rate = (occupied_beds / total_beds * 100) if total_beds > 0 else 0
+    # Combined aggregation for all metrics using $facet
+    # This reduces DB round-trips from 7 to 1, significantly improving performance at scale.
     
     # Get current month dates
     today = datetime.now()
-    month_start = datetime(today.year, today.month, 1).date()
+    month_start_str = datetime(today.year, today.month, 1).date().isoformat()
     # Get last day of month
     if today.month == 12:
         month_end = datetime(today.year + 1, 1, 1).date() - timedelta(days=1)
     else:
         month_end = datetime(today.year, today.month + 1, 1).date() - timedelta(days=1)
-    
-    month_start_str = month_start.isoformat()
     month_end_str = month_end.isoformat()
-    
-    # Get revenue metrics
-    paid_payments = await payments_col.aggregate([
-        {
-            "$match": {
-                "propertyId": property_id,
-                "status": "paid",
-                "paidDate": {
-                    "$gte": month_start_str,
-                    "$lte": month_end_str
-                }
-            }
-        },
-        {
-            "$addFields": {
-                "amountNumeric": {
-                    "$toInt": {
-                        "$replaceAll": {
-                            "input": {
-                                "$replaceAll": {
-                                    "input": "$amount",
-                                    "find": "₹",
-                                    "replacement": ""
-                                }
-                            },
-                            "find": ",",
-                            "replacement": ""
-                        }
-                    }
-                }
-            }
-        },
-        {
-            "$group": {
-                "_id": None,
-                "total": {"$sum": "$amountNumeric"}
-            }
-        }
-    ]).to_list(None)
-    
-    paid_this_month = paid_payments[0]["total"] if paid_payments else 0
-    
-    # Get pending payments
-    pending_payments = await payments_col.aggregate([
-        {
-            "$match": {
-                "propertyId": property_id,
-                "status": "due"
-            }
-        },
-        {
-            "$addFields": {
-                "amountNumeric": {
-                    "$toInt": {
-                        "$replaceAll": {
-                            "input": {
-                                "$replaceAll": {
-                                    "input": "$amount",
-                                    "find": "₹",
-                                    "replacement": ""
-                                }
-                            },
-                            "find": ",",
-                            "replacement": ""
-                        }
-                    }
-                }
-            }
-        },
-        {
-            "$group": {
-                "_id": None,
-                "count": {"$sum": 1},
-                "amount": {"$sum": "$amountNumeric"}
-            }
-        }
-    ]).to_list(None)
-    
-    pending_count = pending_payments[0]["count"] if pending_payments else 0
-    pending_amount = pending_payments[0]["amount"] if pending_payments else 0
-    
-    # Get monthly revenue (all paid in current month)
-    monthly_revenue = paid_this_month
-    
-    # Count check-ins today
+
+    # Today's range for check-ins
     today_start = datetime.combine(today.date(), datetime.min.time()).isoformat()
     today_end = datetime.combine(today.date(), datetime.max.time()).isoformat()
-    
-    check_ins_today = await tenants_col.count_documents({
-        "propertyId": property_id,
-        "joinDate": {
-            "$gte": today_start,
-            "$lte": today_end
-        }
-    })
-    
-    # Get staff info
-    total_staff = await staff_col.count_documents({
-        "propertyId": property_id,
-        "active": True
-    })
-    
-    available_staff = await staff_col.count_documents({
-        "propertyId": property_id,
-        "active": True,
-        "status": "available"
-    })
-    
+
+    pipeline = [
+        {"$facet": {
+            "tenants": [
+                {"$match": {"propertyId": property_id, "archived": {"$ne": True}, "isDeleted": {"$ne": True}}},
+                {"$group": {
+                    "_id": None,
+                    "active": {"$sum": {"$cond": [{"$ne": ["$tenantStatus", "vacated"]}, 1, 0]}},
+                    "vacated": {"$sum": {"$cond": [{"$eq": ["$tenantStatus", "vacated"]}, 1, 0]}},
+                    "checkInsToday": {"$sum": {"$cond": [{"$and": [{"$gte": ["$joinDate", today_start]}, {"$lte": ["$joinDate", today_end]}]}, 1, 0]}}
+                }}
+            ],
+            "beds": [
+                {"$match": {"propertyId": property_id}},
+                {"$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "occupied": {"$sum": {"$cond": [{"$eq": ["$status", "occupied"]}, 1, 0]}}
+                }}
+            ],
+            "revenue": [
+                {"$match": {"propertyId": property_id, "isDeleted": {"$ne": True}}},
+                {"$addFields": {
+                    "amountNumeric": {
+                        "$toDouble": {
+                            "$replaceAll": {
+                                "input": {
+                                    "$replaceAll": {
+                                        "input": {"$ifNull": ["$amount", "0"]},
+                                        "find": "₹",
+                                        "replacement": ""
+                                    }
+                                },
+                                "find": ",",
+                                "replacement": ""
+                            }
+                        }
+                    }
+                }},
+                {"$group": {
+                    "_id": None,
+                    "paidThisMonth": {"$sum": {"$cond": [
+                        {"$and": [{"$eq": ["$status", "paid"]}, {"$gte": ["$paidDate", month_start_str]}, {"$lte": ["$paidDate", month_end_str]}]},
+                        "$amountNumeric", 0
+                    ]}},
+                    "pendingCount": {"$sum": {"$cond": [{"$eq": ["$status", "due"]}, 1, 0]}},
+                    "pendingAmount": {"$sum": {"$cond": [{"$eq": ["$status", "due"]}, "$amountNumeric", 0]}}
+                }}
+            ],
+            "staff": [
+                {"$match": {"propertyId": property_id, "active": True}},
+                {"$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "available": {"$sum": {"$cond": [{"$eq": ["$status", "available"]}, 1, 0]}}
+                }}
+            ]
+        }}
+    ]
+
+    agg_results = await tenants_col.aggregate(pipeline).to_list(1)
+    results = agg_results[0] if agg_results else {}
+
+    # Extract metrics with safe defaults
+    t_stats = results.get("tenants", [{}])[0] if results.get("tenants") else {}
+    b_stats = results.get("beds", [{}])[0] if results.get("beds") else {}
+    r_stats = results.get("revenue", [{}])[0] if results.get("revenue") else {}
+    s_stats = results.get("staff", [{}])[0] if results.get("staff") else {}
+
+    active_tenants = t_stats.get("active", 0)
+    vacated_tenants = t_stats.get("vacated", 0)
+    check_ins_today = t_stats.get("checkInsToday", 0)
+
+    total_beds = b_stats.get("total", 0)
+    occupied_beds = b_stats.get("occupied", 0)
+    occupancy_rate = (occupied_beds / total_beds * 100) if total_beds > 0 else 0
+
+    monthly_revenue = r_stats.get("paidThisMonth", 0.0)
+    pending_count = r_stats.get("pendingCount", 0)
+    pending_amount = r_stats.get("pendingAmount", 0.0)
+
+    total_staff = s_stats.get("total", 0)
+    available_staff = s_stats.get("available", 0)
+
     return {
         "data": {
-            "totalTenants": tenants_count,
-            "activeTenants": active_tenants_count,
-            "vacatedTenants": vacated_tenants_count,
+            "totalTenants": active_tenants,
+            "activeTenants": active_tenants,
+            "vacatedTenants": vacated_tenants,
             "totalBeds": total_beds,
             "occupiedBeds": occupied_beds,
             "occupancyRate": round(occupancy_rate, 2),
-            "monthlyRevenue": monthly_revenue,
+            "monthlyRevenue": int(monthly_revenue),
             "monthlyRevenueFormatted": f"₹{monthly_revenue:,.0f}",
             "pendingPayments": pending_count,
             "duePaymentAmountFormatted": f"₹{pending_amount:,.0f}",

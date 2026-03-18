@@ -10,22 +10,21 @@ import {
   ScrollView,
   ActivityIndicator,
   Modal,
-  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { UserPlus, ChevronLeft, ChevronDown, Calendar } from 'lucide-react-native';
-import { spacing, typography, radius, shadows, addActionTokens } from '@/theme';
+import { UserPlus, ChevronLeft, ChevronDown} from 'lucide-react-native';
+import { spacing, radius, shadows, addActionTokens, colors} from '@/theme';
+import { typography ,textPresets} from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
-import { tenantService, roomService, bedService } from '@/services/apiClient';
-import type { Room, Bed, BillingFrequency, BillingConfig, PaginatedResponse } from '@/services/apiTypes';
+import { bedService } from '@/services/apiClient';
+import type { Room, Bed} from '@/services/apiTypes';
 import EmptyState from '@/components/EmptyState';
 import UpgradeModal from '@/components/UpgradeModal';
 import DatePicker from '@/components/DatePicker';
-import { cacheKeys, getScreenCache, setScreenCache } from '@/services/screenCache';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 
 const FORM_CACHE_STALE_MS = 60 * 1000;
@@ -718,10 +717,6 @@ export default function AddTenantScreen() {
                             selectedRoom?.id === roomData.room.id
                               ? colors.primary[500]
                               : colors.text.primary,
-                          fontWeight:
-                            selectedRoom?.id === roomData.room.id
-                              ? typography.fontWeight.semibold
-                              : typography.fontWeight.regular,
                         },
                       ]}>
                       Room {roomData.room.roomNumber}
@@ -785,10 +780,6 @@ export default function AddTenantScreen() {
                           selectedBed?.id === bed.id
                             ? colors.primary[500]
                             : colors.text.primary,
-                        fontWeight:
-                          selectedBed?.id === bed.id
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
                       },
                     ]}>
                     Bed {bed.bedNumber}
@@ -837,8 +828,8 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   placeholder: {
     width: 40,
@@ -874,9 +865,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    marginBottom: 0,
+    ...textPresets.h3,
+    color: colors.text.primary,
   },
   formContainer: {
     width: '100%',
@@ -889,23 +879,24 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   errorText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.medium,
+    ...textPresets.hint,
+    color: colors.danger[600],
     marginTop: spacing.xs,
   },
   inputContainer: {
     marginBottom: spacing.xl,
   },
   label: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   input: {
+    ...textPresets.body,
+    color: colors.text.primary,
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    fontSize: typography.fontSize.md,
     borderWidth: 1,
   },
   pickerButton: {
@@ -918,10 +909,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pickerButtonText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
   },
   helperText: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.hint,
     marginTop: spacing.xs,
   },
   infoContainer: {
@@ -932,8 +923,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   infoText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.warning[700],
   },
   dateInputContainer: {
     position: 'relative',
@@ -945,11 +936,12 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   dateInput: {
+    ...textPresets.body,
+    color: colors.text.primary,
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     paddingLeft: 48,
-    fontSize: typography.fontSize.md,
     borderWidth: 1,
   },
   submitButton: {
@@ -961,8 +953,8 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   submitButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
   offlineWarning: {
     borderRadius: radius.md,
@@ -972,8 +964,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   offlineWarningText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.warning[900],
   },
   modalOverlay: {
     flex: 1,
@@ -990,8 +982,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
     textAlign: 'center',
   },
   modalScrollView: {
@@ -1006,10 +998,12 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   modalOptionText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
   },
   modalOptionSubtext: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   modalCloseButton: {
     padding: spacing.lg,
@@ -1017,8 +1011,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCloseButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.secondary,
   },
   billingSection: {
     borderRadius: radius.md,
@@ -1028,8 +1022,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   billingSectionTitle: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.lg,
   },
   toggleContainer: {
@@ -1047,7 +1041,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
   },
   toggleHint: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.hint,
     marginTop: spacing.xs,
   },
 });

@@ -291,9 +291,22 @@ async def send_email_otp_service(email: str):
     
     # Generate OTP and store in memory
     otp, is_new = await generate_and_store_otp(normalized_email, "registration")
+
+    if settings.DEMO_MODE:
+        logger.info("DEMO MODE: OTP not sent via email", extra={"otp": otp})
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "data": {
+                    "message": f"Demo OTP: {settings.DEMO_OTP} (use this to verify)"
+                }
+            },
+        )
     
     # Send OTP via Zoho Zepto Mail
     email_sent = await send_otp_email(normalized_email, otp)
+
+
     
     if not email_sent:
         await delete_otp(normalized_email)
@@ -483,6 +496,16 @@ async def forgot_password_service(email: str):
     # Generate OTP and store in memory with type password_reset
     otp, is_new = await generate_and_store_otp(normalized_email, "password_reset")
     await delete_otp_attempts(normalized_email)
+    if settings.DEMO_MODE:
+        logger.info("DEMO MODE: Password reset OTP bypassed")
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "data": {
+                    "message": f"Demo OTP: {settings.DEMO_OTP}"
+                }
+            },
+        )
 
     # Send OTP via Zoho Zepto Mail
     email_sent = await send_otp_email(

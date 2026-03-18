@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,7 +17,8 @@ import {
   Clock,
   ArrowRight,
 } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, colors } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import Card from '@/components/Card';
 import type { ArchivedResourcesResponse } from '@/services/apiTypes';
@@ -255,8 +255,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   closeButton: {
     padding: spacing.sm,
@@ -281,12 +281,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   emptyTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   emptyText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     textAlign: 'center',
   },
   scrollContent: {
@@ -307,20 +308,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   warningTitle: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.bodyMedium,
+    color: colors.warning[900],
     marginBottom: spacing.xs,
   },
   warningText: {
-    fontSize: typography.fontSize.sm,
-    lineHeight: 18,
+    ...textPresets.caption,
+    color: colors.warning[700],
   },
   section: {
     marginBottom: spacing.lg,
   },
   sectionTitle: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.md,
   },
   archiveCard: {
@@ -343,12 +344,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   archiveName: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   archiveType: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   expirationBadge: {
     flexDirection: 'row',
@@ -358,8 +360,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   expirationText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.badge,
     marginLeft: spacing.xs,
   },
   archiveDetails: {
@@ -371,7 +372,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   detailText: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.hint,
+    color: colors.text.tertiary,
     marginLeft: spacing.sm,
   },
   archiveReasonBox: {
@@ -380,13 +382,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   reasonLabel: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.hint,
+    color: colors.text.secondary,
     marginBottom: spacing.xs,
   },
   reasonText: {
-    fontSize: typography.fontSize.xs,
-    lineHeight: 16,
+    ...textPresets.hint,
+    color: colors.text.primary,
   },
   upgradeButton: {
     flexDirection: 'row',
@@ -397,8 +399,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   upgradeButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
     marginRight: spacing.sm,
   },
 });

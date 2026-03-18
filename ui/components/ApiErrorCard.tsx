@@ -1,7 +1,8 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { AlertCircle } from 'lucide-react-native';
 import Card from './Card';
-import { spacing, typography } from '@/theme';
+import { colors, spacing,  } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 
 interface ApiErrorCardProps {
@@ -40,14 +41,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   errorTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.danger[500],
     marginLeft: spacing.md,
   },
   errorMessage: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.body,
+    color: colors.text.secondary,
     marginBottom: spacing.lg,
-    lineHeight: 20,
   },
   retryButton: {
     paddingVertical: spacing.md,
@@ -56,7 +57,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   retryText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
+    color: colors.white,
   },
 });

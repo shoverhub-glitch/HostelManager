@@ -16,9 +16,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import ScreenContainer from '@/components/ScreenContainer';
 import FAB from '@/components/FAB';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, colors } from '@/theme';
+import { typography, textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -53,7 +53,7 @@ const STAFF_STATUS = [
 const STAFF_FOCUS_THROTTLE_MS = 60 * 1000;
 
 export default function ManageStaffScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const router = useRouter();
   const { isTablet, contentMaxWidth, modalMaxWidth, formMaxWidth } = useResponsiveLayout();
   const { selectedProperty } = useProperty();
@@ -439,7 +439,9 @@ export default function ManageStaffScreen() {
                 style={[
                   styles.quotaFill,
                   {
-                    backgroundColor: hasReachedStaffLimit ? colors.danger[500] : colors.primary[500],
+                    backgroundColor: isDark
+                    ? colors.neutral[800]
+                    : colors.neutral[200],
                     width: `${staffUsagePercent}%`,
                   },
                 ]}
@@ -781,10 +783,10 @@ export default function ManageStaffScreen() {
                           formData.role === role.value
                             ? colors.primary[500]
                             : colors.text.primary,
-                        fontWeight:
+                        fontFamily:
                           formData.role === role.value
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
+                            ? typography.fontFamily.semiBold
+                            : typography.fontFamily.regular,
                       },
                     ]}>
                     {role.label}
@@ -902,11 +904,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
   },
   headerSubtitle: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
     marginTop: spacing.xs,
   },
   quotaBanner: {
@@ -921,24 +922,21 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   quotaLabel: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
+    ...textPresets.caption,
     marginBottom: spacing.xs,
   },
   quotaValue: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
   },
   quotaTotal: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
   },
   quotaBar: {
-    height: 6,
-    borderRadius: radius.full,
-    backgroundColor: 'rgba(0,0,0,0.1)',
-    overflow: 'hidden',
-    marginTop: spacing.sm,
-  },
+  height: 6,
+  borderRadius: radius.full,
+  overflow: 'hidden',
+  marginTop: spacing.sm,
+},
   quotaFill: {
     height: '100%',
     borderRadius: radius.full,
@@ -952,13 +950,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   quotaWarningText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
+    ...textPresets.buttonSm,
     flex: 1,
   },
   upgradeLink: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.buttonSm,
   },
   searchSection: {
     paddingHorizontal: spacing.lg,
@@ -970,7 +966,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   searchInput: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
     paddingVertical: spacing.md,
   },
   scrollView: {
@@ -1014,12 +1010,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   staffName: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
     marginBottom: spacing.xs,
   },
   staffRole: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
   },
   detailsGrid: {
     flexDirection: 'row',
@@ -1033,14 +1028,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   detailLabel: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.label,
     marginBottom: spacing.xs,
-    textTransform: 'uppercase',
   },
   detailValue: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
   },
   detailDivider: {
     width: 1,
@@ -1056,9 +1048,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   addressText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
     flex: 1,
-    lineHeight: 18,
   },
   dateSection: {
     flexDirection: 'row',
@@ -1067,7 +1058,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   dateText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -1090,8 +1081,7 @@ const styles = StyleSheet.create({
     // Styling from parent with dynamic backgroundColor
   },
   actionButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
   },
   // Modal Styles
   modalOverlay: {
@@ -1109,8 +1099,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
   },
   modalScrollView: {
     paddingVertical: spacing.lg,
@@ -1123,7 +1112,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalOptionText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
   },
   modalCloseButton: {
     padding: spacing.lg,
@@ -1131,8 +1120,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCloseButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
   },
   // Delete Confirmation Modal
   overlay: {
@@ -1164,14 +1152,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   deleteTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
     textAlign: 'center',
     marginBottom: spacing.md,
   },
   deleteDescription: {
-    fontSize: typography.fontSize.md,
-    lineHeight: 22,
+    ...textPresets.body,
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
@@ -1188,8 +1174,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancelButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
   },
   deleteButtonConfirm: {
     flex: 1,
@@ -1201,8 +1186,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   deleteButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
   },
   // Form Modal Styles
   placeholder: {
@@ -1229,8 +1213,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
     marginBottom: 0,
   },
   form: {
@@ -1243,30 +1226,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   errorText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
   },
   inputContainer: {
     marginBottom: spacing.lg,
   },
   label: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.label,
     marginBottom: spacing.sm,
   },
   input: {
+    ...textPresets.body,
     borderWidth: 1,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    fontSize: typography.fontSize.md,
   },
   textarea: {
+    ...textPresets.body,
     borderWidth: 1,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    fontSize: typography.fontSize.md,
     minHeight: 100,
     textAlignVertical: 'top',
   },
@@ -1280,7 +1261,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pickerButtonText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
   },
   submitButton: {
     borderRadius: radius.md,
@@ -1291,8 +1272,7 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   submitButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
   },
   offlineWarning: {
     borderRadius: radius.md,
@@ -1302,7 +1282,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   offlineWarningText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
   },
 });

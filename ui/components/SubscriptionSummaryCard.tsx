@@ -9,7 +9,8 @@ import { useRouter } from 'expo-router';
 import Card from '@/components/Card';
 import Skeleton from '@/components/Skeleton';
 import { Crown, Building2, Users, ArrowRight } from 'lucide-react-native';
-import { spacing, typography, radius } from '@/theme';
+import { spacing, radius, colors } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { subscriptionService } from '@/services/apiClient';
 import type { Subscription, Usage } from '@/services/apiTypes';
@@ -279,19 +280,16 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   planText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
     marginLeft: spacing.xs,
   },
   planMetaText: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
     marginBottom: spacing.xs,
-    fontFamily: 'System',
-    letterSpacing: -0.3,
   },
   planPeriodText: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     marginBottom: spacing.md,
   },
   viewButton: {
@@ -299,8 +297,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   viewButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
     marginRight: spacing.xs,
   },
   usageSection: {
@@ -316,13 +313,14 @@ const styles = StyleSheet.create({
     height: 24,
   },
   usageLabel: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     marginLeft: spacing.sm,
     flex: 1,
   },
   usageValue: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.caption,
+    color: colors.text.primary,
   },
   progressBar: {
     height: 6,
@@ -340,7 +338,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   upgradeButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
   },
 });

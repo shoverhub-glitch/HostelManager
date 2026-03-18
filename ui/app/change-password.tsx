@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { KeyRound, Eye, EyeOff, ArrowLeft } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, colors,  } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { authService } from '@/services/apiClient';
@@ -293,12 +294,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    fontSize: typography.fontSize.xxl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   subtitle: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     textAlign: 'center',
     paddingHorizontal: spacing.xl,
   },
@@ -312,25 +314,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   errorText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
+    ...textPresets.bodyMedium,
+    color: colors.danger[700],
   },
   inputContainer: {
     gap: spacing.sm,
   },
   label: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   passwordContainer: {
     position: 'relative',
   },
   passwordInput: {
+    ...textPresets.body,
+    color: colors.text.primary,
     borderWidth: 1,
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    fontSize: typography.fontSize.md,
     paddingRight: 50,
   },
   eyeIcon: {
@@ -348,7 +351,7 @@ const styles = StyleSheet.create({
     ...shadows.md,
   },
   primaryButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
 });

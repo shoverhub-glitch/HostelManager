@@ -74,6 +74,8 @@ const BACKOFF_BASE_MS = 250;
 
 const memoryCache = new Map<string, MemoryCacheEntry>();
 
+let refreshPromise: Promise<{ accessToken: string; user: any } | null> | null = null;
+
 function getEndpointPath(endpoint: string): string {
   const path = endpoint.split('?')[0] || '/';
   if (path.length > 1 && path.endsWith('/')) {
@@ -232,6 +234,19 @@ function getCacheKey(method: HttpMethod, endpoint: string): string {
 }
 
 export async function refreshAccessToken() {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = _doRefresh();
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+async function _doRefresh(): Promise<{ accessToken: string; user: any } | null> {
   const refreshToken = await encryptedTokenStorage.getRefreshToken();
   if (!refreshToken) return null;
   

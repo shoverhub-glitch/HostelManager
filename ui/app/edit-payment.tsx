@@ -15,7 +15,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Wallet, ChevronLeft, ChevronDown, AlertTriangle } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, colors,  } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
@@ -523,10 +524,6 @@ export default function EditPaymentScreen() {
                       {
                         color:
                           method === m ? colors.primary[500] : colors.text.primary,
-                        fontWeight:
-                          method === m
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
                       },
                     ]}>
                     {m}
@@ -581,10 +578,6 @@ export default function EditPaymentScreen() {
                       {
                         color:
                           status === s.value ? colors.primary[500] : colors.text.primary,
-                        fontWeight:
-                          status === s.value
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
                       },
                     ]}>
                     {s.label}
@@ -671,8 +664,8 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   placeholder: {
     width: 40,
@@ -703,12 +696,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   title: {
-    fontSize: typography.fontSize.xxxl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h1,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   subtitle: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     textAlign: 'center',
   },
   formContainer: {
@@ -718,15 +712,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   label: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   input: {
+    ...textPresets.body,
+    color: colors.text.primary,
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    fontSize: typography.fontSize.md,
     borderWidth: 1,
   },
   disabledInput: {
@@ -736,7 +731,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   disabledText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
   },
   pickerButton: {
     flexDirection: 'row',
@@ -748,10 +744,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pickerButtonText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
   },
   helperText: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.hint,
     marginTop: spacing.xs,
   },
   toggleRow: {
@@ -764,7 +761,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   toggleHint: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.hint,
+    color: colors.text.secondary,
     marginTop: spacing.xs,
   },
   submitButton: {
@@ -776,8 +774,8 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   submitButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
   offlineWarning: {
     borderRadius: radius.md,
@@ -787,8 +785,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   offlineWarningText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.warning[900],
   },
   modalOverlay: {
     flex: 1,
@@ -820,8 +818,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
     textAlign: 'center',
   },
   modalScrollView: {
@@ -833,7 +831,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalOptionText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
   },
   modalCloseButton: {
     padding: spacing.lg,
@@ -841,8 +840,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCloseButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.secondary,
   },
   confirmModalContainer: {
     width: '100%',
@@ -863,16 +862,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   confirmTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
     textAlign: 'center',
     marginBottom: spacing.md,
   },
   confirmMessage: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: spacing.xl,
-    lineHeight: 22,
   },
   confirmActions: {
     flexDirection: 'row',
@@ -889,14 +888,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   cancelButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.primary,
   },
   confirmButtonPrimary: {
     ...shadows.md,
   },
   confirmButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
 });

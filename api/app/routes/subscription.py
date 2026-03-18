@@ -384,9 +384,9 @@ async def get_all_subscriptions(user_id: str = Depends(get_current_user)):
                 detail="No subscriptions found for user. Please contact support."
             )
         
-        # Sort by plan order: free, pro, premium
-        plan_order = {"free": 0, "pro": 1, "premium": 2}
-        subs.sort(key=lambda x: plan_order.get(x.get("plan"), 999))
+        # Sort by plan order: premium, pro, free
+        plan_order = {"premium": 2, "pro": 1, "free": 0}
+        subs.sort(key=lambda x: plan_order.get(x.get("plan"), -1), reverse=True)
 
         # Normalize Mongo documents for JSON response
         serialized_subs = []

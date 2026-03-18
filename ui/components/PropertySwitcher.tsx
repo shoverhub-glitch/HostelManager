@@ -8,7 +8,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { Building2, ChevronDown, Check } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, colors  } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
@@ -115,8 +116,8 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   propertyName: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   overlay: {
     flex: 1,
@@ -145,8 +146,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
     textAlign: 'center',
   },
   scrollView: {
@@ -167,12 +168,13 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   propertyItemName: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   propertyAddress: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   closeButton: {
     padding: spacing.md,
@@ -180,7 +182,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   closeButtonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.secondary,
   },
 });

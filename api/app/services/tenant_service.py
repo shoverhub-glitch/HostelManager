@@ -253,8 +253,8 @@ class TenantService:
             if isinstance(billing_config, dict):
                 billing_config = BillingConfig(**billing_config)
 
-            if join_date != today_date and billing_config.status != BillingStatus.DUE.value:
-                billing_config = billing_config.model_copy(update={"status": BillingStatus.DUE.value})
+            # NOTE: We intentionally DON'T override status to DUE here if join_date != today_date
+            # as per the requirement to respect the user's choice (Paid/Due).
 
             # Convert to dict for MongoDB
             tenant_data["billingConfig"] = billing_config.model_dump()
@@ -274,20 +274,21 @@ class TenantService:
             anchor_day = billing_config.anchorDay
 
             if join_date != today_date:
-                # For past/future join dates we always create the first payment as due and schedule by join date rules.
+                # For past/future join dates we schedule by join date rules (skips first partial period)
                 due_date = self._calculate_due_date_for_join_date(
                     anchor_day=anchor_day,
                     join_date=join_date,
                     today=today_date,
                 )
-                initial_status = BillingStatus.DUE.value
+                # Respect the status selected by the user (Paid/Due)
+                initial_status = billing_config.status
             else:
                 due_date = self._calculate_initial_due_date(
                     anchor_day=anchor_day,
                     billing_status=billing_config.status,
                     today=today_date,
                 )
-                initial_status = billing_config.status
+                initial_status = billing_status = billing_config.status
 
             payment = PaymentCreate(
                 tenantId=tenant_data["id"],
@@ -379,16 +380,41 @@ class TenantService:
         if "billingConfig" in tenant_data:
             tenant_data["billingConfig"] = tenant_data["billingConfig"] or None
 
-        # Handle autoGeneratePayments toggle
+        # Handle autoGeneratePayments toggle and Syncing Updates
         orig_auto_generate = orig_doc.get("autoGeneratePayments", True)
         new_auto_generate = tenant_data.get("autoGeneratePayments", orig_auto_generate)
         payments_collection = getCollection("payments")
         today_date = datetime.now(timezone.utc).date()
 
+        # Update rent/billing for future DUE payments if they changed
+        rent_changed = "rent" in tenant_data and tenant_data["rent"] != orig_doc.get("rent")
+        billing_changed = "billingConfig" in tenant_data and tenant_data["billingConfig"] != orig_doc.get("billingConfig")
+        
+        if (rent_changed or billing_changed) and new_auto_generate:
+            update_fields = {}
+            if rent_changed:
+                update_fields["amount"] = tenant_data["rent"]
+            
+            if billing_changed and tenant_data["billingConfig"]:
+                new_conf = tenant_data["billingConfig"]
+                # For simplicity, we only update the 'method' if it changed
+                if new_conf.get("method") != orig_doc.get("billingConfig", {}).get("method"):
+                    update_fields["method"] = new_conf["method"]
+
+            if update_fields:
+                await payments_collection.update_many(
+                    {
+                        "tenantId": tenant_id,
+                        "status": "due",
+                        "isDeleted": {"$ne": True},
+                        "dueDate": {"$gte": today_date.isoformat()},
+                    },
+                    {"$set": {**update_fields, "updatedAt": datetime.now(timezone.utc).isoformat()}}
+                )
+
         if orig_auto_generate and not new_auto_generate:
-            # Case A: Auto → Manual
+            # Case A: Auto -> Manual
             # Soft-delete all future unpaid (due) auto-generated payments for this tenant
-            # so they don't appear alongside manually entered payments.
             await payments_collection.update_many(
                 {
                     "tenantId": tenant_id,
@@ -400,20 +426,32 @@ class TenantService:
             )
 
         elif not orig_auto_generate and new_auto_generate:
-            # Case B: Manual → Auto
-            # Immediately create an initial payment so the tenant doesn't have to wait
-            # until the next cron run (up to 24 hours).
+            # Case B: Manual -> Auto
+            # Immediately create an initial payment using consistent logic
             new_billing_config_data = tenant_data.get("billingConfig") or orig_doc.get("billingConfig")
             if new_billing_config_data:
                 if isinstance(new_billing_config_data, dict):
                     new_billing_config = BillingConfig(**new_billing_config_data)
                 else:
                     new_billing_config = new_billing_config_data
-                due_date = self._calculate_initial_due_date(
-                    anchor_day=new_billing_config.anchorDay,
-                    billing_status=new_billing_config.status,
-                    today=today_date,
-                )
+                
+                # Use consistent logic with create_tenant (skip first month if past join)
+                join_date_val = tenant_data.get("joinDate") or orig_doc.get("joinDate")
+                join_date = self._coerce_to_date(join_date_val) if join_date_val else today_date
+                
+                if join_date != today_date:
+                    due_date = self._calculate_due_date_for_join_date(
+                        anchor_day=new_billing_config.anchorDay,
+                        join_date=join_date,
+                        today=today_date,
+                    )
+                else:
+                    due_date = self._calculate_initial_due_date(
+                        anchor_day=new_billing_config.anchorDay,
+                        billing_status=new_billing_config.status,
+                        today=today_date,
+                    )
+
                 # Only create if no payment already exists for this month/due-date
                 existing = await payments_collection.find_one({
                     "tenantId": tenant_id,
@@ -488,11 +526,8 @@ class TenantService:
 
     async def generate_monthly_payments(self):
         """
-        Robust cron job with catch-up logic: ensures no payments are missed due to downtime.
-        For each tenant, find the latest payment and generate all missing payments
-        up to the current month's anchor day.
-        
-        Returns: {"created": int, "skipped": int, "errors": list, "duration_ms": int}
+        Robust cron job with catch-up logic and historical guardrails.
+        Ensures no payments are missed due to downtime, but limits backfilling to 60 days.
         """
         import time
         import logging
@@ -506,6 +541,9 @@ class TenantService:
             payments_collection = getCollection("payments")
             today = datetime.now(timezone.utc).date()
             
+            # Guardrail: Never look back more than 60 days
+            min_allowed_start = today - relativedelta(days=60)
+            
             logger.info(f"[CRON] Starting payment generation at {today.isoformat()}")
             
             # 1. Fetch all tenants eligible for auto-billing
@@ -514,7 +552,7 @@ class TenantService:
                 "autoGeneratePayments": True,
                 "billingConfig": {"$exists": True},
                 "billingConfig.billingCycle": BillingCycle.MONTHLY.value,
-                "tenantStatus": {"$ne": "vacated"} # Skip clearly vacated tenants (already handled by checkout date check below)
+                "tenantStatus": {"$ne": "vacated"} 
             })
             
             async for tenant_doc in tenant_cursor:
@@ -528,7 +566,6 @@ class TenantService:
                     anchor_day = billing_config.anchorDay
                     
                     # 2. Find the latest payment's dueDate for this tenant
-                    # Sort by dueDate descending to find the last one
                     latest_payment = await payments_collection.find_one(
                         {"tenantId": tenant_id, "isDeleted": {"$ne": True}},
                         sort=[("dueDate", -1)]
@@ -538,25 +575,22 @@ class TenantService:
                     if latest_payment:
                         # Start from the month after the latest payment
                         last_due_date = self._coerce_to_date(latest_payment["dueDate"])
-                        # Move to the same anchor day in the next month
                         current_due_date = last_due_date + relativedelta(months=1, day=anchor_day)
                     else:
-                        # Fall back to joinDate if no payments exist
+                        # Fall back to joinDate with guardrail
                         join_date_str = tenant_doc.get("joinDate")
                         if not join_date_str:
-                            continue # Cannot determine start date
+                            continue 
                         
                         join_date = self._coerce_to_date(join_date_str)
-                        # First payment is on the anchorDay of the joining month OR next month
-                        current_due_date = join_date + relativedelta(day=anchor_day)
-                        if current_due_date < join_date:
+                        # Apply guardrail: don't start before today - 60 days
+                        start_tracking_date = max(join_date, min_allowed_start)
+                        
+                        current_due_date = start_tracking_date + relativedelta(day=anchor_day)
+                        if current_due_date < start_tracking_date:
                             current_due_date = current_due_date + relativedelta(months=1)
                     
                     # 4. Target due date: The upcoming (or current) anchor day
-                    # If today is March 11 and anchor is 5, target is March 5.
-                    # If today is March 3 and anchor is 5, target is Feb 5 (if not already paid) OR wait until March 5.
-                    # Actually, if today is March 3 and anchor is 5, the "expected" due date for March isn't here yet.
-                    # The "latest" expected due date as of 'today' is:
                     target_due_date = today + relativedelta(day=anchor_day)
                     if target_due_date > today:
                         target_due_date = target_due_date - relativedelta(months=1)
@@ -601,7 +635,7 @@ class TenantService:
                             "propertyId": tenant_doc.get("propertyId"),
                             "bed": tenant_doc.get("bedId", ""),
                             "amount": tenant_doc.get("rent", "0"),
-                            "status": "due", # Missing payments are always 'due' by default
+                            "status": "due", 
                             "dueDate": current_due_date.isoformat(),
                             "method": billing_config.method or PaymentMethod.CASH.value,
                             "isDeleted": False,
@@ -609,7 +643,6 @@ class TenantService:
                             "updatedAt": datetime.now(timezone.utc)
                         }
                         
-                        # Double check existence (uniqueness index also protects)
                         exists = await payments_collection.find_one({
                             "tenantId": tenant_id,
                             "dueDate": payment_data["dueDate"],

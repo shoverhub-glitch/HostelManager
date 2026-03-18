@@ -2,14 +2,14 @@ import { useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   Modal,
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { spacing, typography, radius } from '@/theme';
+import { spacing, radius, colors } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 
@@ -159,7 +159,6 @@ export default function DatePicker({
                 style={[styles.dayText,
                   {
                     color: isSelected ? colors.white : colors.text.primary,
-                    fontWeight: isSelected ? typography.fontWeight.bold : typography.fontWeight.regular,
                   },
                   isDisabled && { color: colors.text.tertiary }
                 ]}
@@ -253,8 +252,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   label: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   input: {
@@ -267,7 +266,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   inputText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
     flex: 1,
   },
   modalOverlay: {
@@ -290,8 +290,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   modalScrollView: {
     padding: spacing.lg,
@@ -306,8 +306,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   dayHeaderText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.label,
+    color: colors.text.secondary,
   },
   dayCell: {
     width: `${100 / 7}%`,
@@ -316,7 +316,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   dayText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
   },
   modalCloseButton: {
     padding: spacing.lg,
@@ -324,7 +325,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCloseButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.secondary,
   },
 });

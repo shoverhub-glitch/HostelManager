@@ -15,15 +15,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Wallet, ChevronLeft, ChevronDown } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, colors } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
-import { paymentService, tenantService } from '@/services/apiClient';
+import { tenantService } from '@/services/apiClient';
 import type { Tenant, Payment } from '@/services/apiTypes';
 import EmptyState from '@/components/EmptyState';
-import DatePicker from '@/components/DatePicker';
 import UpgradeModal from '@/components/UpgradeModal';
 import { clearScreenCache } from '@/services/screenCache';
 
@@ -541,10 +541,6 @@ export default function AddPaymentScreen() {
                       {
                         color:
                           status === s.value ? colors.primary[500] : colors.text.primary,
-                        fontWeight:
-                          status === s.value
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
                       },
                     ]}>
                     {s.label}
@@ -596,10 +592,6 @@ export default function AddPaymentScreen() {
                         {
                           color:
                             anchorDay === day ? colors.primary[500] : colors.text.primary,
-                          fontWeight:
-                            anchorDay === day
-                              ? typography.fontWeight.semibold
-                              : typography.fontWeight.regular,
                         },
                       ]}>
                       Day {day} • Every Month
@@ -647,10 +639,6 @@ export default function AddPaymentScreen() {
                         styles.modalOptionText,
                         {
                           color: paymentMethod === method ? colors.primary[500] : colors.text.primary,
-                          fontWeight:
-                            paymentMethod === method
-                              ? typography.fontWeight.semibold
-                              : typography.fontWeight.regular,
                         },
                       ]}>
                       {method}
@@ -695,8 +683,8 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   placeholder: {
     width: 40,
@@ -732,9 +720,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    marginBottom: 0,
+    ...textPresets.h2,
+    color: colors.text.primary,
   },
   formContainer: {
     width: '100%',
@@ -747,22 +734,23 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   errorText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.danger[700],
   },
   inputContainer: {
     marginBottom: spacing.xl,
   },
   label: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
   input: {
+    ...textPresets.body,
+    color: colors.text.primary,
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    fontSize: typography.fontSize.md,
     borderWidth: 1,
   },
   pickerButton: {
@@ -775,7 +763,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pickerButtonText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
   },
   infoContainer: {
     borderRadius: radius.md,
@@ -803,12 +792,21 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
   },
   toggleLabel: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   toggleDescription: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.caption,
+    color: colors.text.secondary,
+  },
+  submitButtonText: {
+    ...textPresets.button,
+    color: colors.white,
+  },
+  offlineWarningText: {
+    ...textPresets.bodyMedium,
+    color: colors.warning[900],
   },
   submitButton: {
     borderRadius: radius.md,
@@ -818,20 +816,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     ...shadows.lg,
   },
-  submitButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
-  },
   offlineWarning: {
     borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     marginBottom: spacing.lg,
-  },
-  offlineWarningText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
   },
   modalOverlay: {
     flex: 1,
@@ -859,8 +849,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
     textAlign: 'center',
   },
   modalScrollView: {
@@ -875,10 +865,12 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   modalOptionText: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.primary,
   },
   modalOptionSubtext: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   modalCloseButton: {
     padding: spacing.lg,
@@ -886,12 +878,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCloseButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.text.secondary,
   },
   helperText: {
-    fontSize: typography.fontSize.xs,
-    marginTop: spacing.xs,
+    ...textPresets.hint,
+    color: colors.text.secondary,
+    marginTop: spacing.sm,
   },
   infoBox: {
     marginTop: spacing.md,
@@ -907,21 +900,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   scheduleHintText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.hint,
+    color: colors.primary[700],
   },
   infoLabel: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   infoValue: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   infoNote: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.hint,
+    color: colors.text.secondary,
     marginTop: spacing.xs,
   },
 });

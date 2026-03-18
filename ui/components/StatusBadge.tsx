@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { spacing, radius, typography } from '@/theme';
+import { spacing, radius } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 
 interface StatusBadgeProps {
@@ -61,7 +62,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   text: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.badge,
   },
 });

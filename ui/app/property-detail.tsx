@@ -11,7 +11,8 @@ import { useRouter } from 'expo-router';
 import StatusBadge from '@/components/StatusBadge';
 import Card from '@/components/Card';
 import { ChevronLeft, MapPin } from 'lucide-react-native';
-import { spacing, typography, radius } from '@/theme';
+import { spacing, radius, colors,  } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 
@@ -230,8 +231,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   propertyName: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   addressRow: {
@@ -239,7 +240,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addressText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     marginLeft: spacing.xs,
   },
   tabsContainer: {
@@ -258,8 +260,8 @@ const styles = StyleSheet.create({
   tabActive: {
   },
   tabText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.tertiary,
   },
   tabTextActive: {
   },
@@ -282,12 +284,13 @@ const styles = StyleSheet.create({
   bedMaintenance: {
   },
   bedNumber: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   bedTenant: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.hint,
+    color: colors.text.secondary,
     textAlign: 'center',
     marginTop: spacing.xs,
   },
@@ -295,15 +298,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   roomName: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
     marginBottom: spacing.md,
   },
   roomStats: {
     gap: spacing.sm,
   },
   roomBeds: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   occupancyBar: {
     height: 8,
@@ -325,23 +329,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tenantName: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   tenantBed: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     marginBottom: 2,
   },
   tenantPhone: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   tenantRight: {
     alignItems: 'flex-end',
   },
   tenantRent: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
   },
 });

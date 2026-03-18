@@ -18,7 +18,8 @@ import {
 } from 'lucide-react-native';
 import ScreenContainer from '@/components/ScreenContainer';
 import Card from '@/components/Card';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, colors,  } from '@/theme';
+import { typography ,textPresets} from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import { dataCache } from '@/services/dataCache';
@@ -175,19 +176,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   headerSubtitle: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
   section: {
     marginBottom: spacing.lg,
   },
   sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
     marginBottom: spacing.md,
   },
   settingCard: {
@@ -209,11 +211,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   settingTitle: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   settingDescription: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
+    color: colors.text.secondary,
   },
 });

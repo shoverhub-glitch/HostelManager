@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,7 +16,8 @@ import Skeleton from '@/components/Skeleton';
 import ApiErrorCard from '@/components/ApiErrorCard';
 import StatusBadge from '@/components/StatusBadge';
 import { ChevronLeft, Bed as BedIcon, User } from 'lucide-react-native';
-import { spacing, typography, radius } from '@/theme';
+import { spacing, radius } from '@/theme';
+import { typography, textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { bedService, roomService, tenantService } from '@/services/apiClient';
@@ -308,8 +308,7 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
   },
   placeholder: {
     width: 40,
@@ -318,12 +317,11 @@ const styles = StyleSheet.create({
     marginVertical: spacing.lg,
   },
   summaryText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.caption,
     marginBottom: spacing.xs,
   },
   propertyName: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
   },
   bedCard: {
     marginBottom: spacing.md,
@@ -344,8 +342,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bedNumber: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
   },
   divider: {
     height: 1,
@@ -360,12 +357,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   tenantLabel: {
+    fontFamily: typography.fontFamily.medium,
     fontSize: typography.fontSize.xs,
     marginLeft: spacing.xs,
   },
   tenantName: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
   },
   maintenanceInfo: {
     padding: spacing.md,
@@ -373,7 +370,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   maintenanceText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.buttonSm,
   },
 });

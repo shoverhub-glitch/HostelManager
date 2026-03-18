@@ -24,12 +24,13 @@ import {
   ArrowRight,
   AlertCircle,
 } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows, colors } from '@/theme';
+import { typography, textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { subscriptionService } from '@/services/apiClient';
 import type { Subscription, Usage, PlanMetadata } from '@/services/apiTypes';
-import { cacheKeys, getScreenCache, setScreenCache } from '@/services/screenCache';
+import { cacheKeys, getScreenCache, setScreenCache, clearScreenCache } from '@/services/screenCache';
 import UpgradeModal from '@/components/UpgradeModal';
 
 interface SubscriptionCachePayload {
@@ -81,18 +82,22 @@ export default function SubscriptionScreen() {
   const isFetchingRef = useRef(false);
   const lastFocusRefreshRef = useRef<number>(0);
 
-  const fetchSubscriptionData = async () => {
+  const fetchSubscriptionData = async (forceRefresh = false) => {
     if (isFetchingRef.current) return;
 
     const cacheKey = cacheKeys.subscription();
-    const cachedData = getScreenCache<SubscriptionCachePayload>(cacheKey, SUBSCRIPTION_CACHE_STALE_MS);
-    if (cachedData) {
-      setActiveSubscription(cachedData.activeSubscription);
-      setUsage(cachedData.usage);
-      setAllPlans(cachedData.allPlans);
-      setError(null);
-      setLoading(false);
-      return;
+    if (!forceRefresh) {
+      const cachedData = getScreenCache<SubscriptionCachePayload>(cacheKey, SUBSCRIPTION_CACHE_STALE_MS);
+      if (cachedData) {
+        setActiveSubscription(cachedData.activeSubscription);
+        setUsage(cachedData.usage);
+        setAllPlans(cachedData.allPlans);
+        setError(null);
+        setLoading(false);
+        return;
+      }
+    } else {
+      clearScreenCache('subscription:');
     }
 
     try {
@@ -136,7 +141,7 @@ export default function SubscriptionScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchSubscriptionData();
+    await fetchSubscriptionData(true);
     setRefreshing(false);
   };
 
@@ -291,7 +296,7 @@ export default function SubscriptionScreen() {
             <ActivityIndicator size="large" color={colors.primary[500]} />
           </View>
         ) : error ? (
-          <TouchableOpacity style={[styles.errorCard, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50] }]} onPress={fetchSubscriptionData}>
+          <TouchableOpacity style={[styles.errorCard, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50] }]} onPress={() => fetchSubscriptionData()}>
             <AlertCircle size={20} color={isDark ? colors.danger[300] : colors.danger[500]} />
             <Text style={[styles.errorText, { color: isDark ? colors.danger[300] : colors.danger[700] }]}>{error}</Text>
           </TouchableOpacity>
@@ -405,8 +410,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h4,
+    color: colors.text.primary,
   },
   scrollContent: {
     padding: spacing.md,
@@ -426,7 +431,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   errorText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.bodyMedium,
+    color: colors.text.primary,
     flex: 1,
   },
   
@@ -475,8 +481,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   planPageTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h3,
+    color: colors.text.primary,
   },
   currentBadge: {
     paddingHorizontal: spacing.sm,
@@ -485,8 +491,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   currentBadgeText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.badge,
+    color: colors.white,
   },
   priceSection: {
     flexDirection: 'row',
@@ -495,11 +501,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   priceLarge: {
-    fontSize: 36,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.display,
   },
   pricePeriod: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     marginLeft: spacing.xs,
   },
   featuresSection: {
@@ -512,7 +518,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   featureText: {
-    fontSize: typography.fontSize.sm,
+    ...textPresets.body,
+    color: colors.text.primary,
   },
   selectButton: {
     flexDirection: 'row',
@@ -523,8 +530,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   selectButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.button,
+    color: colors.white,
   },
   currentPlanButton: {
     alignItems: 'center',
@@ -532,8 +539,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   currentPlanButtonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.bodyMedium,
+    color: colors.text.secondary,
   },
   
   // Usage Section
@@ -541,8 +548,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
+    color: colors.text.primary,
     marginBottom: spacing.md,
   },
   usageGrid: {
@@ -558,12 +565,13 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   usageValue: {
-    fontSize: typography.fontSize.xxl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.display,
+    color: colors.text.primary,
     marginTop: spacing.sm,
   },
   usageLabel: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.caption,
+    color: colors.text.secondary,
     marginBottom: spacing.sm,
   },
   progressBg: {
@@ -577,7 +585,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   usageLimit: {
-    fontSize: typography.fontSize.xs,
+    ...textPresets.hint,
+    color: colors.text.tertiary,
     marginTop: spacing.xs,
   },
 });

@@ -1,9 +1,10 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
 import { RefreshCw, AlertTriangle } from 'lucide-react-native';
-import { spacing, typography, radius, shadows } from '@/theme';
+import { spacing, radius, shadows } from '@/theme';
+import { typography ,textPresets} from '@/theme/typography';
 import { ThemeContext } from '@/context/ThemeContext';
-import { lightTheme } from '@/theme/colors';
+import { colors, lightTheme } from '@/theme/colors';
 
 interface Props {
   children: ReactNode;
@@ -87,16 +88,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
+    ...textPresets.h2,
+    color: colors.text.primary,
     marginBottom: spacing.sm,
     textAlign: 'center',
   },
   message: {
-    fontSize: typography.fontSize.md,
+    ...textPresets.body,
+    color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: spacing.xl,
-    lineHeight: 22,
   },
   errorDetails: {
     padding: spacing.md,
@@ -105,8 +106,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   errorText: {
+    ...textPresets.hint,
     fontFamily: 'monospace',
-    fontSize: typography.fontSize.xs,
   },
   button: {
     flexDirection: 'row',
@@ -120,7 +121,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   buttonText: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
+    ...textPresets.button,
+    color: colors.white,
   },
 });

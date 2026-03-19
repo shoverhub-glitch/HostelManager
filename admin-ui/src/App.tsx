@@ -4,12 +4,13 @@ import {
   DashboardOutlined,
   HomeOutlined,
   LogoutOutlined,
+  MenuOutlined,
   PercentageOutlined,
   ShopOutlined,
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Avatar, Button, Layout, Menu, Space, Spin, Typography, message } from 'antd';
+import { Avatar, Button, Drawer, Grid, Layout, Menu, Space, Spin, Typography, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import {
   createCoupon,
@@ -33,6 +34,7 @@ import { DashboardPanel, LoginView, ResourceTablePage } from './components';
 import type { AuthenticatedAdmin, ResourceKey } from './types';
 
 const { Header, Content, Sider } = Layout;
+const { useBreakpoint } = Grid;
 
 type SectionKey =
   | 'dashboard'
@@ -94,12 +96,15 @@ const SECTION_DETAILS: Record<SectionKey, { title: string; subtitle: string; idF
 };
 
 export default function App() {
+  const screens = useBreakpoint();
+  const isMobile = !screens.lg;
   const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(true);
   const [loggingIn, setLoggingIn] = useState(false);
   const [admin, setAdmin] = useState<AuthenticatedAdmin | null>(null);
   const [section, setSection] = useState<SectionKey>('dashboard');
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -181,6 +186,14 @@ export default function App() {
     clearAdminSecurityKey();
     setAdmin(null);
     setSection('dashboard');
+    setMobileNavOpen(false);
+  };
+
+  const handleSectionChange = (nextSection: SectionKey) => {
+    setSection(nextSection);
+    if (isMobile) {
+      setMobileNavOpen(false);
+    }
   };
 
   const renderSection = () => {
@@ -257,40 +270,74 @@ export default function App() {
     );
   }
 
+  const navigationMenu = (
+    <Menu
+      mode="inline"
+      selectedKeys={[section]}
+      items={menuItems}
+      onClick={(event) => handleSectionChange(event.key as SectionKey)}
+      className="admin-menu"
+    />
+  );
+
   return (
     <>
       {contextHolder}
       <Layout className="app-shell">
-        <Sider
-          collapsible
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
-          breakpoint="lg"
-          className="admin-sider"
-          width={250}
-        >
-          <div className="sider-brand">HostelManager Admin</div>
-          <Menu
-            mode="inline"
-            selectedKeys={[section]}
-            items={menuItems}
-            onClick={(event) => setSection(event.key as SectionKey)}
-            className="admin-menu"
-          />
-        </Sider>
+        {isMobile ? (
+          <Drawer
+            placement="left"
+            open={mobileNavOpen}
+            onClose={() => setMobileNavOpen(false)}
+            closable={false}
+            width={280}
+            className="mobile-admin-drawer"
+            bodyStyle={{ padding: 12 }}
+          >
+            <div className="sider-brand">HostelManager Admin</div>
+            {navigationMenu}
+          </Drawer>
+        ) : (
+          <Sider
+            collapsible
+            collapsed={collapsed}
+            onCollapse={setCollapsed}
+            breakpoint="lg"
+            className="admin-sider"
+            width={250}
+          >
+            <div className="sider-brand">HostelManager Admin</div>
+            {navigationMenu}
+          </Sider>
+        )}
 
         <Layout>
           <Header className="admin-header">
-            <Space size={12}>
-              <Avatar icon={<UserOutlined />} />
-              <div>
-                <Typography.Text className="admin-email">{admin.email}</Typography.Text>
-                <br />
-                <Typography.Text type="secondary">Secure admin session</Typography.Text>
-              </div>
-            </Space>
+            <div className="admin-header-main">
+              {isMobile ? (
+                <Button
+                  type="text"
+                  icon={<MenuOutlined />}
+                  onClick={() => setMobileNavOpen(true)}
+                  aria-label="Open navigation menu"
+                  className="mobile-nav-trigger"
+                />
+              ) : null}
+
+              <Space size={12} className="admin-user-block">
+                <Avatar icon={<UserOutlined />} />
+                <div>
+                  <Typography.Text className="admin-email">{admin.email}</Typography.Text>
+                  <br />
+                  <Typography.Text type="secondary" className="admin-session-label">
+                    Secure admin session
+                  </Typography.Text>
+                </div>
+              </Space>
+            </div>
+
             <Button icon={<LogoutOutlined />} onClick={handleLogout}>
-              Logout
+              {isMobile ? 'Sign out' : 'Logout'}
             </Button>
           </Header>
           <Content className="admin-content">{renderSection()}</Content>

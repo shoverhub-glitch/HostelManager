@@ -384,14 +384,23 @@ if not allowed_origins:
 
 # Only allow credentials if needed (e.g., cookies, auth headers)
 allow_credentials = os.getenv("ALLOW_CREDENTIALS", "False").lower() == "true"
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
+allow_local_origins = os.getenv("ALLOW_LOCAL_ORIGINS", "True").lower() == "true"
+local_dev_origin_regex = os.getenv(
+    "LOCAL_DEV_ORIGIN_REGEX",
+    r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
 )
+
+cors_kwargs = {
+    "allow_origins": allowed_origins,
+    "allow_credentials": allow_credentials,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+}
+
+if allow_local_origins:
+    cors_kwargs["allow_origin_regex"] = local_dev_origin_regex
+
+app.add_middleware(CORSMiddleware, **cors_kwargs)
 
 # Routers
 API_PREFIX = "/api/v1"

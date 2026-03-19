@@ -48,6 +48,18 @@ function normalizeErrorMessage(message?: string): string {
     : normalized;
 }
 
+function formatINRCurrency(value?: number): string {
+  if (!value || Number.isNaN(value)) return '₹0';
+  return `₹${value.toLocaleString('en-IN')}`;
+}
+
+function toDateOnly(value: Date): string {
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, '0');
+  const d = String(value.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export default function DashboardScreen() {
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
@@ -88,9 +100,18 @@ export default function DashboardScreen() {
       if (!hasDashboardDataRef.current) setLoading(true);
       setError(null);
 
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 5);
+      const overdueCutoff = toDateOnly(cutoff);
+
       const [statsRes, dueRes] = await Promise.all([
         dashboardService.getStats(selectedPropertyId),
-        paymentService.getPayments(selectedPropertyId, { status: 'due', page: 1, pageSize: 5 }),
+        paymentService.getPayments(selectedPropertyId, {
+          status: 'due',
+          page: 1,
+          pageSize: 5,
+          endDate: overdueCutoff,
+        }),
       ]);
 
       const stats = statsRes.data || {
@@ -157,6 +178,10 @@ export default function DashboardScreen() {
   }, [selectedPropertyId, fetchDashboardData]);
 
   const occupancyRate = dashboardData?.stats.occupancyRate || 0;
+  const monthlyRevenueText = dashboardData?.stats.monthlyRevenueFormatted
+    || formatINRCurrency(dashboardData?.stats.monthlyRevenue);
+  const pendingAmountText = dashboardData?.stats.duePaymentAmountFormatted
+    || formatINRCurrency(dashboardData?.stats.duePaymentAmount);
 
   const mainStats = [
     {
@@ -261,126 +286,116 @@ export default function DashboardScreen() {
                 <View style={[styles.overviewColumns, isTabletLandscape && styles.overviewColumnsTablet]}>
 
                   {/* Revenue card */}
-                  {dashboardData?.stats.monthlyRevenue !== undefined && (
-                    <View style={[styles.overviewColumn, isTabletLandscape && styles.overviewColumnTablet]}>
-                      <Card style={styles.revenueCard}>
-                        <View style={styles.revenueHeader}>
-                          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
-                            Monthly Revenue
+                  <View style={[styles.overviewColumn, isTabletLandscape && styles.overviewColumnTablet]}>
+                    <Card style={styles.revenueCard}>
+                      <View style={styles.revenueHeader}>
+                        <Text style={[styles.sectionTitle, { color: colors.text.primary }]}> 
+                          Monthly Revenue
+                        </Text>
+                        <View style={[styles.revenueIconWrap, {
+                          backgroundColor: isDark ? colors.success[900] : colors.success[50],
+                        }]}>
+                          <IndianRupee size={16} color={colors.success[500]} />
+                        </View>
+                      </View>
+                      <View style={styles.revenueRow}>
+                        <View style={styles.revenueItem}>
+                          <Text style={[styles.revenueLabel, { color: colors.text.secondary }]}> 
+                            Total Earned
                           </Text>
-                          <View style={[styles.revenueIconWrap, {
-                            backgroundColor: isDark ? colors.success[900] : colors.success[50],
-                          }]}>
-                            <IndianRupee size={16} color={colors.success[500]} />
-                          </View>
+                          <Text style={[styles.revenueValue, { color: colors.success[500] }]}> 
+                            {monthlyRevenueText}
+                          </Text>
                         </View>
-                        <View style={styles.revenueRow}>
-                          <View style={styles.revenueItem}>
-                            <Text style={[styles.revenueLabel, { color: colors.text.secondary }]}>
-                              Total Earned
-                            </Text>
-                            <Text style={[styles.revenueValue, { color: colors.success[500] }]}>
-                              {dashboardData.stats.monthlyRevenueFormatted || '₹0'}
-                            </Text>
-                          </View>
-                          <View style={[styles.revenueDivider, { backgroundColor: colors.border.medium }]} />
-                          <View style={styles.revenueItem}>
-                            <Text style={[styles.revenueLabel, { color: colors.text.secondary }]}>
-                              Pending
-                            </Text>
-                            <Text style={[styles.revenueValue, { color: colors.warning[500] }]}>
-                              {dashboardData.stats.duePaymentAmountFormatted || '₹0'}
-                            </Text>
-                          </View>
+                        <View style={[styles.revenueDivider, { backgroundColor: colors.border.medium }]} />
+                        <View style={styles.revenueItem}>
+                          <Text style={[styles.revenueLabel, { color: colors.text.secondary }]}> 
+                            Pending
+                          </Text>
+                          <Text style={[styles.revenueValue, { color: colors.warning[500] }]}> 
+                            {pendingAmountText}
+                          </Text>
                         </View>
-                      </Card>
-                    </View>
-                  )}
+                      </View>
+                    </Card>
+                  </View>
 
                   {/* Quick stats */}
                   <View style={[styles.overviewColumn, isTabletLandscape && styles.overviewColumnTablet]}>
                     <View style={styles.quickStatsContainer}>
 
-                      {dashboardData?.stats.pendingPayments !== undefined && (
-                        <TouchableOpacity onPress={() => router.push('/payments')} activeOpacity={0.7}>
-                          <Card style={styles.quickStatCard}>
-                            <View style={[styles.quickStatIcon, {
-                              backgroundColor: isDark ? colors.primary[900] : colors.primary[50],
-                            }]}>
-                              <AlertCircle size={18} color={isDark ? colors.primary[300] : colors.primary[500]} />
-                            </View>
-                            <View style={styles.quickStatText}>
-                              <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>
-                                Due Payments
-                              </Text>
-                              <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
-                                {dashboardData.stats.pendingPayments}
-                              </Text>
-                            </View>
-                            <ArrowRight size={14} color={colors.text.tertiary} style={styles.quickStatArrow} />
-                          </Card>
-                        </TouchableOpacity>
-                      )}
+                      <TouchableOpacity onPress={() => router.push('/payments')} activeOpacity={0.7}>
+                        <Card style={styles.quickStatCard}>
+                          <View style={[styles.quickStatIcon, {
+                            backgroundColor: isDark ? colors.primary[900] : colors.primary[50],
+                          }]}>
+                            <AlertCircle size={18} color={isDark ? colors.primary[300] : colors.primary[500]} />
+                          </View>
+                          <View style={styles.quickStatText}>
+                            <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}> 
+                              Due Payments
+                            </Text>
+                            <Text style={[styles.quickStatValue, { color: colors.text.primary }]}> 
+                              {dashboardData?.stats.pendingPayments || 0}
+                            </Text>
+                          </View>
+                          <ArrowRight size={14} color={colors.text.tertiary} style={styles.quickStatArrow} />
+                        </Card>
+                      </TouchableOpacity>
 
-                      {dashboardData?.stats.checkInsToday !== undefined && (
+                      <Card style={styles.quickStatCard}>
+                        <View style={[styles.quickStatIcon, {
+                          backgroundColor: isDark ? colors.success[900] : colors.success[50],
+                        }]}>
+                          <LogIn size={18} color={isDark ? colors.success[300] : colors.success[500]} />
+                        </View>
+                        <View style={styles.quickStatText}>
+                          <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}> 
+                            Check-ins Today
+                          </Text>
+                          <Text style={[styles.quickStatValue, { color: colors.text.primary }]}> 
+                            {dashboardData?.stats.checkInsToday || 0}
+                          </Text>
+                        </View>
+                      </Card>
+
+                      <Card style={styles.quickStatCard}>
+                        <View style={[styles.quickStatIcon, {
+                          backgroundColor: isDark ? colors.purple[900] : colors.purple[50],
+                        }]}>
+                          <Users size={18} color={isDark ? colors.purple[300] : colors.purple[500]} />
+                        </View>
+                        <View style={styles.quickStatText}>
+                          <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}> 
+                            Staff Available
+                          </Text>
+                          <Text style={[styles.quickStatValue, { color: colors.text.primary }]}> 
+                            {dashboardData?.stats.availableStaff || 0}/{dashboardData?.stats.totalStaff || 0}
+                          </Text>
+                        </View>
+                      </Card>
+
+                      <TouchableOpacity onPress={() => router.push('/tenants')} activeOpacity={0.7}>
                         <Card style={styles.quickStatCard}>
                           <View style={[styles.quickStatIcon, {
                             backgroundColor: isDark ? colors.success[900] : colors.success[50],
                           }]}>
-                            <LogIn size={18} color={isDark ? colors.success[300] : colors.success[500]} />
+                            <Users size={18} color={isDark ? colors.success[300] : colors.success[500]} />
                           </View>
                           <View style={styles.quickStatText}>
-                            <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>
-                              Check-ins Today
+                            <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}> 
+                              Tenant Status
                             </Text>
-                            <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
-                              {dashboardData.stats.checkInsToday}
+                            <Text style={[styles.quickStatValue, { color: colors.text.primary }]}> 
+                              {dashboardData?.stats.activeTenants || 0} Active
+                              {(dashboardData?.stats.vacatedTenants || 0) > 0
+                                ? `, ${dashboardData?.stats.vacatedTenants || 0} Vacated`
+                                : ''}
                             </Text>
                           </View>
+                          <ArrowRight size={14} color={colors.text.tertiary} style={styles.quickStatArrow} />
                         </Card>
-                      )}
-
-                      {dashboardData?.stats.totalStaff !== undefined && (
-                        <Card style={styles.quickStatCard}>
-                          <View style={[styles.quickStatIcon, {
-                            backgroundColor: isDark ? colors.purple[900] : colors.purple[50],
-                          }]}>
-                            <Users size={18} color={isDark ? colors.purple[300] : colors.purple[500]} />
-                          </View>
-                          <View style={styles.quickStatText}>
-                            <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>
-                              Staff Available
-                            </Text>
-                            <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
-                              {dashboardData.stats.availableStaff || 0}/{dashboardData.stats.totalStaff}
-                            </Text>
-                          </View>
-                        </Card>
-                      )}
-
-                      {dashboardData?.stats.activeTenants !== undefined && (
-                        <TouchableOpacity onPress={() => router.push('/tenants')} activeOpacity={0.7}>
-                          <Card style={styles.quickStatCard}>
-                            <View style={[styles.quickStatIcon, {
-                              backgroundColor: isDark ? colors.success[900] : colors.success[50],
-                            }]}>
-                              <Users size={18} color={isDark ? colors.success[300] : colors.success[500]} />
-                            </View>
-                            <View style={styles.quickStatText}>
-                              <Text style={[styles.quickStatLabel, { color: colors.text.secondary }]}>
-                                Tenant Status
-                              </Text>
-                              <Text style={[styles.quickStatValue, { color: colors.text.primary }]}>
-                                {dashboardData.stats.activeTenants} Active
-                                {dashboardData.stats.vacatedTenants
-                                  ? `, ${dashboardData.stats.vacatedTenants} Vacated`
-                                  : ''}
-                              </Text>
-                            </View>
-                            <ArrowRight size={14} color={colors.text.tertiary} style={styles.quickStatArrow} />
-                          </Card>
-                        </TouchableOpacity>
-                      )}
+                      </TouchableOpacity>
 
                     </View>
                   </View>
@@ -420,7 +435,7 @@ export default function DashboardScreen() {
                       <SectionHeader
                         icon={Clock}
                         iconColor={isDark ? colors.warning[300] : colors.warning[500]}
-                        title="Due Soon"
+                        title="Overdue (5+ days)"
                       />
                       <TouchableOpacity onPress={() => router.push('/payments')} activeOpacity={0.7}>
                         <View style={styles.seeAllBtn}>
@@ -440,7 +455,7 @@ export default function DashboardScreen() {
                             </Text>
                             <Text style={[styles.paymentRoom, { color: colors.text.secondary }]}
                               numberOfLines={1} ellipsizeMode="tail">
-                              Room {payment.bed}
+                              Room {payment.roomNumber || 'N/A'}
                             </Text>
                           </View>
                           <View style={styles.paymentRight}>

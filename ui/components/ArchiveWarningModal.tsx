@@ -12,8 +12,8 @@ import {
   ArrowRight,
   X,
 } from 'lucide-react-native';
-import { spacing, radius, shadows, textPresets } from '@/theme';
-import { typography } from '@/theme/typography';
+import { spacing, radius, shadows, colors } from '@/theme';
+import { typography,textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import Card from '@/components/Card';
 

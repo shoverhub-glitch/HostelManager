@@ -145,8 +145,15 @@ export default function SubscriptionScreen() {
     setRefreshing(false);
   };
 
-  const currentPlan = activeSubscription?.plan || 'free';
-  const isPaidPlan = currentPlan !== 'free';
+  const currentPlan = activeSubscription?.plan || allPlans[0]?.name || '';
+  const activePlanMeta = allPlans.find(
+    (plan) => plan.name.toLowerCase() === currentPlan.toLowerCase()
+  );
+  const propertyLimit = activePlanMeta?.properties ?? activeSubscription?.propertyLimit ?? 0;
+  const tenantLimit = activePlanMeta?.tenants ?? activeSubscription?.tenantLimit ?? 0;
+  const roomLimit = activePlanMeta?.rooms ?? activeSubscription?.roomLimit ?? 0;
+  const staffLimit = activePlanMeta?.staff ?? activeSubscription?.staffLimit ?? 0;
+  const isPaidPlan = currentPlan ? currentPlan.toLowerCase() !== 'free' : false;
   const availableWidth = isTablet && contentMaxWidth ? Math.min(windowWidth, contentMaxWidth) : windowWidth;
   const planCardWidth = Math.min(Math.max(availableWidth - 100, 280), 560);
 
@@ -328,12 +335,12 @@ export default function SubscriptionScreen() {
                   <Text style={[styles.usageLabel, { color: colors.text.secondary }]}>Properties</Text>
                   <View style={[styles.progressBg, { backgroundColor: colors.neutral[200] }]}>
                     <View style={[styles.progressFill, { 
-                      width: `${getProgressWidth(usage?.properties || 0, activeSubscription?.propertyLimit || 0)}%`,
-                      backgroundColor: getProgressColor(usage?.properties || 0, activeSubscription?.propertyLimit || 0),
+                      width: `${getProgressWidth(usage?.properties || 0, propertyLimit)}%`,
+                      backgroundColor: getProgressColor(usage?.properties || 0, propertyLimit),
                     }]} />
                   </View>
                   <Text style={[styles.usageLimit, { color: colors.text.tertiary }]}>
-                    of {activeSubscription?.propertyLimit || 0}
+                    of {propertyLimit}
                   </Text>
                 </View>
 
@@ -343,12 +350,12 @@ export default function SubscriptionScreen() {
                   <Text style={[styles.usageLabel, { color: colors.text.secondary }]}>Tenants</Text>
                   <View style={[styles.progressBg, { backgroundColor: colors.neutral[200] }]}>
                     <View style={[styles.progressFill, { 
-                      width: `${getProgressWidth(usage?.tenants || 0, activeSubscription?.tenantLimit || 0)}%`,
-                      backgroundColor: getProgressColor(usage?.tenants || 0, activeSubscription?.tenantLimit || 0),
+                      width: `${getProgressWidth(usage?.tenants || 0, tenantLimit)}%`,
+                      backgroundColor: getProgressColor(usage?.tenants || 0, tenantLimit),
                     }]} />
                   </View>
                   <Text style={[styles.usageLimit, { color: colors.text.tertiary }]}>
-                    of {activeSubscription?.tenantLimit || 0} per property
+                    of {tenantLimit} per property
                   </Text>
                 </View>
 
@@ -358,12 +365,12 @@ export default function SubscriptionScreen() {
                   <Text style={[styles.usageLabel, { color: colors.text.secondary }]}>Rooms</Text>
                   <View style={[styles.progressBg, { backgroundColor: colors.neutral[200] }]}>
                     <View style={[styles.progressFill, { 
-                      width: `${getProgressWidth(usage?.rooms || 0, activeSubscription?.roomLimit || 0)}%`,
-                      backgroundColor: getProgressColor(usage?.rooms || 0, activeSubscription?.roomLimit || 0),
+                      width: `${getProgressWidth(usage?.rooms || 0, roomLimit)}%`,
+                      backgroundColor: getProgressColor(usage?.rooms || 0, roomLimit),
                     }]} />
                   </View>
                   <Text style={[styles.usageLimit, { color: colors.text.tertiary }]}>
-                    of {activeSubscription?.roomLimit || 0} per property
+                    of {roomLimit} per property
                   </Text>
                 </View>
 
@@ -373,12 +380,12 @@ export default function SubscriptionScreen() {
                   <Text style={[styles.usageLabel, { color: colors.text.secondary }]}>Staff</Text>
                   <View style={[styles.progressBg, { backgroundColor: colors.neutral[200] }]}>
                     <View style={[styles.progressFill, { 
-                      width: `${getProgressWidth(usage?.staff || 0, activeSubscription?.staffLimit || 0)}%`,
-                      backgroundColor: getProgressColor(usage?.staff || 0, activeSubscription?.staffLimit || 0),
+                      width: `${getProgressWidth(usage?.staff || 0, staffLimit)}%`,
+                      backgroundColor: getProgressColor(usage?.staff || 0, staffLimit),
                     }]} />
                   </View>
                   <Text style={[styles.usageLimit, { color: colors.text.tertiary }]}>
-                    of {activeSubscription?.staffLimit || 0} per property
+                    of {staffLimit} per property
                   </Text>
                 </View>
               </View>

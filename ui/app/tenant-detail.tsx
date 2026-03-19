@@ -11,6 +11,7 @@ import {
   Switch,
   Alert,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -42,7 +43,7 @@ import DatePicker from '@/components/DatePicker';
 import EmptyState from '@/components/EmptyState';
 import Skeleton from '@/components/Skeleton';
 import ApiErrorCard from '@/components/ApiErrorCard';
-import { cacheKeys, getScreenCache, setScreenCache } from '@/services/screenCache';
+import { cacheKeys, getScreenCache, setScreenCache, clearScreenCache } from '@/services/screenCache';
 
 interface TenantDetailCachePayload {
   tenant: Tenant;
@@ -257,8 +258,9 @@ export default function TenantDetailScreen() {
         
         setEditAvailableBedsForRoom(bedsForRoom);
         
-        // Clear bed selection if changing to a different room (unless it's available in new room)
-        if (editTenantBed && editTenantBed.roomId !== editTenantRoom.id) {
+        // Clear only when bed is explicitly tied to another room.
+        // Some bed payloads don't include roomId, so avoid clearing in that case.
+        if (editTenantBed?.roomId && editTenantBed.roomId !== editTenantRoom.id) {
           setEditTenantBed(null);
         }
       }
@@ -477,6 +479,26 @@ export default function TenantDetailScreen() {
     router.push(`/manual-payment?tenantId=${tenantId}`);
   };
 
+  const openPhoneDialer = async (rawPhone?: string) => {
+    const normalized = (rawPhone || '').replace(/[^0-9+]/g, '');
+    if (!normalized) {
+      Alert.alert('Invalid phone', 'No valid phone number available to dial.');
+      return;
+    }
+
+    const phoneUrl = `tel:${normalized}`;
+    try {
+      const canOpen = await Linking.canOpenURL(phoneUrl);
+      if (!canOpen) {
+        Alert.alert('Dialer unavailable', 'Could not open the phone dialer on this device.');
+        return;
+      }
+      await Linking.openURL(phoneUrl);
+    } catch {
+      Alert.alert('Dial failed', 'Unable to open the phone dialer. Please try again.');
+    }
+  };
+
   const openEditTenantModal = async () => {
     if (!tenant) return;
     setEditTenantName(tenant.name || '');
@@ -486,13 +508,11 @@ export default function TenantDetailScreen() {
     setEditTenantAddress(tenant.address || '');
     setEditTenantJoinDate(tenant.joinDate || '');
     setEditTenantStatus(tenant.tenantStatus || 'active');
-    
-    // Set current room if exists
-    if (tenant.roomId && room) {
-      setEditTenantRoom(room);
-    } else {
-      setEditTenantRoom(null);
-    }
+
+    // Reset room/bed selection state before loading fresh options for this tenant.
+    setEditTenantRoom(null);
+    setEditTenantBed(null);
+    setEditAvailableBedsForRoom([]);
     
     // Fetch beds to show options
     // For vacated tenants, fetch ALL beds so they can be reassigned
@@ -500,29 +520,57 @@ export default function TenantDetailScreen() {
     if (tenant.propertyId) {
       try {
         const isVacated = tenant.tenantStatus === 'vacated';
-        const response = isVacated 
-          ? await bedService.getAllBedsByProperty(tenant.propertyId)
-          : await bedService.getAvailableBedsByProperty(tenant.propertyId);
-        
-        if (response.data) {
-          setEditRoomsWithBeds(response.data);
-          
-          // Set current bed if exists - find it from the fetched data
-          let currentBed: Bed | null = null;
-          if (tenant.bedId && tenant.roomId) {
-            const roomData = response.data.find(r => r.room.id === tenant.roomId);
-            if (roomData) {
-              currentBed = roomData.availableBeds.find(b => b.id === tenant.bedId) || null;
-              if (currentBed) {
-                setEditTenantBed(currentBed);
-              } else {
-                setEditTenantBed(null);
-              }
-              
-              setEditAvailableBedsForRoom(roomData.availableBeds);
-            }
+        const [selectableRes, allBedsRes] = isVacated
+          ? await Promise.all([
+              bedService.getAllBedsByProperty(tenant.propertyId),
+              bedService.getAllBedsByProperty(tenant.propertyId),
+            ])
+          : await Promise.all([
+              bedService.getAvailableBedsByProperty(tenant.propertyId),
+              bedService.getAllBedsByProperty(tenant.propertyId),
+            ]);
+
+        const selectableRooms = selectableRes.data || [];
+        const allRooms = allBedsRes.data || [];
+        setEditRoomsWithBeds(selectableRooms);
+
+        let currentBed: Bed | null = null;
+
+        // First preference: resolve current bed from all-by-property payload.
+        if (tenant.bedId && tenant.roomId) {
+          const currentRoomAllBeds = allRooms.find(r => r.room.id === tenant.roomId);
+          currentBed = currentRoomAllBeds?.availableBeds.find(b => b.id === tenant.bedId) || null;
+        }
+
+        // Fallback: fetch bed directly by ID if not found in grouped payload.
+        if (!currentBed && tenant.bedId) {
+          try {
+            const currentBedRes = await bedService.getBedById(tenant.bedId);
+            currentBed = currentBedRes.data || null;
+          } catch {
+            currentBed = null;
           }
         }
+
+        // Prefer room from latest fetched data; fallback to already-fetched tenant room details.
+        if (tenant.roomId) {
+          const selectedRoomData = selectableRooms.find(r => r.room.id === tenant.roomId)
+            || allRooms.find(r => r.room.id === tenant.roomId);
+          if (selectedRoomData) {
+            setEditTenantRoom(selectedRoomData.room);
+            const mergedBeds = [...(selectedRoomData.availableBeds || [])];
+            if (currentBed && !mergedBeds.some(b => b.id === currentBed!.id)) {
+              mergedBeds.unshift(currentBed);
+            }
+            setEditAvailableBedsForRoom(mergedBeds);
+          } else if (room) {
+            setEditTenantRoom(room);
+            setEditAvailableBedsForRoom(currentBed ? [currentBed] : []);
+          }
+        }
+
+        // Preselect current bed by default in edit mode.
+        setEditTenantBed(currentBed);
       } catch (err) {
         console.error('Failed to fetch beds for edit modal', err);
       }
@@ -600,6 +648,34 @@ export default function TenantDetailScreen() {
     setShowDeleteConfirmModal(true);
   };
 
+  const invalidateTenantRelatedScreenCaches = (currentTenant: Tenant) => {
+    const propertyId = currentTenant.propertyId;
+
+    // Keep invalidation targeted by property for better performance.
+    clearScreenCache(`tenant-detail:${currentTenant.id}`);
+    if (propertyId) {
+      clearScreenCache(`tenants:${propertyId}:`);
+      clearScreenCache(`payments:${propertyId}:`);
+      clearScreenCache(`dashboard:${propertyId}`);
+      clearScreenCache(`rooms:${propertyId}`);
+
+      if (currentTenant.roomId) {
+        clearScreenCache(`manage-beds:${propertyId}:${currentTenant.roomId}`);
+        clearScreenCache(`room-beds:${propertyId}:${currentTenant.roomId}`);
+      } else {
+        clearScreenCache(`manage-beds:${propertyId}:`);
+        clearScreenCache(`room-beds:${propertyId}:`);
+      }
+    } else {
+      clearScreenCache('tenants:');
+      clearScreenCache('payments:');
+      clearScreenCache('dashboard:');
+      clearScreenCache('rooms:');
+      clearScreenCache('manage-beds:');
+      clearScreenCache('room-beds:');
+    }
+  };
+
   const confirmDeleteTenant = async () => {
     if (!tenant) return;
 
@@ -607,6 +683,7 @@ export default function TenantDetailScreen() {
       setTenantActionLoading(true);
       setShowDeleteConfirmModal(false);
       await tenantService.deleteTenant(tenant.id);
+      invalidateTenantRelatedScreenCaches(tenant);
       Alert.alert('Success', 'Tenant and payments deleted successfully.', [
         { text: 'OK', onPress: () => router.back() }
       ]);
@@ -754,9 +831,14 @@ export default function TenantDetailScreen() {
                     <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
                       Phone:
                     </Text>
-                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
-                      {tenant.phone}
-                    </Text>
+                    <TouchableOpacity
+                      onPress={() => openPhoneDialer(tenant.phone)}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={[styles.contactText, { color: colors.primary[600] }]}>
+                        {tenant.phone}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 )}
 
@@ -1088,16 +1170,40 @@ export default function TenantDetailScreen() {
 
                   <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
                     <Text style={[styles.label, { color: colors.text.primary }]}>Phone</Text>
-                    <TextInput
-                      style={[styles.textInput, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium, color: colors.text.primary }]}
-                      value={editTenantPhone}
-                      onChangeText={setEditTenantPhone}
-                      keyboardType="number-pad"
-                      maxLength={10}
-                      placeholder="Enter 10-digit phone"
-                      placeholderTextColor={colors.text.tertiary}
-                      editable={!tenantActionLoading}
-                    />
+                    <View style={styles.phoneInputRow}>
+                      <TextInput
+                        style={[
+                          styles.textInput,
+                          styles.phoneTextInput,
+                          {
+                            backgroundColor: colors.background.secondary,
+                            borderColor: colors.border.medium,
+                            color: colors.text.primary,
+                          },
+                        ]}
+                        value={editTenantPhone}
+                        onChangeText={setEditTenantPhone}
+                        keyboardType="number-pad"
+                        maxLength={10}
+                        placeholder="Enter 10-digit phone"
+                        placeholderTextColor={colors.text.tertiary}
+                        editable={!tenantActionLoading}
+                      />
+                      <TouchableOpacity
+                        style={[
+                          styles.dialButton,
+                          {
+                            backgroundColor: colors.background.secondary,
+                            borderColor: colors.border.medium,
+                            opacity: tenantActionLoading || !editTenantPhone.trim() ? 0.5 : 1,
+                          },
+                        ]}
+                        onPress={() => openPhoneDialer(editTenantPhone)}
+                        activeOpacity={0.7}
+                        disabled={tenantActionLoading || !editTenantPhone.trim()}>
+                        <Phone size={18} color={colors.primary[500]} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
 
                   <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
@@ -2023,6 +2129,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderWidth: 1,
+  },
+  phoneInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  phoneTextInput: {
+    flex: 1,
+  },
+  dialButton: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pickerButton: {
     flexDirection: 'row',

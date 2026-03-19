@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -25,7 +26,7 @@ import { typography } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
-import { tenantService } from '@/services/apiClient';
+import { tenantService, bedService } from '@/services/apiClient';
 import type { Tenant, PaginatedResponse } from '@/services/apiTypes';
 import { cacheKeys, getScreenCache, setScreenCache, clearScreenCache } from '@/services/screenCache';
 
@@ -63,6 +64,7 @@ export default function TenantsScreen() {
   const [error,                 setError]                 = useState<string | null>(null);
   const [total,                 setTotal]                 = useState(initialTotal);
   const [showUpgradeModal,      setShowUpgradeModal]      = useState(false);
+  const [checkingBeds,          setCheckingBeds]          = useState(false);
   const [showStatusFilterModal, setShowStatusFilterModal] = useState(false);
   const [searchQuery,           setSearchQuery]           = useState('');
   const [selectedStatus,        setSelectedStatus]        = useState<'all' | 'active' | 'vacated'>('all');
@@ -192,7 +194,30 @@ export default function TenantsScreen() {
     } else { setRefreshing(false); }
   }, [selectedPropertyId, fetchTenants]);
 
-  const handleFabPress = () => router.push('/add-tenant');
+  const handleFabPress = async () => {
+    if (!selectedPropertyId || checkingBeds) return;
+    setCheckingBeds(true);
+    try {
+      const response = await bedService.getAvailableBedsByProperty(selectedPropertyId);
+      if (!response.data || response.data.length === 0) {
+        Alert.alert(
+          'No Available Beds',
+          'All beds are occupied or none have been added yet. Add a room with beds first.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Add Room', onPress: () => router.push('/room-form') },
+          ]
+        );
+      } else {
+        router.push('/add-tenant');
+      }
+    } catch {
+      // On error, fall through to add-tenant which will handle it gracefully
+      router.push('/add-tenant');
+    } finally {
+      setCheckingBeds(false);
+    }
+  };
 
   const handleSelectStatusFilter = (status: 'all' | 'active' | 'vacated') => {
     setShowStatusFilterModal(false); setCurrentPage(1); setSelectedStatus(status);
@@ -479,7 +504,7 @@ export default function TenantsScreen() {
         )}
       </ScrollView>
 
-      {selectedProperty && !showEmptyState && <FAB onPress={handleFabPress} />}
+      {selectedProperty && !showEmptyState && <FAB onPress={handleFabPress} disabled={checkingBeds} />}
 
       <UpgradeModal
         visible={showUpgradeModal}

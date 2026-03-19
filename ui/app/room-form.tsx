@@ -14,8 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { DoorOpen, ChevronLeft, ChevronDown } from 'lucide-react-native';
-import { spacing, radius, shadows, textPresets } from '@/theme';
-import { typography } from '@/theme/typography';
+import { spacing, radius, shadows, colors } from '@/theme';
+import { typography ,textPresets} from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';

@@ -61,7 +61,7 @@ export default function UpgradeModal({
   const resolvedCurrentPlan = useMemo(() => {
     if (currentPlan) return currentPlan;
     const active = subscriptions.find((sub) => sub.status === 'active');
-    return active?.plan || 'free';
+    return active?.plan || '';
   }, [currentPlan, subscriptions]);
 
   const fetchAvailablePlans = useCallback(async () => {
@@ -184,7 +184,7 @@ export default function UpgradeModal({
     setProcessing(false);
   };
 
-  const handlePaymentSuccess = async (response: RazorpaySuccessResponse, fallbackPlan: string) => {
+  const handlePaymentSuccess = async (response: RazorpaySuccessResponse) => {
     try {
       const verifyResponse = await subscriptionService.verifyPayment({
         payment_id: response.razorpay_payment_id,
@@ -200,7 +200,10 @@ export default function UpgradeModal({
       clearScreenCache('subscription:');
       clearScreenCache('dashboard:');
 
-      const confirmedPlan = verifyResponse.data.subscription || fallbackPlan;
+      const confirmedPlan = verifyResponse.data.subscription;
+      if (!confirmedPlan) {
+        throw new Error('Verified payment but no subscription plan returned from server');
+      }
       onSelectPlan(confirmedPlan);
       onClose();
 
@@ -235,8 +238,12 @@ export default function UpgradeModal({
         setError(null);
         // Free plan downgrade must go through cancel endpoint to trigger archival lifecycle
         // This ensures excess resources are archived with 30-day recovery grace period
-        await subscriptionService.cancelSubscription();
-        onSelectPlan('free');
+        const cancelResponse = await subscriptionService.cancelSubscription();
+        const confirmedPlan = cancelResponse.data?.plan;
+        if (!confirmedPlan) {
+          throw new Error('Server did not return updated subscription plan');
+        }
+        onSelectPlan(confirmedPlan);
         onClose();
       } catch (err: any) {
         setError(err?.message || 'Failed to downgrade subscription');
@@ -272,7 +279,7 @@ export default function UpgradeModal({
         user.email,
         `${selectedPlanData.name} (${getPeriodLabel(Number(selectedPeriodData.period))})`,
         async (response: RazorpaySuccessResponse) => {
-          await handlePaymentSuccess(response, selectedPlanData.name);
+          await handlePaymentSuccess(response);
         },
         (paymentError: RazorpayErrorResponse) => {
           handlePaymentError(paymentError);

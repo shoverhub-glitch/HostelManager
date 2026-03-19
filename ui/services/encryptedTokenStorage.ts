@@ -12,16 +12,22 @@ const SECURE_STORE_OPTIONS: SecureStore.SecureStoreOptions = {
 
 const USE_SECURE_STORE = Platform.OS !== 'web';
 
+// Backend can return Unix time in seconds; normalize to milliseconds for Date.now() comparisons.
+function normalizeExpiryToMs(rawExpiry: number): number {
+  return rawExpiry < 1_000_000_000_000 ? rawExpiry * 1000 : rawExpiry;
+}
+
 async function secureSetItem(key: string, value: string): Promise<void> {
+  // Always write to AsyncStorage as a reliable backup for when SecureStore
+  // is temporarily unavailable (Android Keystore intermittency).
+  await AsyncStorage.setItem(key, value);
   if (USE_SECURE_STORE) {
     try {
       await SecureStore.setItemAsync(key, value, SECURE_STORE_OPTIONS);
-      return;
     } catch {
-      // Fallback to AsyncStorage when secure storage is unavailable.
+      // SecureStore failed; AsyncStorage backup is already written above.
     }
   }
-  await AsyncStorage.setItem(key, value);
 }
 
 async function secureGetItem(key: string): Promise<string | null> {
@@ -32,17 +38,11 @@ async function secureGetItem(key: string): Promise<string | null> {
         return secureValue;
       }
     } catch {
-      // Fall through to legacy fallback.
+      // SecureStore unavailable; fall through to AsyncStorage backup.
     }
   }
-
-  // Legacy fallback and migration from AsyncStorage.
-  const legacyValue = await AsyncStorage.getItem(key);
-  if (legacyValue !== null) {
-    await secureSetItem(key, legacyValue);
-    await AsyncStorage.removeItem(key);
-  }
-  return legacyValue;
+  // AsyncStorage backup (always kept in sync by secureSetItem dual-write).
+  return AsyncStorage.getItem(key);
 }
 
 async function secureRemoveItem(key: string): Promise<void> {
@@ -111,7 +111,8 @@ export const encryptedTokenStorage = {
    */
   async setTokenExpiry(expiresAt: number): Promise<void> {
     try {
-      await secureSetItem(TOKEN_EXPIRY_KEY, expiresAt.toString());
+      const normalized = normalizeExpiryToMs(expiresAt);
+      await secureSetItem(TOKEN_EXPIRY_KEY, normalized.toString());
     } catch (error) {
       console.error('Failed to store token expiry:', error);
       throw error;
@@ -124,7 +125,21 @@ export const encryptedTokenStorage = {
   async getTokenExpiry(): Promise<number | null> {
     try {
       const expiry = await secureGetItem(TOKEN_EXPIRY_KEY);
-      return expiry ? parseInt(expiry, 10) : null;
+      if (!expiry) {
+        return null;
+      }
+
+      const parsed = parseInt(expiry, 10);
+      if (!Number.isFinite(parsed)) {
+        return null;
+      }
+
+      const normalized = normalizeExpiryToMs(parsed);
+      if (normalized !== parsed) {
+        await secureSetItem(TOKEN_EXPIRY_KEY, normalized.toString());
+      }
+
+      return normalized;
     } catch (error) {
       console.error('Failed to retrieve token expiry:', error);
       return null;

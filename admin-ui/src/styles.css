@@ -93,8 +93,31 @@ body {
   justify-content: space-between;
 }
 
+.admin-header-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.admin-user-block {
+  min-width: 0;
+}
+
+.mobile-nav-trigger {
+  flex: 0 0 auto;
+}
+
 .admin-email {
   font-family: 'IBM Plex Mono', monospace;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-session-label {
+  display: inline-block;
 }
 
 .admin-content {
@@ -115,6 +138,44 @@ body {
   margin: 0 0 8px 0 !important;
 }
 
+.resource-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.resource-search-actions {
+  flex: 1 1 auto;
+}
+
+.resource-search {
+  width: min(320px, 100%);
+}
+
+.resource-create-button {
+  flex: 0 0 auto;
+}
+
+.resource-mobile-layout {
+  width: 100%;
+}
+
+.resource-mobile-card {
+  width: 100%;
+}
+
+.resource-pagination {
+  margin-top: 16px;
+}
+
+.mobile-admin-drawer .ant-drawer-content {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+}
+
 .ant-input:focus,
 .ant-input-focused,
 .ant-input-affix-wrapper-focused,
@@ -130,10 +191,56 @@ body {
 
   .admin-header {
     padding: 8px 12px;
+    gap: 12px;
   }
 
   .sider-brand {
     margin: 12px;
+  }
+
+   .resource-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .resource-search-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .resource-search {
+    width: 100%;
+  }
+
+  .resource-create-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .login-page {
+    padding: 16px;
+  }
+
+  .admin-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-header-main {
+    width: 100%;
+  }
+
+  .admin-user-block {
+    width: 100%;
+  }
+
+  .admin-session-label {
+    white-space: normal;
+  }
+
+  .admin-header > .ant-btn {
+    width: 100%;
   }
 }
 

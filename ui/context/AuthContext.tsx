@@ -164,9 +164,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (result.user) setUser(result.user);
           scheduleTokenRefresh(); // Reschedule for next refresh
         } else {
-          await encryptedTokenStorage.clearTokens();
-          setIsAuthenticated(false);
-          setUser(null);
+          // _doRefresh already called clearTokens() if the server returned 401/403.
+          // For transient failures (network/server error), the refresh token is still
+          // present — don't log out; just reschedule and let reactive refresh handle it.
+          const remainingRefreshToken = await encryptedTokenStorage.getRefreshToken();
+          if (!remainingRefreshToken) {
+            // Refresh token revoked — log out.
+            setIsAuthenticated(false);
+            setUser(null);
+          } else {
+            // Transient failure — retry in 30 s.
+            tokenRefreshTimerRef.current = setTimeout(() => scheduleTokenRefresh(), 30_000);
+          }
         }
       }, refreshTime);
     } catch (error) {
@@ -184,8 +193,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const isValid = await encryptedTokenStorage.isTokenValid();
         if (!isValid) {
           const result = await refreshAccessToken();
-          if (result && result.user) setUser(result.user);
-          scheduleTokenRefresh();
+          if (result) {
+            if (result.user) setUser(result.user);
+            scheduleTokenRefresh();
+          } else {
+            // Same guard: only log out if refresh token was revoked.
+            const remainingRefreshToken = await encryptedTokenStorage.getRefreshToken();
+            if (!remainingRefreshToken) {
+              setIsAuthenticated(false);
+              setUser(null);
+            } else {
+              scheduleTokenRefresh();
+            }
+          }
         }
       }
     }

@@ -38,14 +38,10 @@ services:
       - ./mongodb_data:/data/db
     env_file:
       - ./api/.env
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
     networks:
       - backend-network
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "mongosh --quiet mongodb://$$MONGO_INITDB_ROOT_USERNAME:$$MONGO_INITDB_ROOT_PASSWORD@localhost:27017/admin?authSource=admin --eval \"db.adminCommand('ping').ok\" | grep 1"]
       interval: 10s
       timeout: 5s
       retries: 5

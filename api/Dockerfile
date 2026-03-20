@@ -12,9 +12,8 @@ ENV PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     wget \
-    gnupg \
-    && wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | apt-key add - \
-    && echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/debian bullseye/mongodb-org/7.0 main" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list \
+    && wget -qO /usr/share/keyrings/mongodb-archive-keyring.gpg https://www.mongodb.org/static/pgp/server-7.0.asc \
+    && echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-archive-keyring.gpg ] https://repo.mongodb.org/apt/debian bullseye/mongodb-org/7.0 main" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list \
     && apt-get update && apt-get install -y mongodb-database-tools \
     && rm -rf /var/lib/apt/lists/*
 

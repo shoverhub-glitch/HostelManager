@@ -4,7 +4,6 @@ from passlib.hash import argon2
 from jose import jwt
 from datetime import datetime, timedelta, timezone
 import hmac
-import ipaddress
 import logging
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -64,102 +63,27 @@ def _csv_to_set(raw_value: str, to_lower: bool = False) -> set:
 	return values
 
 
-def get_admin_access_config() -> dict:
-	return {
-		"roles": _csv_to_set(getattr(settings, "ADMIN_ACCESS_ROLES", "admin"), to_lower=True),
-		"emails": _csv_to_set(getattr(settings, "ADMIN_ACCESS_EMAILS", ""), to_lower=True),
-		"user_ids": _csv_to_set(getattr(settings, "ADMIN_ACCESS_USER_IDS", ""), to_lower=False),
-		"fail_closed": bool(getattr(settings, "ADMIN_ACCESS_FAIL_CLOSED", True)),
-	}
-
-
 def has_admin_access(user: dict) -> bool:
-	"""Evaluate configurable admin access rules against a user object."""
-	config = get_admin_access_config()
-	roles = config["roles"]
-	emails = config["emails"]
-	user_ids = config["user_ids"]
-	fail_closed = config["fail_closed"]
+	"""Check if user email is in admin allowlist."""
+	admin_emails = _csv_to_set(getattr(settings, "ADMIN_ACCESS_EMAILS", ""), to_lower=True)
+	fail_closed = bool(getattr(settings, "ADMIN_ACCESS_FAIL_CLOSED", True))
 
-	user_id = str(user.get("_id") or user.get("id") or "").strip()
-	user_role = str(user.get("role") or "").strip().lower()
 	user_email = str(user.get("email") or "").strip().lower()
 
-	checks = []
-	if roles:
-		checks.append(user_role in roles)
-	if emails:
-		checks.append(user_email in emails)
-	if user_ids:
-		checks.append(user_id in user_ids)
+	# If emails are configured, check if user email is in the list
+	if admin_emails:
+		return user_email in admin_emails
 
-	if checks:
-		return any(checks)
-
-	# If no selectors are configured and fail-closed is enabled, deny access.
+	# If no emails configured and fail-closed is enabled, deny access
 	return not fail_closed
 
 
-def _extract_client_ip(request: Request) -> str:
-	client_host = request.client.host if request.client else ""
-	if getattr(settings, "TRUST_PROXY_HEADERS", False):
-		# Prefer X-Real-IP: nginx sets this directly to $remote_addr so it cannot be
-		# spoofed by the client (unlike X-Forwarded-For which only appends via
-		# $proxy_add_x_forwarded_for, letting clients prepend arbitrary IPs).
-		real_ip = request.headers.get("x-real-ip", "").strip()
-		if real_ip:
-			return real_ip
-		# Fallback: take the rightmost entry in X-Forwarded-For, which is added by
-		# the outermost trusted proxy and is not under client control.
-		xff_header = request.headers.get("x-forwarded-for", "")
-		if xff_header:
-			client_host = xff_header.split(",")[-1].strip() or client_host
-	return client_host
 
-
-def _is_ip_allowed(client_ip: str, allowed_entries: set) -> bool:
-	if not allowed_entries:
-		return True
-	try:
-		ip_obj = ipaddress.ip_address(client_ip)
-	except ValueError:
-		return False
-
-	for entry in allowed_entries:
-		try:
-			if "/" in entry:
-				if ip_obj in ipaddress.ip_network(entry, strict=False):
-					return True
-			else:
-				if ip_obj == ipaddress.ip_address(entry):
-					return True
-		except ValueError:
-			# Ignore invalid config entries to avoid crashing requests.
-			logger.warning("Skipping invalid ADMIN_ALLOWED_IPS entry: %s", entry)
-	return False
-
-
-def _enforce_admin_request_guards(request: Request) -> None:
-	allowed_ips = _csv_to_set(getattr(settings, "ADMIN_ALLOWED_IPS", ""), to_lower=False)
-	if allowed_ips:
-		client_ip = _extract_client_ip(request)
-		if not client_ip or not _is_ip_allowed(client_ip, allowed_ips):
-			raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access not allowed from this IP")
-
-	if getattr(settings, "ADMIN_REQUIRE_API_KEY", False):
-		header_name = str(getattr(settings, "ADMIN_API_KEY_HEADER", "X-Admin-Secret") or "X-Admin-Secret")
-		expected_key = str(getattr(settings, "ADMIN_API_KEY", "") or "")
-		if not expected_key:
-			raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Admin API key is not configured")
-		provided_key = request.headers.get(header_name, "")
-		if not provided_key or not hmac.compare_digest(provided_key, expected_key):
-			raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid admin security key")
 
 
 def require_admin_user(request: Request) -> dict:
 	"""Allow only configured admin users to access protected endpoints."""
 	current_user = get_current_user_from_request(request)
-	_enforce_admin_request_guards(request)
 	if not has_admin_access(current_user):
 		raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 	return current_user

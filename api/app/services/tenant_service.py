@@ -685,21 +685,6 @@ class TenantService:
 
                     # 6. Generate all missing payments in the gap
                     while current_due_date <= target_due_date:
-                        # Stop if we pass the checkout date
-                        if checkout_limit and current_due_date > checkout_limit:
-                            break
-
-                        # Guardrail: never generate more than one payment for the same tenant in a month
-                        month_start = current_due_date.replace(day=1)
-                        month_end = month_start + relativedelta(months=1, days=-1)
-                        monthly_exists = await payments_collection.find_one({
-                            "tenantId": tenant_id,
-                            "isDeleted": {"$ne": True},
-                            "dueDate": {
-                                "$gte": month_start.isoformat(),
-                                "$lte": month_end.isoformat(),
-                            },
-                        })
 
                         if monthly_exists:
                             result["skipped"] += 1

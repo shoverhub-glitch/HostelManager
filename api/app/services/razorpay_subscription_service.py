@@ -3,12 +3,14 @@ Razorpay Subscription Service
 Handles recurring/automatic billing for subscriptions
 """
 
+import asyncio
+import functools
 import razorpay
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 import logging
 
-from app.config.settings import RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, APP_NAME
+from app.config.settings import RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, APP_NAME, APP_URL
 from app.database.mongodb import db
 from app.utils.email_service import send_renewal_reminder_email
 
@@ -83,7 +85,10 @@ class RazorpaySubscriptionService:
                 subscription_data['token'] = payment_method_id
             
             # Create Razorpay subscription
-            subscription = razorpay_client.subscription.create(subscription_data)
+            loop = asyncio.get_event_loop()
+            subscription = await loop.run_in_executor(
+                None, functools.partial(razorpay_client.subscription.create, subscription_data)
+            )
             
             logger.info(f"✓ Razorpay subscription created: {subscription['id']} for user {owner_id}")
             return subscription
@@ -104,7 +109,10 @@ class RazorpaySubscriptionService:
             Dict with cancellation details
         """
         try:
-            subscription = razorpay_client.subscription.cancel(razorpay_subscription_id)
+            loop = asyncio.get_event_loop()
+            subscription = await loop.run_in_executor(
+                None, functools.partial(razorpay_client.subscription.cancel, razorpay_subscription_id)
+            )
             logger.info(f"✓ Razorpay subscription cancelled: {razorpay_subscription_id}")
             return subscription
             
@@ -125,9 +133,13 @@ class RazorpaySubscriptionService:
             Dict with pause details
         """
         try:
-            subscription = razorpay_client.subscription.pause(
-                razorpay_subscription_id,
-                {'pause_at': 'now', 'resume_after': pause_months}
+            loop = asyncio.get_event_loop()
+            subscription = await loop.run_in_executor(
+                None, functools.partial(
+                    razorpay_client.subscription.pause,
+                    razorpay_subscription_id,
+                    {'pause_at': 'now', 'resume_after': pause_months}
+                )
             )
             logger.info(f"✓ Razorpay subscription paused: {razorpay_subscription_id}")
             return subscription
@@ -148,7 +160,10 @@ class RazorpaySubscriptionService:
             Dict with subscription status
         """
         try:
-            subscription = razorpay_client.subscription.fetch(razorpay_subscription_id)
+            loop = asyncio.get_event_loop()
+            subscription = await loop.run_in_executor(
+                None, functools.partial(razorpay_client.subscription.fetch, razorpay_subscription_id)
+            )
             return subscription
             
         except Exception as e:
@@ -173,27 +188,31 @@ class RazorpaySubscriptionService:
         """
         try:
             amount_rupees = amount / 100
-            payment_link = razorpay_client.payment_link.create({
-                'amount': amount,
-                'currency': 'INR',
-                'description': f'{plan_name.title()} Plan Renewal - Expires {expiry_date}',
-                'customer': {
-                    'email': owner_email,
-                    'name': owner_name
-                },
-                'notify': {
-                    'sms': True,
-                    'email': True
-                },
-                'reminder_enable': True,
-                'notes': {
-                    'order_id': order_id,
-                    'plan': plan_name,
-                    'renewal': 'true'
-                },
-                'callback_url': f'{APP_NAME}/subscription/verify?order_id={order_id}',
-                'callback_method': 'get'
-            })
+                link_payload = {
+                    'amount': amount,
+                    'currency': 'INR',
+                    'description': f'{plan_name.title()} Plan Renewal - Expires {expiry_date}',
+                    'customer': {
+                        'email': owner_email,
+                        'name': owner_name
+                    },
+                    'notify': {
+                        'sms': True,
+                        'email': True
+                    },
+                    'reminder_enable': True,
+                    'notes': {
+                        'order_id': order_id,
+                        'plan': plan_name,
+                        'renewal': 'true'
+                    },
+                    'callback_url': f'{APP_URL}/subscription/verify?order_id={order_id}',
+                    'callback_method': 'get'
+                }
+                loop = asyncio.get_event_loop()
+                payment_link = await loop.run_in_executor(
+                    None, functools.partial(razorpay_client.payment_link.create, link_payload)
+                )
             
             logger.info(f"✓ Payment link created: {payment_link.get('short_url')}")
             return payment_link.get('short_url') or payment_link.get('long_url')
@@ -281,7 +300,7 @@ class RazorpaySubscriptionService:
                         continue
                     
                     # Create renewal order
-                    order = razorpay_client.order.create({
+                    renewal_order_data = {
                         'amount': price,
                         'currency': 'INR',
                         'receipt': f"renew_{str(sub['ownerId'])[:10]}_{datetime.now(timezone.utc).strftime('%Y%m%d')}",
@@ -292,7 +311,11 @@ class RazorpaySubscriptionService:
                             'renewal': 'true',
                             'subscription_id': str(sub['_id'])
                         }
-                    })
+                    }
+                    loop = asyncio.get_event_loop()
+                    order = await loop.run_in_executor(
+                        None, functools.partial(razorpay_client.order.create, renewal_order_data)
+                    )
                     
                     # Create payment link
                     expiry_date = sub['currentPeriodEnd'][:10] if sub.get('currentPeriodEnd') else 'N/A'

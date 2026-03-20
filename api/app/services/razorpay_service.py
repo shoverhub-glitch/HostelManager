@@ -2,6 +2,8 @@ from app.models.razorpay_order import RazorpayOrder
 from app.config import settings
 from app.database.mongodb import db
 from datetime import datetime, timezone
+import asyncio
+import functools
 import razorpay
 import hmac
 import hashlib
@@ -23,7 +25,10 @@ class RazorpayService:
                 "coupon_code": coupon_code or ""
             }
         }
-        order = RazorpayService.client.order.create(order_data)
+        loop = asyncio.get_event_loop()
+        order = await loop.run_in_executor(
+            None, functools.partial(RazorpayService.client.order.create, order_data)
+        )
         now = datetime.now(timezone.utc).isoformat()
         order_doc = RazorpayOrder(
             order_id=order["id"],
@@ -51,7 +56,7 @@ class RazorpayService:
             f"{order_id}|{payment_id}".encode(),
             hashlib.sha256
         ).hexdigest()
-        if generated_signature != signature:
+        if not hmac.compare_digest(generated_signature, signature):
             return False, "Invalid signature", None
         await db["razorpay_orders"].update_one(
             {"order_id": order_id},

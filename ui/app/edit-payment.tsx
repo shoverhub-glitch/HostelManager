@@ -15,8 +15,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Wallet, ChevronLeft, ChevronDown, AlertTriangle } from 'lucide-react-native';
-import { spacing, radius, shadows, colors,  } from '@/theme';
-import { typography,textPresets } from '@/theme/typography';
+import { spacing, radius, shadows } from '@/theme';
+import { typography } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
@@ -241,23 +241,40 @@ export default function EditPaymentScreen() {
     return true;
   };
 
+  const brandColor = colors.primary[500];
+  const brandLight = isDark ? colors.primary[900] : colors.primary[50];
+  const cardBg = colors.background.secondary;
+  const cardBorder = colors.border.medium;
+  const textPrimary = colors.text.primary;
+  const textSecondary = colors.text.secondary;
+  const textTertiary = colors.text.tertiary;
+
+  const renderNavBar = () => (
+    <View style={[styles.navBar, { backgroundColor: cardBg, borderBottomColor: colors.border.light }]}>
+      <TouchableOpacity
+        style={[styles.navBack, { backgroundColor: colors.background.primary, borderColor: cardBorder }]}
+        onPress={() => router.back()}
+        activeOpacity={0.75}>
+        <ChevronLeft size={20} color={textPrimary} strokeWidth={2.4} />
+      </TouchableOpacity>
+
+      <View style={styles.navCenter}>
+        <Text style={[styles.navEyebrow, { color: textTertiary }]}>PAYMENTS</Text>
+        <Text style={[styles.navTitle, { color: textPrimary }]}>Edit Payment</Text>
+      </View>
+
+      <View style={styles.navSpacer} />
+    </View>
+  );
+
   if (fetchingPayment) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background.primary }]}
         edges={['top', 'bottom']}>
-        <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}>
-            <ChevronLeft size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Edit Payment</Text>
-          <View style={styles.placeholder} />
-        </View>
+        {renderNavBar()}
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary[500]} />
+          <ActivityIndicator size="large" color={brandColor} />
         </View>
       </SafeAreaView>
     );
@@ -267,16 +284,7 @@ export default function EditPaymentScreen() {
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background.primary }]}
       edges={['top', 'bottom']}>
-      <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}>
-          <ChevronLeft size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Edit Payment</Text>
-        <View style={styles.placeholder} />
-      </View>
+      {renderNavBar()}
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -287,53 +295,55 @@ export default function EditPaymentScreen() {
             isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
           ]}
           keyboardShouldPersistTaps="handled">
-          <View style={styles.logoContainer}>
-            <View style={[styles.logoCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
-              <Wallet size={48} color={isDark ? colors.primary[300] : colors.primary[500]} />
+          <View style={[styles.heroCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={[styles.heroIconWrap, { backgroundColor: brandLight }]}>
+              <Wallet size={30} color={isDark ? colors.primary[300] : brandColor} />
             </View>
-            <Text style={[styles.title, { color: colors.text.primary }]}>Edit Payment</Text>
-            <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
-              Update payment details
-            </Text>
+            <View style={styles.heroCopy}>
+              <Text style={[styles.heroEyebrow, { color: textTertiary }]}>UPDATE ENTRY</Text>
+              <Text style={[styles.heroTitle, { color: textPrimary }]}>Edit payment</Text>
+              <Text style={[styles.heroSubtitle, { color: textSecondary }]}>Adjust status, amount, method, and relevant dates.</Text>
+            </View>
           </View>
 
           <View
             style={[
-              styles.formContainer,
+              styles.formCard,
+              { backgroundColor: cardBg, borderColor: cardBorder },
               isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
             ]}>
             {error && <ApiErrorCard error={error} onRetry={handleRetry} />}
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Tenant Name</Text>
+              <Text style={[styles.fieldLabel, { color: textSecondary }]}>Tenant Name</Text>
               <View
                 style={[
                   styles.disabledInput,
                   {
-                    backgroundColor: colors.background.tertiary,
-                    borderColor: colors.border.medium,
+                    backgroundColor: colors.background.primary,
+                    borderColor: cardBorder,
                   },
                 ]}>
-                <Text style={[styles.disabledText, { color: colors.text.secondary }]}>
+                <Text style={[styles.disabledText, { color: textSecondary }]}>
                   {tenantName}
                 </Text>
               </View>
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Amount *</Text>
+              <Text style={[styles.fieldLabel, { color: textSecondary }]}>Amount *</Text>
               <TextInput
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.background.secondary,
-                    color: colors.text.primary,
-                    borderColor: colors.border.medium,
+                    backgroundColor: colors.background.primary,
+                    color: textPrimary,
+                    borderColor: cardBorder,
                   },
                 ]}
                 placeholder="e.g., 5000"
                 keyboardType="numeric"
-                placeholderTextColor={colors.text.tertiary}
+                placeholderTextColor={textTertiary}
                 value={amount}
                 onChangeText={setAmount}
                 editable={!loading}
@@ -342,13 +352,13 @@ export default function EditPaymentScreen() {
 
             {status === 'paid' && (
               <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: colors.text.primary }]}>Payment Method *</Text>
+                <Text style={[styles.fieldLabel, { color: textSecondary }]}>Payment Method *</Text>
                 <TouchableOpacity
                   style={[
                     styles.pickerButton,
                     {
-                      backgroundColor: colors.background.secondary,
-                      borderColor: colors.border.medium,
+                      backgroundColor: colors.background.primary,
+                      borderColor: cardBorder,
                     },
                   ]}
                   onPress={() => setShowMethodPicker(true)}
@@ -358,24 +368,24 @@ export default function EditPaymentScreen() {
                     style={[
                       styles.pickerButtonText,
                       {
-                        color: method ? colors.text.primary : colors.text.tertiary,
+                        color: method ? textPrimary : textTertiary,
                       },
                     ]}>
                     {method || 'Select Method'}
                   </Text>
-                  <ChevronDown size={20} color={colors.text.tertiary} />
+                  <ChevronDown size={18} color={method ? brandColor : textTertiary} />
                 </TouchableOpacity>
               </View>
             )}
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Status *</Text>
+              <Text style={[styles.fieldLabel, { color: textSecondary }]}>Status *</Text>
               <TouchableOpacity
                 style={[
                   styles.pickerButton,
                   {
-                    backgroundColor: colors.background.secondary,
-                    borderColor: colors.border.medium,
+                    backgroundColor: colors.background.primary,
+                    borderColor: cardBorder,
                   },
                 ]}
                 onPress={() => setShowStatusPicker(true)}
@@ -385,21 +395,21 @@ export default function EditPaymentScreen() {
                   style={[
                     styles.pickerButtonText,
                     {
-                      color: status ? colors.text.primary : colors.text.tertiary,
+                        color: status ? textPrimary : textTertiary,
                     },
                   ]}>
                   {PAYMENT_STATUSES.find(s => s.value === status)?.label || 'Select Status'}
                 </Text>
-                <ChevronDown size={20} color={colors.text.tertiary} />
+                <ChevronDown size={18} color={brandColor} />
               </TouchableOpacity>
             </View>
 
             {status === 'paid' && (
               <View style={styles.inputContainer}>
-                <View style={styles.toggleRow}>
+                <View style={[styles.toggleRow, { backgroundColor: colors.background.primary, borderColor: cardBorder }]}>
                   <View style={styles.toggleTextContainer}>
-                    <Text style={[styles.label, { color: colors.text.primary, marginBottom: 0 }]}>Edit Paid Date</Text>
-                    <Text style={[styles.toggleHint, { color: colors.text.secondary }]}>
+                    <Text style={[styles.fieldLabel, { color: textSecondary, marginBottom: 0 }]}>Edit Paid Date</Text>
+                    <Text style={[styles.toggleHint, { color: textSecondary }]}>
                       {paidDate ? `Current: ${new Date(paidDate).toLocaleDateString('en-IN')}` : 'No date set'}
                     </Text>
                   </View>
@@ -427,10 +437,10 @@ export default function EditPaymentScreen() {
 
             {status === 'due' && (
               <View style={styles.inputContainer}>
-                <View style={styles.toggleRow}>
+                <View style={[styles.toggleRow, { backgroundColor: colors.background.primary, borderColor: cardBorder }]}>
                   <View style={styles.toggleTextContainer}>
-                    <Text style={[styles.label, { color: colors.text.primary, marginBottom: 0 }]}>Edit Due Date</Text>
-                    <Text style={[styles.toggleHint, { color: colors.text.secondary }]}>
+                    <Text style={[styles.fieldLabel, { color: textSecondary, marginBottom: 0 }]}>Edit Due Date</Text>
+                    <Text style={[styles.toggleHint, { color: textSecondary }]}>
                       {dueDate ? `Current: ${new Date(dueDate).toLocaleDateString('en-IN')}` : 'No date set'}
                     </Text>
                   </View>
@@ -457,9 +467,12 @@ export default function EditPaymentScreen() {
             )}
 
             {!isOnline && (
-              <View style={[styles.offlineWarning, { backgroundColor: colors.warning[50], borderColor: colors.warning[200] }]}>
-                <Text style={[styles.offlineWarningText, { color: colors.warning[900] }]}>
-                  📡 Offline - You cannot update payments without internet connection
+              <View style={[styles.offlineWarning, {
+                backgroundColor: isDark ? colors.warning[900] : colors.warning[50],
+                borderColor: isDark ? colors.warning[700] : colors.warning[200],
+              }]}>
+                <Text style={[styles.offlineWarningText, { color: isDark ? colors.warning[300] : colors.warning[900] }]}>
+                  Offline: internet connection is required to update payments.
                 </Text>
               </View>
             )}
@@ -468,7 +481,7 @@ export default function EditPaymentScreen() {
               style={[
                 styles.submitButton,
                 {
-                  backgroundColor: colors.primary[500],
+                  backgroundColor: brandColor,
                   opacity: loading || !isFormValid() || !isOnline ? 0.6 : 1,
                 },
               ]}
@@ -649,106 +662,142 @@ export default function EditPaymentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
+  container: { flex: 1 },
+  navBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
   },
-  backButton: {
-    width: 40,
+  navBack: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  headerTitle: {
-    ...textPresets.h4,
-    color: colors.text.primary,
+  navCenter: {
+    flex: 1,
+    alignItems: 'center',
   },
-  placeholder: {
-    width: 40,
+  navEyebrow: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: 9,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom: 1,
+  },
+  navTitle: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.lg,
+    letterSpacing: typography.letterSpacing.tight,
+  },
+  navSpacer: {
+    width: 36,
+    height: 36,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  keyboardView: {
-    flex: 1,
-  },
+  keyboardView: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxxl,
   },
-  logoContainer: {
+  heroCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.xxxl,
+    gap: spacing.md,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
   },
-  logoCircle: {
-    width: 96,
-    height: 96,
+  heroIconWrap: {
+    width: 56,
+    height: 56,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xl,
   },
-  title: {
-    ...textPresets.h1,
-    color: colors.text.primary,
-    marginBottom: spacing.sm,
+  heroCopy: {
+    flex: 1,
   },
-  subtitle: {
-    ...textPresets.body,
-    color: colors.text.secondary,
-    textAlign: 'center',
+  heroEyebrow: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: 9,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom: 3,
   },
-  formContainer: {
+  heroTitle: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.xl,
+    letterSpacing: typography.letterSpacing.tight,
+    marginBottom: 2,
+  },
+  heroSubtitle: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.sm,
+    lineHeight: 19,
+  },
+  formCard: {
     width: '100%',
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    padding: spacing.lg,
   },
   inputContainer: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
-  label: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
+  fieldLabel: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wider,
+    textTransform: 'uppercase',
     marginBottom: spacing.sm,
   },
   input: {
-    ...textPresets.body,
-    color: colors.text.primary,
     borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     borderWidth: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.md,
   },
   disabledInput: {
     borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     borderWidth: 1,
   },
   disabledText: {
-    ...textPresets.body,
-    color: colors.text.secondary,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.md,
   },
   pickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     borderWidth: 1,
+    gap: spacing.sm,
   },
   pickerButtonText: {
-    ...textPresets.body,
-    color: colors.text.primary,
+    flex: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.md,
   },
   helperText: {
-    ...textPresets.hint,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wide,
     marginTop: spacing.xs,
   },
   toggleRow: {
@@ -756,13 +805,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
   },
   toggleTextContainer: {
     flex: 1,
   },
   toggleHint: {
-    ...textPresets.hint,
-    color: colors.text.secondary,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wide,
     marginTop: spacing.xs,
   },
   submitButton: {
@@ -771,22 +825,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: spacing.sm,
-    ...shadows.lg,
+    ...shadows.md,
   },
   submitButtonText: {
-    ...textPresets.button,
-    color: colors.white,
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.wide,
   },
   offlineWarning: {
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   offlineWarningText: {
-    ...textPresets.bodyMedium,
-    color: colors.warning[900],
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.fontSize.sm,
+    lineHeight: 20,
   },
   modalOverlay: {
     flex: 1,
@@ -818,8 +874,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalTitle: {
-    ...textPresets.h4,
-    color: colors.text.primary,
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.tight,
     textAlign: 'center',
   },
   modalScrollView: {
@@ -831,8 +888,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modalOptionText: {
-    ...textPresets.body,
-    color: colors.text.primary,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.md,
   },
   modalCloseButton: {
     padding: spacing.lg,
@@ -840,8 +897,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCloseButtonText: {
-    ...textPresets.button,
-    color: colors.text.secondary,
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.sm,
+    letterSpacing: typography.letterSpacing.wide,
   },
   confirmModalContainer: {
     width: '100%',
@@ -862,14 +920,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   confirmTitle: {
-    ...textPresets.h3,
-    color: colors.text.primary,
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.xl,
+    letterSpacing: typography.letterSpacing.tight,
     textAlign: 'center',
     marginBottom: spacing.md,
   },
   confirmMessage: {
-    ...textPresets.body,
-    color: colors.text.secondary,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.md,
+    lineHeight: 22,
     textAlign: 'center',
     marginBottom: spacing.xl,
   },
@@ -888,14 +948,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   cancelButtonText: {
-    ...textPresets.button,
-    color: colors.text.primary,
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.wide,
   },
   confirmButtonPrimary: {
     ...shadows.md,
   },
   confirmButtonText: {
-    ...textPresets.button,
-    color: colors.white,
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.wide,
   },
 });

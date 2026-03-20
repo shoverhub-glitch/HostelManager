@@ -12,6 +12,7 @@ import {
   Alert,
   RefreshControl,
   Linking,
+  Animated,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -29,15 +30,20 @@ import {
   Trash2,
   CheckCircle,
   ChevronDown,
+  ArrowRight,
+  Clock,
+  IndianRupee,
+  Home,
+  BadgeCheck,
+  X,
 } from 'lucide-react-native';
-import { spacing, radius, shadows, addActionTokens, colors } from '@/theme';
+import { spacing, radius, shadows, addActionTokens } from '@/theme';
 import { typography, textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { tenantService, paymentService, roomService, bedService } from '@/services/apiClient';
 import type { Tenant, Payment, Room, Bed, BillingFrequency, BillingConfig } from '@/services/apiTypes';
-import Card from '@/components/Card';
 import StatusBadge from '@/components/StatusBadge';
 import DatePicker from '@/components/DatePicker';
 import EmptyState from '@/components/EmptyState';
@@ -51,8 +57,17 @@ interface TenantDetailCachePayload {
   room: Room | null;
 }
 
-const TENANT_DETAIL_CACHE_STALE_MS = 30 * 1000;
+const TENANT_DETAIL_CACHE_STALE_MS    = 30 * 1000;
 const TENANT_DETAIL_FOCUS_THROTTLE_MS = 30 * 1000;
+
+// ── Slide-up sheet helper ─────────────────────────────────────────────────────
+function useSheetAnim() {
+  const anim = useRef(new Animated.Value(500)).current;
+  const open  = () => Animated.spring(anim, { toValue: 0, tension: 68, friction: 12, useNativeDriver: true }).start();
+  const close = (cb?: () => void) =>
+    Animated.timing(anim, { toValue: 500, duration: 220, useNativeDriver: true }).start(cb);
+  return { anim, open, close };
+}
 
 export default function TenantDetailScreen() {
   const { colors, isDark } = useTheme();
@@ -62,107 +77,103 @@ export default function TenantDetailScreen() {
   const { isTablet, isLandscape, contentMaxWidth, modalMaxWidth } = useResponsiveLayout();
   const isTabletLandscape = isTablet && isLandscape;
 
-  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [tenant,   setTenant]   = useState<Tenant | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [room, setRoom] = useState<Room | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [room,     setRoom]     = useState<Room | null>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  
-  const [loadingPayments, setLoadingPayments] = useState(false);
-  const [paymentsPage, setPaymentsPage] = useState(1);
-  const [hasMorePayments, setHasMorePayments] = useState(false);
+
+  const [loadingPayments,  setLoadingPayments]  = useState(false);
+  const [paymentsPage,     setPaymentsPage]     = useState(1);
+  const [hasMorePayments,  setHasMorePayments]  = useState(false);
   const PAYMENTS_PAGE_SIZE = 20;
 
-  const [showEditBillingModal, setShowEditBillingModal] = useState(false);
-  const [editAnchorDay, setEditAnchorDay] = useState<number>(1);
-  const [editAutoGenerate, setEditAutoGenerate] = useState(true);
-  const [editBillingStatus, setEditBillingStatus] = useState<'paid' | 'due'>('due');
+  const [showEditBillingModal,        setShowEditBillingModal]        = useState(false);
+  const [editAnchorDay,               setEditAnchorDay]               = useState<number>(1);
+  const [editAutoGenerate,            setEditAutoGenerate]            = useState(true);
+  const [editBillingStatus,           setEditBillingStatus]           = useState<'paid' | 'due'>('due');
   const [showEditBillingStatusPicker, setShowEditBillingStatusPicker] = useState(false);
-  const [showAnchorDayPicker, setShowAnchorDayPicker] = useState(false);
-  const [editLoading, setEditLoading] = useState(false);
-  const [showEditTenantModal, setShowEditTenantModal] = useState(false);
-  const [editTenantName, setEditTenantName] = useState('');
-  const [editTenantDocumentId, setEditTenantDocumentId] = useState('');
-  const [editTenantPhone, setEditTenantPhone] = useState('');
-  const [editTenantRent, setEditTenantRent] = useState('');
-  const [editTenantAddress, setEditTenantAddress] = useState('');
-  const [editTenantJoinDate, setEditTenantJoinDate] = useState('');
-  const [editTenantStatus, setEditTenantStatus] = useState<'active' | 'vacated'>('active');
-  const [editTenantRoom, setEditTenantRoom] = useState<Room | null>(null);
-  const [editTenantBed, setEditTenantBed] = useState<Bed | null>(null);
-  const [editRoomsWithBeds, setEditRoomsWithBeds] = useState<Array<{ room: Room; availableBeds: Bed[] }>>([]);
-  const [editAvailableBedsForRoom, setEditAvailableBedsForRoom] = useState<Bed[]>([]);
-  const [showEditRoomPicker, setShowEditRoomPicker] = useState(false);
-  const [showEditBedPicker, setShowEditBedPicker] = useState(false);
-  const [showStatusPicker, setShowStatusPicker] = useState(false);
-  const [tenantActionLoading, setTenantActionLoading] = useState(false);
-  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
-  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showAnchorDayPicker,         setShowAnchorDayPicker]         = useState(false);
+  const [editLoading,                 setEditLoading]                 = useState(false);
+  const [showEditTenantModal,         setShowEditTenantModal]         = useState(false);
+  const [editTenantName,              setEditTenantName]              = useState('');
+  const [editTenantDocumentId,        setEditTenantDocumentId]        = useState('');
+  const [editTenantPhone,             setEditTenantPhone]             = useState('');
+  const [editTenantRent,              setEditTenantRent]              = useState('');
+  const [editTenantAddress,           setEditTenantAddress]           = useState('');
+  const [editTenantJoinDate,          setEditTenantJoinDate]          = useState('');
+  const [editTenantStatus,            setEditTenantStatus]            = useState<'active' | 'vacated'>('active');
+  const [editTenantRoom,              setEditTenantRoom]              = useState<Room | null>(null);
+  const [editTenantBed,               setEditTenantBed]               = useState<Bed | null>(null);
+  const [editRoomsWithBeds,           setEditRoomsWithBeds]           = useState<Array<{ room: Room; availableBeds: Bed[] }>>([]);
+  const [editAvailableBedsForRoom,    setEditAvailableBedsForRoom]    = useState<Bed[]>([]);
+  const [showEditRoomPicker,          setShowEditRoomPicker]          = useState(false);
+  const [showEditBedPicker,           setShowEditBedPicker]           = useState(false);
+  const [showStatusPicker,            setShowStatusPicker]            = useState(false);
+  const [tenantActionLoading,         setTenantActionLoading]         = useState(false);
+  const [showDeleteConfirmModal,      setShowDeleteConfirmModal]      = useState(false);
+
+  const loadingTimeoutRef        = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTenantFocusRefreshRef = useRef<number>(0);
 
-  const fetchTenantData = async (forceNetwork: boolean = false) => {
-    if (!tenantId) {
-      setLoading(false);
-      return;
-    }
+  // Sheet animations
+  const billingSheet = useSheetAnim();
+  const statusSheet  = useSheetAnim();
+  const anchorSheet  = useSheetAnim();
+  const roomSheet    = useSheetAnim();
+  const bedSheet     = useSheetAnim();
 
+  // ── Color aliases ────────────────────────────────────────────────────────
+  const brandColor       = colors.primary[500];
+  const brandLight       = isDark ? colors.primary[900] : colors.primary[50];
+  const brandText        = isDark ? colors.primary[300] : colors.primary[600];
+  const successColor     = colors.success[500];
+  const successLight     = isDark ? colors.success[900] : colors.success[50];
+  const successText      = isDark ? colors.success[300] : colors.success[600];
+  const warningColor     = colors.warning[500];
+  const warningLight     = isDark ? colors.warning[900] : colors.warning[50];
+  const dangerColor      = colors.danger[500];
+  const dangerLight      = isDark ? colors.danger[900] : colors.danger[50];
+  const dangerText       = isDark ? colors.danger[300] : colors.danger[600];
+  const cardBg           = colors.background.secondary;
+  const cardBorder       = colors.border.medium;
+  const pageBg           = colors.background.primary;
+  const textPrimary      = colors.text.primary;
+  const textSecondary    = colors.text.secondary;
+  const textTertiary     = colors.text.tertiary;
+
+  // ── Data fetching ─────────────────────────────────────────────────────────
+  const fetchTenantData = async (forceNetwork = false) => {
+    if (!tenantId) { setLoading(false); return; }
     const cacheKey = cacheKeys.tenantDetail(tenantId);
     if (!forceNetwork) {
-      const cachedData = getScreenCache<TenantDetailCachePayload>(cacheKey, TENANT_DETAIL_CACHE_STALE_MS);
-      if (cachedData) {
-        setTenant(cachedData.tenant);
-        setPayments(cachedData.payments);
-        setRoom(cachedData.room);
-        setError(null);
-        setLoading(false);
-        return;
+      const cached = getScreenCache<TenantDetailCachePayload>(cacheKey, TENANT_DETAIL_CACHE_STALE_MS);
+      if (cached) {
+        setTenant(cached.tenant); setPayments(cached.payments); setRoom(cached.room);
+        setError(null); setLoading(false); return;
       }
     }
-
     try {
-      setLoading(true);
-      setError(null);
-
-      // Set a timeout to auto-dismiss skeleton after 8 seconds
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-      }
+      setLoading(true); setError(null);
+      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
       loadingTimeoutRef.current = setTimeout(() => {
         setLoading(false);
-        if (!tenant) {
-          setError('Request is taking longer than expected. Please try again.');
-        }
+        if (!tenant) setError('Request is taking longer than expected. Please try again.');
       }, 8000);
 
-      // Only fetch what we need for this tenant
       const tenantRes = await tenantService.getTenantById(tenantId);
-
-      // Clear timeout if we got data back
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-        loadingTimeoutRef.current = null;
-      }
-
+      if (loadingTimeoutRef.current) { clearTimeout(loadingTimeoutRef.current); loadingTimeoutRef.current = null; }
       if (tenantRes.data) {
         setTenant(tenantRes.data);
-        
-        // Fetch initial batch of payments and room data
         const [_, roomRes] = await Promise.all([
           fetchPayments(tenantRes.data.propertyId, 1, true),
           tenantRes.data.roomId ? roomService.getRoomById(tenantRes.data.roomId) : Promise.resolve({ data: null }),
         ]);
-
-        if (roomRes?.data) {
-          setRoom(roomRes.data);
-        }
+        if (roomRes?.data) setRoom(roomRes.data);
       }
     } catch (err: any) {
-      // Clear timeout on error
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-        loadingTimeoutRef.current = null;
-      }
+      if (loadingTimeoutRef.current) { clearTimeout(loadingTimeoutRef.current); loadingTimeoutRef.current = null; }
       setError(err?.message || 'Failed to load tenant details');
     } finally {
       setLoading(false);
@@ -171,332 +182,184 @@ export default function TenantDetailScreen() {
 
   const fetchPayments = async (propertyId: string, page: number, reset = false) => {
     if (!tenantId) return;
-    
     try {
       setLoadingPayments(true);
-      const res = await paymentService.getPayments(propertyId, { 
-        tenantId, 
-        page, 
-        pageSize: PAYMENTS_PAGE_SIZE 
-      });
-      
-      const newPayments = res.data || [];
-      const sortedNew = newPayments.sort((a, b) => new Date(b.dueDate ?? '').getTime() - new Date(a.dueDate ?? '').getTime());
-      
-      if (reset) {
-        setPayments(sortedNew);
-      } else {
-        setPayments(prev => [...prev, ...sortedNew]);
-      }
-      
+      const res = await paymentService.getPayments(propertyId, { tenantId, page, pageSize: PAYMENTS_PAGE_SIZE });
+      const newPayments = (res.data || []).sort(
+        (a, b) => new Date(b.dueDate ?? '').getTime() - new Date(a.dueDate ?? '').getTime()
+      );
+      if (reset) setPayments(newPayments);
+      else setPayments(prev => [...prev, ...newPayments]);
       setHasMorePayments(newPayments.length === PAYMENTS_PAGE_SIZE);
       setPaymentsPage(page);
-      
-      // Update cache with latest tenant data and all current payments
       if (tenant) {
-        const cacheKey = cacheKeys.tenantDetail(tenantId);
-        setScreenCache(cacheKey, {
-          tenant,
-          payments: reset ? sortedNew : [...payments, ...sortedNew],
-          room,
+        setScreenCache(cacheKeys.tenantDetail(tenantId), {
+          tenant, payments: reset ? newPayments : [...payments, ...newPayments], room,
         });
       }
-    } catch (err) {
-      console.error('Error fetching payments:', err);
-    } finally {
-      setLoadingPayments(false);
-    }
+    } catch (err) { console.error('Error fetching payments:', err); }
+    finally { setLoadingPayments(false); }
   };
 
   const handleLoadMorePayments = () => {
-    if (!loadingPayments && hasMorePayments && tenant) {
-      fetchPayments(tenant.propertyId, paymentsPage + 1);
-    }
+    if (!loadingPayments && hasMorePayments && tenant) fetchPayments(tenant.propertyId, paymentsPage + 1);
   };
 
   useFocusEffect(
     useCallback(() => {
       if (!tenantId) return;
-
-      const cacheKey = cacheKeys.tenantDetail(tenantId);
+      const cacheKey      = cacheKeys.tenantDetail(tenantId);
       const hasFreshCache = !!getScreenCache<TenantDetailCachePayload>(cacheKey, TENANT_DETAIL_CACHE_STALE_MS);
-      const now = Date.now();
-      const shouldRefreshBecauseCacheMissing = !hasFreshCache;
-      const shouldRefreshByThrottle =
-        lastTenantFocusRefreshRef.current === 0 ||
-        (now - lastTenantFocusRefreshRef.current) > TENANT_DETAIL_FOCUS_THROTTLE_MS;
-
-      if (shouldRefreshBecauseCacheMissing || shouldRefreshByThrottle) {
+      const now           = Date.now();
+      const shouldRefreshCacheMissing = !hasFreshCache;
+      const shouldRefreshThrottle     = lastTenantFocusRefreshRef.current === 0
+        || (now - lastTenantFocusRefreshRef.current) > TENANT_DETAIL_FOCUS_THROTTLE_MS;
+      if (shouldRefreshCacheMissing || shouldRefreshThrottle) {
         lastTenantFocusRefreshRef.current = now;
-        fetchTenantData(shouldRefreshBecauseCacheMissing);
+        fetchTenantData(shouldRefreshCacheMissing);
       }
     }, [tenantId])
   );
 
-  // Cleanup loading timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-      }
-    };
-  }, []);
+  useEffect(() => () => { if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current); }, []);
 
-  // Update available beds when room is selected in edit modal
   useEffect(() => {
     if (editTenantRoom) {
       const roomData = editRoomsWithBeds.find(r => r.room.id === editTenantRoom.id);
       if (roomData) {
         let bedsForRoom = roomData.availableBeds;
-        
-        // If this is the tenant's current room and bed, include current bed in the list
         if (tenant?.roomId === editTenantRoom.id && tenant?.bedId && editTenantBed) {
-          if (!bedsForRoom.find(b => b.id === editTenantBed.id)) {
-            bedsForRoom = [editTenantBed, ...bedsForRoom];
-          }
+          if (!bedsForRoom.find(b => b.id === editTenantBed.id)) bedsForRoom = [editTenantBed, ...bedsForRoom];
         }
-        
         setEditAvailableBedsForRoom(bedsForRoom);
-        
-        // Clear only when bed is explicitly tied to another room.
-        // Some bed payloads don't include roomId, so avoid clearing in that case.
-        if (editTenantBed?.roomId && editTenantBed.roomId !== editTenantRoom.id) {
-          setEditTenantBed(null);
-        }
+        if (editTenantBed?.roomId && editTenantBed.roomId !== editTenantRoom.id) setEditTenantBed(null);
       }
     } else {
-      setEditAvailableBedsForRoom([]);
-      setEditTenantBed(null);
+      setEditAvailableBedsForRoom([]); setEditTenantBed(null);
     }
   }, [editTenantRoom, editRoomsWithBeds, tenant?.bedId, tenant?.roomId, editTenantBed]);
 
-  const handleRetry = () => {
-    fetchTenantData(true);
-  };
-
+  const handleRetry   = () => fetchTenantData(true);
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    try {
-      await fetchTenantData(true);
-    } finally {
-      setRefreshing(false);
-    }
+    try { await fetchTenantData(true); } finally { setRefreshing(false); }
   }, [tenantId]);
 
-  const calculateNextBillingDate = (anchorDay: number, frequency: BillingFrequency): string => {
+  // ── Billing helpers ───────────────────────────────────────────────────────
+  const calculateNextBillingDate = (anchorDay: number): string => {
     const today = new Date();
-    let nextDate = new Date(today.getFullYear(), today.getMonth(), anchorDay);
-    if (nextDate < today) {
-      nextDate = new Date(today.getFullYear(), today.getMonth() + 1, anchorDay);
-    }
-    return nextDate.toISOString();
+    let next = new Date(today.getFullYear(), today.getMonth(), anchorDay);
+    if (next < today) next = new Date(today.getFullYear(), today.getMonth() + 1, anchorDay);
+    return next.toISOString();
   };
 
   const openEditBillingModal = () => {
     if (!tenant) return;
-
     setEditAutoGenerate(tenant.autoGeneratePayments === true);
-
-    if (tenant.billingConfig) {
-      setEditAnchorDay(tenant.billingConfig.anchorDay || 1);
-      setEditBillingStatus((tenant.billingConfig.status as 'paid' | 'due') || 'due');
-    } else {
-      setEditAnchorDay(1);
-      setEditBillingStatus('due');
-    }
+    setEditAnchorDay(tenant.billingConfig?.anchorDay || 1);
+    setEditBillingStatus((tenant.billingConfig?.status as 'paid' | 'due') || 'due');
     setShowEditBillingModal(true);
+    billingSheet.open();
   };
 
   const handleSaveBillingConfig = async () => {
     if (!tenant) return;
-
     try {
       setEditLoading(true);
-
-      let nextBillingConfig: BillingConfig | null | undefined = tenant.billingConfig;
-
-      if (editAutoGenerate) {
-        const billingConfig: BillingConfig = {
-          billingCycle: 'monthly',
-          anchorDay: editAnchorDay,
-          status: editBillingStatus,
-        };
-
-        nextBillingConfig = billingConfig;
-      } else {
-        nextBillingConfig = undefined;
-      }
-
-      await tenantService.updateTenant(tenant.id, {
-        autoGeneratePayments: editAutoGenerate,
-        billingConfig: editAutoGenerate ? nextBillingConfig : null,
-      });
-
-      setTenant({
-        ...tenant,
-        autoGeneratePayments: editAutoGenerate,
-        billingConfig: nextBillingConfig,
-      });
-
-      setShowEditBillingModal(false);
+      const billingConfig = editAutoGenerate ? { billingCycle: 'monthly' as const, anchorDay: editAnchorDay, status: editBillingStatus } : null;
+      await tenantService.updateTenant(tenant.id, { autoGeneratePayments: editAutoGenerate, billingConfig });
+      setTenant({ ...tenant, autoGeneratePayments: editAutoGenerate, billingConfig: billingConfig ?? undefined });
+      billingSheet.close(() => setShowEditBillingModal(false));
       Alert.alert('Success', 'Billing configuration updated successfully.');
     } catch (err: any) {
-      console.error('Failed to update billing config:', err);
       Alert.alert('Error', err?.message || 'Failed to update billing configuration');
-    } finally {
-      setEditLoading(false);
-    }
+    } finally { setEditLoading(false); }
   };
 
+  // ── Financial summary ─────────────────────────────────────────────────────
   const calculateFinancialSummary = () => {
-    // 1. Total amount actually paid
     const totalPaid = payments
       .filter(p => p.status === 'paid')
       .reduce((sum, p) => {
-        const amount = typeof p.amount === 'string'
-          ? parseFloat(p.amount.replace(/[^0-9]/g, ''))
-          : p.amount;
-        return sum + amount;
+        const amt = typeof p.amount === 'string' ? parseFloat(p.amount.replace(/[^0-9]/g, '')) : p.amount;
+        return sum + amt;
       }, 0);
-
     const latestPayment = payments[0] || null;
-
-    // 2. Outstanding amount from EXISTING "due" records
     let outstanding = payments
       .filter(p => p.status === 'due')
       .reduce((sum, p) => {
-        const amount = typeof p.amount === 'string'
-          ? parseFloat(p.amount.replace(/[^0-9]/g, ''))
-          : p.amount;
-        return sum + amount;
+        const amt = typeof p.amount === 'string' ? parseFloat(p.amount.replace(/[^0-9]/g, '')) : p.amount;
+        return sum + amt;
       }, 0);
-
-    // 3. Catch-up logic for "expected" payments not yet generated in DB
-    // This provides 100% reliability even if the API hasn't run its cron yet.
     if (tenant?.billingConfig && tenant?.tenantStatus === 'active') {
       try {
-        const anchorDay = tenant.billingConfig.anchorDay;
-        const rentAmount = typeof tenant.rent === 'string' 
-          ? parseFloat(tenant.rent.replace(/[^0-9]/g, '')) 
+        const anchorDay  = tenant.billingConfig.anchorDay;
+        const rentAmount = typeof tenant.rent === 'string'
+          ? parseFloat(tenant.rent.replace(/[^0-9]/g, ''))
           : parseFloat(tenant.rent || '0');
-        
-        const today = new Date();
-        
-        // Find the "target" due date for the current period
-        let targetDueDate = new Date(today.getFullYear(), today.getMonth(), anchorDay);
-        if (targetDueDate > today) {
-          targetDueDate.setMonth(targetDueDate.getMonth() - 1);
-        }
-
-        // Determine where to start checking for gaps
+        const today          = new Date();
+        let targetDueDate    = new Date(today.getFullYear(), today.getMonth(), anchorDay);
+        if (targetDueDate > today) targetDueDate.setMonth(targetDueDate.getMonth() - 1);
         let currentCheckDate: Date;
-        const latestDueDate = latestPayment?.dueDate;
+        const latestDueDate  = latestPayment?.dueDate;
         if (latestDueDate) {
           const lastDue = new Date(latestDueDate);
           currentCheckDate = new Date(lastDue.getFullYear(), lastDue.getMonth() + 1, anchorDay);
         } else if (tenant.joinDate) {
           const joinDate = new Date(tenant.joinDate);
           currentCheckDate = new Date(joinDate.getFullYear(), joinDate.getMonth(), anchorDay);
-          if (currentCheckDate < joinDate) {
-            currentCheckDate.setMonth(currentCheckDate.getMonth() + 1);
-          }
+          if (currentCheckDate < joinDate) currentCheckDate.setMonth(currentCheckDate.getMonth() + 1);
         } else {
-          currentCheckDate = new Date(targetDueDate.getTime() + 86400000); // Skip check
+          currentCheckDate = new Date(targetDueDate.getTime() + 86400000);
         }
-
-        // Add missing months to outstanding
         while (currentCheckDate <= targetDueDate) {
           outstanding += rentAmount;
           currentCheckDate.setMonth(currentCheckDate.getMonth() + 1);
         }
-      } catch (err) {
-        console.warn('Financial catch-up calculation failed:', err);
-      }
+      } catch (err) { console.warn('Financial catch-up failed:', err); }
     }
-
-    return {
-      totalPaid,
-      latestPayment,
-      outstanding,
-    };
-  };
-
-  const handleAddPayment = () => {
-    const { latestPayment } = calculateFinancialSummary();
-
-    if (latestPayment && latestPayment.status !== 'paid') {
-      router.push(`/edit-payment?paymentId=${latestPayment.id}`);
-    } else {
-      router.push(`/manual-payment?tenantId=${tenantId}`);
-    }
-  };
-
-  const getDayWithOrdinal = (day: number) => {
-    const remainder10 = day % 10;
-    const remainder100 = day % 100;
-
-    if (remainder10 === 1 && remainder100 !== 11) return `${day}st`;
-    if (remainder10 === 2 && remainder100 !== 12) return `${day}nd`;
-    if (remainder10 === 3 && remainder100 !== 13) return `${day}rd`;
-    return `${day}th`;
-  };
-
-  const formatDateWithOrdinal = (dateString: string) => {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return '-';
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const month = months[date.getMonth()];
-    const day = getDayWithOrdinal(date.getDate());
-    const year = date.getFullYear();
-    return `${month} ${day} ${year}`;
-  };
-
-  const calculateNextDueDate = (lastDueDate: string): string => {
-    if (!lastDueDate) return '';
-    const lastDue = new Date(lastDueDate);
-    if (isNaN(lastDue.getTime())) return '';
-    const nextDue = new Date(lastDue);
-    nextDue.setMonth(nextDue.getMonth() + 1);
-    return isNaN(nextDue.getTime()) ? '' : nextDue.toISOString();
+    return { totalPaid, latestPayment, outstanding };
   };
 
   const handleMarkAsPaid = async () => {
-    const { latestPayment: currentLatest } = calculateFinancialSummary();
-    if (!currentLatest) return;
-
-    router.push(`/edit-payment?paymentId=${currentLatest.id}`);
+    const { latestPayment } = calculateFinancialSummary();
+    if (!latestPayment) return;
+    router.push(`/edit-payment?paymentId=${latestPayment.id}`);
   };
 
   const handleGenerateDue = () => {
     if (tenant?.autoGeneratePayments) {
-      Alert.alert(
-        'Billing Enabled',
-        'This tenant uses auto-generated billing. Manual payment is available only when auto-generate is disabled.'
-      );
+      Alert.alert('Billing Enabled', 'This tenant uses auto-generated billing.');
       return;
     }
-
     router.push(`/manual-payment?tenantId=${tenantId}`);
+  };
+
+  // ── Formatting helpers ────────────────────────────────────────────────────
+  const getDayWithOrdinal = (day: number) => {
+    const r10 = day % 10; const r100 = day % 100;
+    if (r10 === 1 && r100 !== 11) return `${day}st`;
+    if (r10 === 2 && r100 !== 12) return `${day}nd`;
+    if (r10 === 3 && r100 !== 13) return `${day}rd`;
+    return `${day}th`;
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '—';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${months[date.getMonth()]} ${getDayWithOrdinal(date.getDate())} ${date.getFullYear()}`;
   };
 
   const openPhoneDialer = async (rawPhone?: string) => {
     const normalized = (rawPhone || '').replace(/[^0-9+]/g, '');
-    if (!normalized) {
-      Alert.alert('Invalid phone', 'No valid phone number available to dial.');
-      return;
-    }
-
+    if (!normalized) { Alert.alert('Invalid phone', 'No valid phone number.'); return; }
     const phoneUrl = `tel:${normalized}`;
     try {
       const canOpen = await Linking.canOpenURL(phoneUrl);
-      if (!canOpen) {
-        Alert.alert('Dialer unavailable', 'Could not open the phone dialer on this device.');
-        return;
-      }
+      if (!canOpen) { Alert.alert('Dialer unavailable', 'Could not open phone dialer.'); return; }
       await Linking.openURL(phoneUrl);
-    } catch {
-      Alert.alert('Dial failed', 'Unable to open the phone dialer. Please try again.');
-    }
+    } catch { Alert.alert('Dial failed', 'Unable to open phone dialer.'); }
   };
 
   const openEditTenantModal = async () => {
@@ -508,213 +371,167 @@ export default function TenantDetailScreen() {
     setEditTenantAddress(tenant.address || '');
     setEditTenantJoinDate(tenant.joinDate || '');
     setEditTenantStatus(tenant.tenantStatus || 'active');
-
-    // Reset room/bed selection state before loading fresh options for this tenant.
-    setEditTenantRoom(null);
-    setEditTenantBed(null);
-    setEditAvailableBedsForRoom([]);
-    
-    // Fetch beds to show options
-    // For vacated tenants, fetch ALL beds so they can be reassigned
-    // For active tenants, fetch only available beds
+    setEditTenantRoom(null); setEditTenantBed(null); setEditAvailableBedsForRoom([]);
     if (tenant.propertyId) {
       try {
         const isVacated = tenant.tenantStatus === 'vacated';
         const [selectableRes, allBedsRes] = isVacated
-          ? await Promise.all([
-              bedService.getAllBedsByProperty(tenant.propertyId),
-              bedService.getAllBedsByProperty(tenant.propertyId),
-            ])
-          : await Promise.all([
-              bedService.getAvailableBedsByProperty(tenant.propertyId),
-              bedService.getAllBedsByProperty(tenant.propertyId),
-            ]);
-
+          ? await Promise.all([bedService.getAllBedsByProperty(tenant.propertyId), bedService.getAllBedsByProperty(tenant.propertyId)])
+          : await Promise.all([bedService.getAvailableBedsByProperty(tenant.propertyId), bedService.getAllBedsByProperty(tenant.propertyId)]);
         const selectableRooms = selectableRes.data || [];
-        const allRooms = allBedsRes.data || [];
+        const allRooms        = allBedsRes.data || [];
         setEditRoomsWithBeds(selectableRooms);
-
         let currentBed: Bed | null = null;
-
-        // First preference: resolve current bed from all-by-property payload.
         if (tenant.bedId && tenant.roomId) {
           const currentRoomAllBeds = allRooms.find(r => r.room.id === tenant.roomId);
           currentBed = currentRoomAllBeds?.availableBeds.find(b => b.id === tenant.bedId) || null;
         }
-
-        // Fallback: fetch bed directly by ID if not found in grouped payload.
         if (!currentBed && tenant.bedId) {
-          try {
-            const currentBedRes = await bedService.getBedById(tenant.bedId);
-            currentBed = currentBedRes.data || null;
-          } catch {
-            currentBed = null;
-          }
+          try { const res = await bedService.getBedById(tenant.bedId); currentBed = res.data || null; } catch { currentBed = null; }
         }
-
-        // Prefer room from latest fetched data; fallback to already-fetched tenant room details.
         if (tenant.roomId) {
-          const selectedRoomData = selectableRooms.find(r => r.room.id === tenant.roomId)
-            || allRooms.find(r => r.room.id === tenant.roomId);
-          if (selectedRoomData) {
-            setEditTenantRoom(selectedRoomData.room);
-            const mergedBeds = [...(selectedRoomData.availableBeds || [])];
-            if (currentBed && !mergedBeds.some(b => b.id === currentBed!.id)) {
-              mergedBeds.unshift(currentBed);
-            }
-            setEditAvailableBedsForRoom(mergedBeds);
+          const selected = selectableRooms.find(r => r.room.id === tenant.roomId) || allRooms.find(r => r.room.id === tenant.roomId);
+          if (selected) {
+            setEditTenantRoom(selected.room);
+            const merged = [...(selected.availableBeds || [])];
+            if (currentBed && !merged.some(b => b.id === currentBed!.id)) merged.unshift(currentBed);
+            setEditAvailableBedsForRoom(merged);
           } else if (room) {
             setEditTenantRoom(room);
             setEditAvailableBedsForRoom(currentBed ? [currentBed] : []);
           }
         }
-
-        // Preselect current bed by default in edit mode.
         setEditTenantBed(currentBed);
-      } catch (err) {
-        console.error('Failed to fetch beds for edit modal', err);
-      }
+      } catch (err) { console.error('Failed to fetch beds for edit modal', err); }
     }
-    
     setShowEditTenantModal(true);
   };
 
   const handleUpdateTenant = async () => {
     if (!tenant) return;
-
-    const name = editTenantName.trim();
+    const name       = editTenantName.trim();
     const documentId = editTenantDocumentId.trim();
-    const phone = editTenantPhone.trim();
-    const rent = editTenantRent.trim();
-    const address = editTenantAddress.trim();
-
-    if (!name || !phone || !rent) {
-      Alert.alert('Validation', 'Name, phone, and rent are required.');
-      return;
+    const phone      = editTenantPhone.trim();
+    const rent       = editTenantRent.trim();
+    const address    = editTenantAddress.trim();
+    if (!name || !phone || !rent) { Alert.alert('Validation', 'Name, phone, and rent are required.'); return; }
+    if (!/^\d{10}$/.test(phone)) { Alert.alert('Validation', 'Phone must be 10 digits.'); return; }
+    if (editTenantStatus === 'active' && (!editTenantRoom || !editTenantBed)) {
+      Alert.alert('Validation', 'Room and bed are mandatory for active tenants.'); return;
     }
-
-    if (!/^\d{10}$/.test(phone)) {
-      Alert.alert('Validation', 'Phone must be 10 digits.');
-      return;
-    }
-
-    // Check if status is active - room and bed are mandatory
-    if (editTenantStatus === 'active') {
-      if (!editTenantRoom || !editTenantBed) {
-        Alert.alert('Validation', 'Room and bed are mandatory for active tenants.');
-        return;
-      }
-    }
-
-    // Check if changing from vacated to active - room and bed are required
     const isChangingFromVacatedToActive = tenant.tenantStatus === 'vacated' && editTenantStatus === 'active';
     if (isChangingFromVacatedToActive && (!editTenantRoom || !editTenantBed)) {
-      Alert.alert('Validation', 'Please assign a room and bed when reactivating a tenant.');
-      return;
+      Alert.alert('Validation', 'Please assign a room and bed when reactivating a tenant.'); return;
     }
-
     try {
       setTenantActionLoading(true);
       const response = await tenantService.updateTenant(tenant.id, {
-        name,
-        documentId,
-        phone,
-        rent,
-        address,
-        joinDate: editTenantJoinDate,
-        roomId: editTenantRoom?.id || undefined,
-        bedId: editTenantBed?.id || undefined,
+        name, documentId, phone, rent, address,
+        joinDate:     editTenantJoinDate,
+        roomId:       editTenantRoom?.id || undefined,
+        bedId:        editTenantBed?.id || undefined,
         tenantStatus: editTenantStatus,
       });
-      if (response.data) {
-        setTenant((prev) => prev ? { ...prev, ...response.data } : prev);
-      }
+      if (response.data) setTenant(prev => prev ? { ...prev, ...response.data } : prev);
       setShowEditTenantModal(false);
-      
-      // If reactivating from vacated status, show billing setup screen
-      if (isChangingFromVacatedToActive) {
-        setTimeout(() => {
-          openEditBillingModal();
-        }, 500);
-      }
+      if (isChangingFromVacatedToActive) setTimeout(() => openEditBillingModal(), 500);
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to update tenant');
-    } finally {
-      setTenantActionLoading(false);
-    }
+    } finally { setTenantActionLoading(false); }
   };
 
-  const handleDeleteTenant = () => {
-    setShowDeleteConfirmModal(true);
-  };
-
-  const invalidateTenantRelatedScreenCaches = (currentTenant: Tenant) => {
-    const propertyId = currentTenant.propertyId;
-
-    // Keep invalidation targeted by property for better performance.
+  const invalidateCaches = (currentTenant: Tenant) => {
+    const pid = currentTenant.propertyId;
     clearScreenCache(`tenant-detail:${currentTenant.id}`);
-    if (propertyId) {
-      clearScreenCache(`tenants:${propertyId}:`);
-      clearScreenCache(`payments:${propertyId}:`);
-      clearScreenCache(`dashboard:${propertyId}`);
-      clearScreenCache(`rooms:${propertyId}`);
-
+    if (pid) {
+      clearScreenCache(`tenants:${pid}:`);
+      clearScreenCache(`payments:${pid}:`);
+      clearScreenCache(`dashboard:${pid}`);
+      clearScreenCache(`rooms:${pid}`);
       if (currentTenant.roomId) {
-        clearScreenCache(`manage-beds:${propertyId}:${currentTenant.roomId}`);
-        clearScreenCache(`room-beds:${propertyId}:${currentTenant.roomId}`);
+        clearScreenCache(`manage-beds:${pid}:${currentTenant.roomId}`);
+        clearScreenCache(`room-beds:${pid}:${currentTenant.roomId}`);
       } else {
-        clearScreenCache(`manage-beds:${propertyId}:`);
-        clearScreenCache(`room-beds:${propertyId}:`);
+        clearScreenCache(`manage-beds:${pid}:`);
+        clearScreenCache(`room-beds:${pid}:`);
       }
     } else {
-      clearScreenCache('tenants:');
-      clearScreenCache('payments:');
-      clearScreenCache('dashboard:');
-      clearScreenCache('rooms:');
-      clearScreenCache('manage-beds:');
-      clearScreenCache('room-beds:');
+      ['tenants:','payments:','dashboard:','rooms:','manage-beds:','room-beds:'].forEach(k => clearScreenCache(k));
     }
   };
 
   const confirmDeleteTenant = async () => {
     if (!tenant) return;
-
     try {
       setTenantActionLoading(true);
       setShowDeleteConfirmModal(false);
       await tenantService.deleteTenant(tenant.id);
-      invalidateTenantRelatedScreenCaches(tenant);
-      Alert.alert('Success', 'Tenant and payments deleted successfully.', [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      invalidateCaches(tenant);
+      Alert.alert('Deleted', 'Tenant removed successfully.', [{ text: 'OK', onPress: () => router.back() }]);
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to delete tenant');
-    } finally {
-      setTenantActionLoading(false);
-    }
+    } finally { setTenantActionLoading(false); }
   };
+
+  // ── Reusable sheet ────────────────────────────────────────────────────────
+  const PickerSheet = ({
+    visible, onClose, title, anim, children,
+  }: { visible: boolean; onClose: () => void; title: string; anim: Animated.Value; children: React.ReactNode }) => (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <View style={[sheetStyles.overlay, { backgroundColor: colors.modal.overlay }]}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} activeOpacity={1} />
+        <Animated.View style={[sheetStyles.sheet, { backgroundColor: cardBg, transform: [{ translateY: anim }] }]}>
+          <View style={sheetStyles.handle}>
+            <View style={[sheetStyles.handleBar, { backgroundColor: colors.border.dark }]} />
+          </View>
+          <View style={[sheetStyles.sheetHeader, { borderBottomColor: colors.border.light }]}>
+            <Text style={[sheetStyles.sheetTitle, { color: textPrimary }]}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={[sheetStyles.closeBtn, { backgroundColor: colors.background.tertiary }]}>
+              <X size={15} color={textSecondary} strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+            {children}
+          </ScrollView>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+
+  const SheetOption = ({
+    label, sublabel, active, onPress,
+  }: { label: string; sublabel?: string; active: boolean; onPress: () => void }) => (
+    <TouchableOpacity
+      style={[sheetStyles.option, { borderBottomColor: colors.border.light }]}
+      onPress={onPress}
+      activeOpacity={0.72}>
+      <View style={{ flex: 1 }}>
+        <Text style={[sheetStyles.optionText, {
+          color:      active ? brandColor : textPrimary,
+          fontFamily: active ? typography.fontFamily.semiBold : typography.fontFamily.regular,
+        }]}>{label}</Text>
+        {sublabel && <Text style={[sheetStyles.optionSub, { color: textTertiary }]}>{sublabel}</Text>}
+      </View>
+      {active && <CheckCircle size={16} color={brandColor} strokeWidth={2} />}
+    </TouchableOpacity>
+  );
+
+  // ── Loading / empty screens ───────────────────────────────────────────────
+  const NavBar = ({ title }: { title: string }) => (
+    <View style={[styles.navBar, { backgroundColor: cardBg, borderBottomColor: colors.border.light }]}>
+      <TouchableOpacity style={styles.navBack} onPress={() => router.back()} activeOpacity={0.7}>
+        <ChevronLeft size={22} color={textPrimary} strokeWidth={2} />
+      </TouchableOpacity>
+      <Text style={[styles.navTitle, { color: textPrimary }]}>{title}</Text>
+      <View style={styles.navSpacer} />
+    </View>
+  );
 
   if (loading) {
     return (
-      <SafeAreaView
-        style={[styles.container, { backgroundColor: colors.background.primary }]}
-        edges={['top', 'bottom']}>
-        <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}>
-            <ChevronLeft size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Tenant Details</Text>
-          <View style={styles.placeholder} />
-        </View>
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
-          ]}
-          showsVerticalScrollIndicator={false}>
+      <SafeAreaView style={[styles.container, { backgroundColor: pageBg }]} edges={['top','bottom']}>
+        <NavBar title="Tenant Details" />
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <Skeleton height={200} count={3} />
         </ScrollView>
       </SafeAreaView>
@@ -723,63 +540,41 @@ export default function TenantDetailScreen() {
 
   if (!tenant) {
     return (
-      <SafeAreaView
-        style={[styles.container, { backgroundColor: colors.background.primary }]}
-        edges={['top', 'bottom']}>
-        <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}>
-            <ChevronLeft size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Tenant Details</Text>
-          <View style={styles.placeholder} />
-        </View>
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
-          ]}
-          showsVerticalScrollIndicator={false}>
-          <EmptyState
-            icon={User}
-            title="Tenant Not Found"
-            subtitle="The selected tenant could not be found"
-          />
-        </ScrollView>
+      <SafeAreaView style={[styles.container, { backgroundColor: pageBg }]} edges={['top','bottom']}>
+        <NavBar title="Tenant Details" />
+        <EmptyState icon={User} title="Tenant Not Found" subtitle="The selected tenant could not be found" />
       </SafeAreaView>
     );
   }
 
   const { totalPaid, latestPayment, outstanding } = calculateFinancialSummary();
+  const isActive = tenant.tenantStatus === 'active';
+
+  const initials = tenant.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background.primary }]}
-      edges={['top', 'bottom']}>
-      <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}>
-          <ChevronLeft size={24} color={colors.text.primary} />
+    <SafeAreaView style={[styles.container, { backgroundColor: pageBg }]} edges={['top','bottom']}>
+
+      {/* ── Nav Bar ─────────────────────────────────────────────────────── */}
+      <View style={[styles.navBar, { backgroundColor: cardBg, borderBottomColor: colors.border.light }]}>
+        <TouchableOpacity style={styles.navBack} onPress={() => router.back()} activeOpacity={0.7}>
+          <ChevronLeft size={22} color={textPrimary} strokeWidth={2} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Tenant Details</Text>
-        <View style={styles.headerActions}>
+        <Text style={[styles.navTitle, { color: textPrimary }]}>Tenant Details</Text>
+        <View style={styles.navActions}>
           <TouchableOpacity
-            style={[styles.iconActionButton, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50], borderColor: isDark ? colors.primary[700] : colors.primary[200], opacity: !isOnline ? 0.5 : 1 }]}
+            style={[styles.navAction, { backgroundColor: brandLight, borderColor: isDark ? colors.primary[700] : colors.primary[200], opacity: !isOnline ? 0.45 : 1 }]}
             onPress={openEditTenantModal}
             activeOpacity={0.7}
             disabled={tenantActionLoading || !isOnline}>
-            <Pencil size={16} color={isDark ? colors.primary[300] : colors.primary[600]} />
+            <Pencil size={15} color={brandText} strokeWidth={2} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.iconActionButton, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50], borderColor: isDark ? colors.danger[700] : colors.danger[200], opacity: !isOnline ? 0.5 : 1 }]}
-            onPress={handleDeleteTenant}
+            style={[styles.navAction, { backgroundColor: dangerLight, borderColor: isDark ? colors.danger[700] : colors.danger[200], opacity: !isOnline ? 0.45 : 1 }]}
+            onPress={() => setShowDeleteConfirmModal(true)}
             activeOpacity={0.7}
             disabled={tenantActionLoading || !isOnline}>
-            <Trash2 size={16} color={isDark ? colors.danger[300] : colors.danger[600]} />
+            <Trash2 size={15} color={dangerText} strokeWidth={2} />
           </TouchableOpacity>
         </View>
       </View>
@@ -790,240 +585,194 @@ export default function TenantDetailScreen() {
           isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
         ]}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={[colors.primary[500]]}
-            tintColor={colors.primary[500]}
-          />
-        }>
-        {error ? (
-          <ApiErrorCard error={error} onRetry={handleRetry} />
-        ) : (
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[brandColor]} tintColor={brandColor} />}>
+
+        {error ? <ApiErrorCard error={error} onRetry={handleRetry} /> : (
           <>
-            <Card style={styles.profileCard}>
-              <View style={styles.profileHeader}>
-                <View style={[styles.avatar, { backgroundColor: colors.primary[500] }]}>
-                  <Text style={[styles.avatarText, { color: colors.white }]}>
-                    {tenant.name
-                      .split(' ')
-                      .map((n) => n[0])
-                      .join('')}
-                  </Text>
+            {/* ── Profile Hero ─────────────────────────────────────────── */}
+            <View style={[styles.heroCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              {/* Avatar */}
+              <View style={styles.heroTop}>
+                <View style={[styles.avatar, { backgroundColor: isActive ? brandColor : colors.neutral[400] }]}>
+                  <Text style={styles.avatarText}>{initials}</Text>
                 </View>
-                <View style={styles.profileInfo}>
-                  <Text style={[styles.tenantName, { color: colors.text.primary }]}>
-                    {tenant.name}
-                  </Text>
-                  <Text style={[styles.tenantStatus, { color: tenant.tenantStatus === 'active' ? colors.success[600] : colors.danger[600] }]}>
-                    {tenant.tenantStatus === 'active' ? 'Active' : 'Vacated'}
-                  </Text>
+                <View style={styles.heroInfo}>
+                  <Text style={[styles.heroName, { color: textPrimary }]}>{tenant.name}</Text>
+                  <View style={[styles.statusPill, {
+                    backgroundColor: isActive ? successLight : dangerLight,
+                    borderColor:     isActive ? (isDark ? colors.success[700] : colors.success[200]) : (isDark ? colors.danger[700] : colors.danger[200]),
+                  }]}>
+                    <View style={[styles.statusDot, { backgroundColor: isActive ? successColor : dangerColor }]} />
+                    <Text style={[styles.statusPillText, { color: isActive ? successText : dangerText }]}>
+                      {isActive ? 'Active' : 'Vacated'}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
-              <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
-
-              <View style={styles.contactSection}>
+              {/* Meta rows */}
+              <View style={[styles.heroMeta, { borderTopColor: colors.border.light }]}>
                 {tenant.phone && (
-                  <View style={styles.contactItem}>
-                    <Phone size={16} color={colors.text.secondary} />
-                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
-                      Phone:
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => openPhoneDialer(tenant.phone)}
-                      activeOpacity={0.7}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={[styles.contactText, { color: colors.primary[600] }]}>
-                        {tenant.phone}
+                  <TouchableOpacity style={styles.metaRow} onPress={() => openPhoneDialer(tenant.phone)} activeOpacity={0.7}>
+                    <View style={[styles.metaIcon, { backgroundColor: brandLight }]}>
+                      <Phone size={13} color={brandText} strokeWidth={2} />
+                    </View>
+                    <Text style={[styles.metaLabel, { color: textSecondary }]}>Phone</Text>
+                    <Text style={[styles.metaValue, { color: brandColor }]}>{tenant.phone}</Text>
+                    <ArrowRight size={12} color={brandColor} style={{ marginLeft: 'auto' }} />
+                  </TouchableOpacity>
+                )}
+                {tenant.documentId && (
+                  <View style={styles.metaRow}>
+                    <View style={[styles.metaIcon, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[100] }]}>
+                      <BadgeCheck size={13} color={textSecondary} strokeWidth={2} />
+                    </View>
+                    <Text style={[styles.metaLabel, { color: textSecondary }]}>Document</Text>
+                    <Text style={[styles.metaValue, { color: textPrimary }]}>{tenant.documentId}</Text>
+                  </View>
+                )}
+                {tenant.joinDate && (
+                  <View style={styles.metaRow}>
+                    <View style={[styles.metaIcon, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[100] }]}>
+                      <Calendar size={13} color={textSecondary} strokeWidth={2} />
+                    </View>
+                    <Text style={[styles.metaLabel, { color: textSecondary }]}>Joined</Text>
+                    <Text style={[styles.metaValue, { color: textPrimary }]}>{formatDate(tenant.joinDate)}</Text>
+                  </View>
+                )}
+                {isActive && room && (
+                  <View style={styles.metaRow}>
+                    <View style={[styles.metaIcon, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[100] }]}>
+                      <Home size={13} color={textSecondary} strokeWidth={2} />
+                    </View>
+                    <Text style={[styles.metaLabel, { color: textSecondary }]}>Room</Text>
+                    <Text style={[styles.metaValue, { color: textPrimary }]}>{room.roomNumber}</Text>
+                  </View>
+                )}
+                {tenant.tenantStatus === 'vacated' && tenant.checkoutDate && (
+                  <View style={styles.metaRow}>
+                    <View style={[styles.metaIcon, { backgroundColor: dangerLight }]}>
+                      <Calendar size={13} color={dangerText} strokeWidth={2} />
+                    </View>
+                    <Text style={[styles.metaLabel, { color: textSecondary }]}>Checkout</Text>
+                    <Text style={[styles.metaValue, { color: dangerColor }]}>{formatDate(tenant.checkoutDate)}</Text>
+                  </View>
+                )}
+                {tenant.address && (
+                  <View style={styles.metaRow}>
+                    <View style={[styles.metaIcon, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[100] }]}>
+                      <MapPin size={13} color={textSecondary} strokeWidth={2} />
+                    </View>
+                    <Text style={[styles.metaLabel, { color: textSecondary }]}>Address</Text>
+                    <Text style={[styles.metaValue, { color: textPrimary, flex: 1 }]} numberOfLines={2}>{tenant.address}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* ── Financial + Billing (active only) ──────────────────────── */}
+            {isActive && (
+              <View style={[styles.kpiRow, isTabletLandscape && { flexDirection: 'row', gap: spacing.md }]}>
+
+                {/* Financial Summary */}
+                <View style={[styles.kpiCard, { backgroundColor: cardBg, borderColor: cardBorder }, isTabletLandscape && { flex: 1 }]}>
+                  <View style={styles.kpiHeader}>
+                    <View style={[styles.kpiIconBox, { backgroundColor: successLight }]}>
+                      <IndianRupee size={14} color={successText} strokeWidth={2} />
+                    </View>
+                    <Text style={[styles.kpiTitle, { color: textPrimary }]}>Financial Summary</Text>
+                  </View>
+                  <View style={styles.kpiGrid}>
+                    <View style={styles.kpiStat}>
+                      <Text style={[styles.kpiStatLabel, { color: textTertiary }]}>TOTAL PAID</Text>
+                      <Text style={[styles.kpiStatValue, { color: successColor }]}>
+                        ₹{totalPaid.toLocaleString('en-IN')}
                       </Text>
+                    </View>
+                    <View style={[styles.kpiDivider, { backgroundColor: colors.border.light }]} />
+                    <View style={styles.kpiStat}>
+                      <Text style={[styles.kpiStatLabel, { color: textTertiary }]}>MONTHLY RENT</Text>
+                      <Text style={[styles.kpiStatValue, { color: textPrimary }]}>{tenant.rent || '₹0'}</Text>
+                    </View>
+                    <View style={[styles.kpiDivider, { backgroundColor: colors.border.light }]} />
+                    <View style={styles.kpiStat}>
+                      <Text style={[styles.kpiStatLabel, { color: textTertiary }]}>OUTSTANDING</Text>
+                      <Text style={[styles.kpiStatValue, { color: outstanding > 0 ? dangerColor : textPrimary }]}>
+                        ₹{outstanding.toLocaleString('en-IN')}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Billing Config */}
+                <View style={[styles.kpiCard, { backgroundColor: cardBg, borderColor: cardBorder }, isTabletLandscape && { flex: 1 }]}>
+                  <View style={styles.kpiHeader}>
+                    <View style={[styles.kpiIconBox, { backgroundColor: brandLight }]}>
+                      <Calendar size={14} color={brandText} strokeWidth={2} />
+                    </View>
+                    <Text style={[styles.kpiTitle, { color: textPrimary }]}>Billing Config</Text>
+                    <TouchableOpacity
+                      style={[styles.editChip, { backgroundColor: brandLight, borderColor: isDark ? colors.primary[700] : colors.primary[200], opacity: !isOnline ? 0.45 : 1 }]}
+                      onPress={openEditBillingModal}
+                      activeOpacity={0.75}
+                      disabled={!isOnline}>
+                      <Edit size={12} color={brandText} strokeWidth={2} />
+                      <Text style={[styles.editChipText, { color: brandText }]}>Edit</Text>
                     </TouchableOpacity>
                   </View>
-                )}
-
-                {tenant.documentId && (
-                  <View style={styles.contactItem}>
-                    <User size={16} color={colors.text.secondary} />
-                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
-                      Document ID:
-                    </Text>
-                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
-                      {tenant.documentId}
-                    </Text>
-                  </View>
-                )}
-
-                {tenant.address && (
-                  <View style={styles.contactItem}>
-                    <MapPin size={16} color={colors.text.secondary} />
-                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
-                      Address:
-                    </Text>
-                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
-                      {tenant.address}
-                    </Text>
-                  </View>
-                )}
-
-                {tenant.joinDate && (
-                  <View style={styles.contactItem}>
-                    <Calendar size={16} color={colors.text.secondary} />
-                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
-                      Join Date:
-                    </Text>
-                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
-                      {formatDateWithOrdinal(tenant.joinDate)}
-                    </Text>
-                  </View>
-                )}
-
-                {tenant.tenantStatus === 'active' && room && (
-                  <View style={styles.contactItem}>
-                    <MapPin size={16} color={colors.text.secondary} />
-                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
-                      Room:
-                    </Text>
-                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
-                      {room.roomNumber}
-                    </Text>
-                  </View>
-                )}
-
-                {tenant.tenantStatus === 'vacated' && tenant.checkoutDate && (
-                  <View style={styles.contactItem}>
-                    <Calendar size={16} color={colors.text.secondary} />
-                    <Text style={[styles.contactLabel, { color: colors.text.secondary }]}>
-                      Checkout Date:
-                    </Text>
-                    <Text style={[styles.contactText, { color: colors.text.primary }]}>
-                      {formatDateWithOrdinal(tenant.checkoutDate)}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </Card>
-
-            {tenant.tenantStatus === 'active' && (
-              <View style={[styles.overviewColumns, isTabletLandscape && styles.overviewColumnsTablet]}>
-                <View style={[styles.overviewColumn, isTabletLandscape && styles.overviewColumnTablet]}>
-                  <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                      <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
-                        Financial Summary
-                      </Text>
-                    </View>
-
-                    <Card style={styles.summaryCard}>
-                      <View style={styles.summaryGrid}>
-                        <View style={styles.summaryItem}>
-                          <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Total Paid</Text>
-                          <Text style={[styles.summaryValue, { color: colors.success[500] }]}>
-                            ₹{totalPaid.toLocaleString('en-IN')}
-                          </Text>
-                        </View>
-
-                        <View style={styles.summaryItem}>
-                          <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Monthly Rent</Text>
-                          <Text style={[styles.summaryValue, { color: colors.text.primary }]}>
-                            {tenant.rent || '₹0'}
-                          </Text>
-                        </View>
-
-                        <View style={styles.summaryItem}>
-                          <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Outstanding</Text>
-                          <Text style={[styles.summaryValue, { color: outstanding > 0 ? colors.danger[500] : colors.text.primary }]}>
-                            ₹{outstanding.toLocaleString('en-IN')}
-                          </Text>
-                        </View>
+                  {tenant.billingConfig ? (
+                    <View style={styles.billingRows}>
+                      <View style={styles.billingRow}>
+                        <Text style={[styles.billingLabel, { color: textTertiary }]}>CYCLE</Text>
+                        <Text style={[styles.billingValue, { color: textPrimary }]}>
+                          {tenant.billingConfig.billingCycle?.charAt(0).toUpperCase() + (tenant.billingConfig.billingCycle?.slice(1) || '')}
+                        </Text>
                       </View>
-                    </Card>
-                  </View>
-                </View>
-
-                <View style={[styles.overviewColumn, isTabletLandscape && styles.overviewColumnTablet]}>
-                  <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                      <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Billing Configuration</Text>
-                      <TouchableOpacity
-                        style={[styles.actionButton, { backgroundColor: colors.primary[500], opacity: !isOnline ? 0.5 : 1 }]}
-                        onPress={openEditBillingModal}
-                        activeOpacity={0.7}
-                        disabled={!isOnline}>
-                        <Edit size={16} color={colors.white} />
-                        <Text style={[styles.actionButtonText, { color: colors.white }]}>Edit</Text>
-                      </TouchableOpacity>
+                      <View style={[styles.billingDivider, { backgroundColor: colors.border.light }]} />
+                      <View style={styles.billingRow}>
+                        <Text style={[styles.billingLabel, { color: textTertiary }]}>ANCHOR DAY</Text>
+                        <Text style={[styles.billingValue, { color: textPrimary }]}>
+                          {getDayWithOrdinal(tenant.billingConfig.anchorDay)} of every month
+                        </Text>
+                      </View>
+                      <View style={[styles.billingDivider, { backgroundColor: colors.border.light }]} />
+                      <View style={styles.billingRow}>
+                        <Text style={[styles.billingLabel, { color: textTertiary }]}>NEXT DUE</Text>
+                        <Text style={[styles.billingValue, { color: brandColor }]}>
+                          {formatDate(calculateNextBillingDate(tenant.billingConfig.anchorDay || 1))}
+                        </Text>
+                      </View>
                     </View>
-
-                    <Card style={styles.billingCard}>
-                      {tenant?.billingConfig ? (
-                        <>
-                          <View style={styles.billingRow}>
-                            <Text style={[styles.billingLabel, { color: colors.text.secondary }]}>Billing Frequency</Text>
-                            <Text style={[styles.billingValue, { color: colors.text.primary }]}>
-                              {tenant.billingConfig.billingCycle ? (tenant.billingConfig.billingCycle.charAt(0).toUpperCase() + tenant.billingConfig.billingCycle.slice(1)) : ''}
-                            </Text>
-                          </View>
-
-                          <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
-
-                          <View style={styles.billingRow}>
-                            <Text style={[styles.billingLabel, { color: colors.text.secondary }]}>Anchor Day</Text>
-                            <Text style={[styles.billingValue, { color: colors.text.primary }]}>
-                              {getDayWithOrdinal(tenant.billingConfig.anchorDay)} of every month
-                            </Text>
-                          </View>
-
-                          <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
-
-                          <View style={styles.billingRow}>
-                            <Text style={[styles.billingLabel, { color: colors.text.secondary }]}>Next Billing Date</Text>
-                            <Text style={[styles.billingValue, { color: colors.primary[600] }]}>
-                              {formatDateWithOrdinal(calculateNextBillingDate(tenant.billingConfig.anchorDay || 1, 'monthly'))}
-                            </Text>
-                          </View>
-
-                          <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
-                        </>
-                      ) : (
-                        <Text style={[styles.noBillingText, { color: colors.text.secondary }]}>No billing configuration set</Text>
-                      )}
-                    </Card>
-                  </View>
+                  ) : (
+                    <Text style={[styles.noBillingText, { color: textTertiary }]}>No billing config set</Text>
+                  )}
                 </View>
               </View>
             )}
 
+            {/* ── Payment History ───────────────────────────────────────── */}
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionTitle, { color: colors.text.primary }]}> 
-                  Payment History
-                </Text>
-                {latestPayment && latestPayment.status === 'due' ? (
+                <Text style={[styles.sectionTitle, { color: textPrimary }]}>Payment History</Text>
+                {latestPayment?.status === 'due' ? (
                   <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: colors.success[500] }]}
-                    onPress={handleMarkAsPaid}
-                    activeOpacity={0.7}>
-                    <CheckCircle size={16} color={colors.white} />
-                    <Text style={[styles.actionButtonText, { color: colors.white }]}> 
-                      Mark as Paid
-                    </Text>
+                    style={[styles.headerAction, { backgroundColor: successColor }]}
+                    onPress={handleMarkAsPaid} activeOpacity={0.8}>
+                    <CheckCircle size={14} color={colors.white} strokeWidth={2.5} />
+                    <Text style={[styles.headerActionText, { color: colors.white }]}>Mark Paid</Text>
                   </TouchableOpacity>
                 ) : !latestPayment && !tenant.autoGeneratePayments ? (
                   <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: colors.primary[500] }]}
-                    onPress={handleGenerateDue}
-                    activeOpacity={0.7}>
-                    <Plus size={addActionTokens.iconSize.compact} color={colors.action.add.icon} />
-                    <Text style={[styles.actionButtonText, { color: colors.white }]}> 
-                      Generate Due
-                    </Text>
+                    style={[styles.headerAction, { backgroundColor: brandColor }]}
+                    onPress={handleGenerateDue} activeOpacity={0.8}>
+                    <Plus size={14} color={colors.white} strokeWidth={2.5} />
+                    <Text style={[styles.headerActionText, { color: colors.white }]}>Generate Due</Text>
                   </TouchableOpacity>
                 ) : null}
               </View>
 
               {payments.length === 0 ? (
-                <Card style={styles.emptyPaymentCard}>
+                <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                   <EmptyState
                     icon={Wallet}
                     title="No Payments Yet"
@@ -1031,63 +780,58 @@ export default function TenantDetailScreen() {
                       ? 'Payments will be auto-generated from this tenant billing setup.'
                       : 'Payment history will appear here'}
                   />
-                </Card>
+                </View>
               ) : (
                 <>
-                  {payments.map((payment, index) => (
-                    <Card key={index} style={styles.paymentCard}>
-                      <View style={styles.paymentHeader}>
-                        <View style={styles.paymentLeft}>
-                          <Text style={[styles.paymentAmount, { color: colors.text.primary }]}>
-                            {payment.amount}
-                          </Text>
-                          <Text style={[styles.paymentMethod, { color: colors.text.secondary }]}>
-                            {payment.method || 'Pending'}
-                          </Text>
+                  {payments.map((payment, idx) => {
+                    const isPaid = payment.status === 'paid';
+                    return (
+                      <View
+                        key={idx}
+                        style={[styles.paymentRow, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <View style={[styles.paymentStrip, { backgroundColor: isPaid ? successColor : warningColor }]} />
+                        <View style={styles.paymentBody}>
+                          <View style={styles.paymentTop}>
+                            <Text style={[styles.paymentAmount, { color: textPrimary }]}>{payment.amount}</Text>
+                            <View style={[styles.paymentPill, {
+                              backgroundColor: isPaid ? successLight : warningLight,
+                              borderColor: isPaid ? (isDark ? colors.success[700] : colors.success[200]) : (isDark ? colors.warning[700] : colors.warning[200]),
+                            }]}>
+                              {isPaid
+                                ? <CheckCircle size={10} color={successColor} strokeWidth={2.5} />
+                                : <Clock size={10} color={warningColor} strokeWidth={2.5} />}
+                              <Text style={[styles.paymentPillText, { color: isPaid ? successColor : warningColor }]}>
+                                {isPaid ? 'Paid' : 'Due'}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={styles.paymentMeta}>
+                            <Calendar size={11} color={textTertiary} strokeWidth={1.5} />
+                            <Text style={[styles.paymentDate, { color: textSecondary }]}>
+                              {isPaid
+                                ? formatDate(payment.paidDate ?? payment.dueDate ?? '')
+                                : formatDate(payment.dueDate ?? '')}
+                            </Text>
+                            {payment.method && (
+                              <View style={[styles.methodChip, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[100], borderColor: cardBorder }]}>
+                                <Text style={[styles.methodText, { color: textSecondary }]}>{payment.method}</Text>
+                              </View>
+                            )}
+                          </View>
                         </View>
-                        <StatusBadge status={payment.status} />
                       </View>
+                    );
+                  })}
 
-                      <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
-
-                      <View style={styles.paymentDetails}>
-                        {payment.status === 'paid' ? (
-                          <View style={styles.paymentDetailRow}>
-                            <Text style={[styles.paymentDetailLabel, { color: colors.text.tertiary }]}>
-                              Paid On:
-                            </Text>
-                            <Text style={[styles.paymentDetailValue, { color: colors.text.secondary }]}>
-                              {formatDateWithOrdinal(payment.paidDate ?? payment.dueDate ?? '')}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.paymentDetailRow}>
-                            <Text style={[styles.paymentDetailLabel, { color: colors.text.tertiary }]}>
-                              Due:
-                            </Text>
-                            <Text style={[styles.paymentDetailValue, { color: colors.text.secondary }]}>
-                              {formatDateWithOrdinal(payment.dueDate ?? '')}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    </Card>
-                  ))}
-                  
                   {hasMorePayments && (
-                    <TouchableOpacity 
-                      style={[styles.loadMoreButton, { borderColor: colors.border.medium }]}
+                    <TouchableOpacity
+                      style={[styles.loadMoreBtn, { borderColor: cardBorder }]}
                       onPress={handleLoadMorePayments}
                       disabled={loadingPayments}
-                      activeOpacity={0.7}
-                    >
-                      {loadingPayments ? (
-                        <ActivityIndicator size="small" color={colors.primary[500]} />
-                      ) : (
-                        <Text style={[styles.loadMoreText, { color: colors.primary[500] }]}>
-                          Load Older Payments
-                        </Text>
-                      )}
+                      activeOpacity={0.7}>
+                      {loadingPayments
+                        ? <ActivityIndicator size="small" color={brandColor} />
+                        : <Text style={[styles.loadMoreText, { color: brandColor }]}>Load older payments</Text>}
                     </TouchableOpacity>
                   )}
                 </>
@@ -1097,1240 +841,410 @@ export default function TenantDetailScreen() {
         )}
       </ScrollView>
 
-      <Modal
-        visible={showEditTenantModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowEditTenantModal(false)}>
-        <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background.primary }]}>
-          <View style={[styles.modalHeader, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => setShowEditTenantModal(false)}
-              activeOpacity={0.7}>
-              <ChevronLeft size={24} color={colors.text.primary} />
+      {/* ── Edit Tenant — Full-screen modal ──────────────────────────────── */}
+      <Modal visible={showEditTenantModal} transparent={false} animationType="slide" onRequestClose={() => setShowEditTenantModal(false)}>
+        <SafeAreaView style={[styles.container, { backgroundColor: pageBg }]} edges={['top','bottom']}>
+          <View style={[styles.navBar, { backgroundColor: cardBg, borderBottomColor: colors.border.light }]}>
+            <TouchableOpacity style={styles.navBack} onPress={() => setShowEditTenantModal(false)} activeOpacity={0.7}>
+              <ChevronLeft size={22} color={textPrimary} strokeWidth={2} />
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Edit Tenant</Text>
-            <View style={styles.placeholder} />
+            <Text style={[styles.navTitle, { color: textPrimary }]}>Edit Tenant</Text>
+            <View style={styles.navSpacer} />
           </View>
+          <ScrollView contentContainerStyle={styles.formScroll} showsVerticalScrollIndicator={false}>
+            <View style={[styles.formWrap, isTabletLandscape && styles.formWrapTablet]}>
 
-          <ScrollView contentContainerStyle={styles.modalScrollContent}>
-            <View style={[styles.formContainer, isTabletLandscape && styles.formContainerTablet]}>
-              <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldFull]}>
-                <Text style={[styles.label, { color: colors.text.primary }]}>Status</Text>
+              {/* Status */}
+              <View style={[styles.field, isTabletLandscape && styles.fieldFull]}>
+                <Text style={[styles.fieldLabel, { color: textPrimary }]}>Status</Text>
                 <TouchableOpacity
-                  style={[
-                    styles.pickerButton,
-                    {
-                      backgroundColor: colors.background.secondary,
-                      borderColor: colors.border.medium,
-                    },
-                  ]}
-                  onPress={() => setShowStatusPicker(true)}
-                  activeOpacity={0.7}
-                  disabled={tenantActionLoading}>
-                  <Text
-                    style={[
-                      styles.pickerButtonText,
-                      {
-                        color: colors.text.primary,
-                      },
-                    ]}>
+                  style={[styles.picker, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                  onPress={() => { setShowStatusPicker(true); statusSheet.open(); }}
+                  activeOpacity={0.75} disabled={tenantActionLoading}>
+                  <Text style={[styles.pickerText, { color: textPrimary }]}>
                     {editTenantStatus === 'active' ? 'Active' : 'Vacated'}
                   </Text>
-                  <ChevronDown size={20} color={colors.text.tertiary} />
+                  <ChevronDown size={18} color={textTertiary} strokeWidth={2} />
                 </TouchableOpacity>
               </View>
 
               {editTenantStatus === 'active' && (
                 <>
-                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
-                    <Text style={[styles.label, { color: colors.text.primary }]}>Name</Text>
+                  <View style={[styles.field, isTabletLandscape && styles.fieldHalf]}>
+                    <Text style={[styles.fieldLabel, { color: textPrimary }]}>Name</Text>
                     <TextInput
-                      style={[styles.textInput, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium, color: colors.text.primary }]}
-                      value={editTenantName}
-                      onChangeText={setEditTenantName}
-                      placeholder="Enter tenant name"
-                      placeholderTextColor={colors.text.tertiary}
-                      editable={!tenantActionLoading}
-                    />
+                      style={[styles.input, { backgroundColor: cardBg, borderColor: cardBorder, color: textPrimary }]}
+                      value={editTenantName} onChangeText={setEditTenantName}
+                      placeholder="Tenant name" placeholderTextColor={textTertiary} editable={!tenantActionLoading} />
                   </View>
 
-                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
-                    <Text style={[styles.label, { color: colors.text.primary }]}>Document ID</Text>
+                  <View style={[styles.field, isTabletLandscape && styles.fieldHalf]}>
+                    <Text style={[styles.fieldLabel, { color: textPrimary }]}>Document ID</Text>
                     <TextInput
-                      style={[styles.textInput, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium, color: colors.text.primary }]}
-                      value={editTenantDocumentId}
-                      onChangeText={setEditTenantDocumentId}
-                      placeholder="e.g., Aadhar123456"
-                      placeholderTextColor={colors.text.tertiary}
-                      editable={!tenantActionLoading}
-                    />
+                      style={[styles.input, { backgroundColor: cardBg, borderColor: cardBorder, color: textPrimary }]}
+                      value={editTenantDocumentId} onChangeText={setEditTenantDocumentId}
+                      placeholder="e.g. Aadhar123456" placeholderTextColor={textTertiary} editable={!tenantActionLoading} />
                   </View>
 
-                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
-                    <Text style={[styles.label, { color: colors.text.primary }]}>Phone</Text>
-                    <View style={styles.phoneInputRow}>
+                  <View style={[styles.field, isTabletLandscape && styles.fieldHalf]}>
+                    <Text style={[styles.fieldLabel, { color: textPrimary }]}>Phone</Text>
+                    <View style={styles.phoneRow}>
                       <TextInput
-                        style={[
-                          styles.textInput,
-                          styles.phoneTextInput,
-                          {
-                            backgroundColor: colors.background.secondary,
-                            borderColor: colors.border.medium,
-                            color: colors.text.primary,
-                          },
-                        ]}
-                        value={editTenantPhone}
-                        onChangeText={setEditTenantPhone}
-                        keyboardType="number-pad"
-                        maxLength={10}
-                        placeholder="Enter 10-digit phone"
-                        placeholderTextColor={colors.text.tertiary}
-                        editable={!tenantActionLoading}
-                      />
+                        style={[styles.input, { flex: 1, backgroundColor: cardBg, borderColor: cardBorder, color: textPrimary }]}
+                        value={editTenantPhone} onChangeText={setEditTenantPhone}
+                        keyboardType="number-pad" maxLength={10}
+                        placeholder="10-digit number" placeholderTextColor={textTertiary} editable={!tenantActionLoading} />
                       <TouchableOpacity
-                        style={[
-                          styles.dialButton,
-                          {
-                            backgroundColor: colors.background.secondary,
-                            borderColor: colors.border.medium,
-                            opacity: tenantActionLoading || !editTenantPhone.trim() ? 0.5 : 1,
-                          },
-                        ]}
-                        onPress={() => openPhoneDialer(editTenantPhone)}
-                        activeOpacity={0.7}
-                        disabled={tenantActionLoading || !editTenantPhone.trim()}>
-                        <Phone size={18} color={colors.primary[500]} />
+                        style={[styles.dialBtn, { backgroundColor: cardBg, borderColor: cardBorder, opacity: !editTenantPhone.trim() ? 0.4 : 1 }]}
+                        onPress={() => openPhoneDialer(editTenantPhone)} activeOpacity={0.75}
+                        disabled={!editTenantPhone.trim()}>
+                        <Phone size={17} color={brandColor} strokeWidth={2} />
                       </TouchableOpacity>
                     </View>
                   </View>
 
-                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
-                    <Text style={[styles.label, { color: colors.text.primary }]}>Rent</Text>
+                  <View style={[styles.field, isTabletLandscape && styles.fieldHalf]}>
+                    <Text style={[styles.fieldLabel, { color: textPrimary }]}>Rent</Text>
                     <TextInput
-                      style={[styles.textInput, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium, color: colors.text.primary }]}
-                      value={editTenantRent}
-                      onChangeText={setEditTenantRent}
-                      placeholder="Enter rent amount"
-                      placeholderTextColor={colors.text.tertiary}
-                      editable={!tenantActionLoading}
-                    />
+                      style={[styles.input, { backgroundColor: cardBg, borderColor: cardBorder, color: textPrimary }]}
+                      value={editTenantRent} onChangeText={setEditTenantRent}
+                      placeholder="Amount" placeholderTextColor={textTertiary} editable={!tenantActionLoading} />
                   </View>
 
-                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldFull]}>
-                    <Text style={[styles.label, { color: colors.text.primary }]}>Address</Text>
+                  <View style={[styles.field, isTabletLandscape && styles.fieldFull]}>
+                    <Text style={[styles.fieldLabel, { color: textPrimary }]}>Address</Text>
                     <TextInput
-                      style={[styles.textInput, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium, color: colors.text.primary }]}
-                      value={editTenantAddress}
-                      onChangeText={setEditTenantAddress}
-                      placeholder="Enter address"
-                      placeholderTextColor={colors.text.tertiary}
-                      editable={!tenantActionLoading}
-                      multiline
-                      numberOfLines={2}
-                    />
+                      style={[styles.input, styles.inputMulti, { backgroundColor: cardBg, borderColor: cardBorder, color: textPrimary }]}
+                      value={editTenantAddress} onChangeText={setEditTenantAddress}
+                      placeholder="Address" placeholderTextColor={textTertiary} editable={!tenantActionLoading}
+                      multiline numberOfLines={2} />
                   </View>
 
-                  <View style={isTabletLandscape ? styles.formFieldFull : undefined}>
-                    <DatePicker
-                      value={editTenantJoinDate}
-                      onChange={setEditTenantJoinDate}
-                      label="Join Date"
-                      disabled={tenantActionLoading}
-                      required
-                    />
+                  <View style={isTabletLandscape ? styles.fieldFull : undefined}>
+                    <DatePicker value={editTenantJoinDate} onChange={setEditTenantJoinDate} label="Join Date" disabled={tenantActionLoading} required />
                   </View>
 
-                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
-                    <Text style={[styles.label, { color: colors.text.primary }]}>Room</Text>
+                  <View style={[styles.field, isTabletLandscape && styles.fieldHalf]}>
+                    <Text style={[styles.fieldLabel, { color: textPrimary }]}>Room</Text>
                     <TouchableOpacity
-                      style={[
-                        styles.pickerButton,
-                        {
-                          backgroundColor: colors.background.secondary,
-                          borderColor: colors.border.medium,
-                        },
-                      ]}
-                      onPress={() => setShowEditRoomPicker(true)}
-                      activeOpacity={0.7}
-                      disabled={tenantActionLoading || editRoomsWithBeds.length === 0}>
-                      <Text
-                        style={[
-                          styles.pickerButtonText,
-                          {
-                            color: editTenantRoom ? colors.text.primary : colors.text.tertiary,
-                          },
-                        ]}>
+                      style={[styles.picker, { backgroundColor: cardBg, borderColor: cardBorder, opacity: editRoomsWithBeds.length === 0 ? 0.4 : 1 }]}
+                      onPress={() => { setShowEditRoomPicker(true); roomSheet.open(); }}
+                      activeOpacity={0.75} disabled={tenantActionLoading || editRoomsWithBeds.length === 0}>
+                      <Text style={[styles.pickerText, { color: editTenantRoom ? textPrimary : textTertiary }]}>
                         {editTenantRoom ? `Room ${editTenantRoom.roomNumber}` : 'Select Room'}
                       </Text>
-                      <ChevronDown size={20} color={colors.text.tertiary} />
+                      <ChevronDown size={18} color={textTertiary} strokeWidth={2} />
                     </TouchableOpacity>
                   </View>
 
-                  <View style={[styles.inputContainer, isTabletLandscape && styles.formFieldHalf]}>
-                    <Text style={[styles.label, { color: colors.text.primary }]}>Bed</Text>
+                  <View style={[styles.field, isTabletLandscape && styles.fieldHalf]}>
+                    <Text style={[styles.fieldLabel, { color: textPrimary }]}>Bed</Text>
                     <TouchableOpacity
-                      style={[
-                        styles.pickerButton,
-                        {
-                          backgroundColor: colors.background.secondary,
-                          borderColor: colors.border.medium,
-                          opacity: !editTenantRoom ? 0.5 : 1,
-                        },
-                      ]}
-                      onPress={() => setShowEditBedPicker(true)}
-                      activeOpacity={0.7}
-                      disabled={tenantActionLoading || !editTenantRoom || editAvailableBedsForRoom.length === 0}>
-                      <Text
-                        style={[
-                          styles.pickerButtonText,
-                          {
-                            color: editTenantBed ? colors.text.primary : colors.text.tertiary,
-                          },
-                        ]}>
+                      style={[styles.picker, { backgroundColor: cardBg, borderColor: cardBorder, opacity: !editTenantRoom ? 0.4 : 1 }]}
+                      onPress={() => { setShowEditBedPicker(true); bedSheet.open(); }}
+                      activeOpacity={0.75} disabled={tenantActionLoading || !editTenantRoom || editAvailableBedsForRoom.length === 0}>
+                      <Text style={[styles.pickerText, { color: editTenantBed ? textPrimary : textTertiary }]}>
                         {editTenantBed ? `Bed ${editTenantBed.bedNumber}` : 'Select Bed'}
                       </Text>
-                      <ChevronDown size={20} color={colors.text.tertiary} />
+                      <ChevronDown size={18} color={textTertiary} strokeWidth={2} />
                     </TouchableOpacity>
                   </View>
                 </>
               )}
 
               <TouchableOpacity
-                style={[
-                  styles.submitButton,
-                  isTabletLandscape && styles.formFieldFull,
-                  {
-                    backgroundColor: colors.primary[500],
-                    opacity: tenantActionLoading ? 0.6 : 1,
-                  },
-                ]}
-                onPress={handleUpdateTenant}
-                activeOpacity={0.8}
-                disabled={tenantActionLoading}>
-                {tenantActionLoading ? (
-                  <ActivityIndicator color={colors.white} size="small" />
-                ) : (
-                  <Text style={[styles.submitButtonText, { color: colors.white }]}>Save Tenant</Text>
-                )}
+                style={[styles.submitBtn, { backgroundColor: brandColor, opacity: tenantActionLoading ? 0.6 : 1 }, isTabletLandscape && styles.fieldFull]}
+                onPress={handleUpdateTenant} activeOpacity={0.85} disabled={tenantActionLoading}>
+                {tenantActionLoading
+                  ? <ActivityIndicator color={colors.white} size="small" />
+                  : <Text style={[styles.submitBtnText, { color: colors.white }]}>Save Changes</Text>}
               </TouchableOpacity>
             </View>
           </ScrollView>
         </SafeAreaView>
       </Modal>
 
-      <Modal
-        visible={showEditBillingModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowEditBillingModal(false)}>
-        <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background.primary }]}>
-          <View style={[styles.modalHeader, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => setShowEditBillingModal(false)}
-              activeOpacity={0.7}>
-              <ChevronLeft size={24} color={colors.text.primary} />
+      {/* ── Edit Billing — Full-screen modal ─────────────────────────────── */}
+      <Modal visible={showEditBillingModal} transparent={false} animationType="slide" onRequestClose={() => setShowEditBillingModal(false)}>
+        <SafeAreaView style={[styles.container, { backgroundColor: pageBg }]} edges={['top','bottom']}>
+          <View style={[styles.navBar, { backgroundColor: cardBg, borderBottomColor: colors.border.light }]}>
+            <TouchableOpacity style={styles.navBack} onPress={() => setShowEditBillingModal(false)} activeOpacity={0.7}>
+              <ChevronLeft size={22} color={textPrimary} strokeWidth={2} />
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Edit Billing</Text>
-            <View style={styles.placeholder} />
+            <Text style={[styles.navTitle, { color: textPrimary }]}>Edit Billing</Text>
+            <View style={styles.navSpacer} />
           </View>
+          <ScrollView contentContainerStyle={styles.formScroll} showsVerticalScrollIndicator={false}>
+            <View style={styles.formWrap}>
 
-          <ScrollView contentContainerStyle={styles.modalScrollContent}>
-            <View style={styles.formContainer}>
-              <View style={[styles.toggleContainer, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium }]}>
-                <View style={styles.toggleLabel}>
-                  <Text style={[styles.label, { color: colors.text.primary }]}>Enable Auto-Generate</Text>
-                  <Text style={[styles.toggleHint, { color: colors.text.secondary }]}>
-                    Automatically generate due payments
-                  </Text>
+              {/* Auto-generate toggle */}
+              <View style={[styles.toggleRow, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: textPrimary, marginBottom: 2 }]}>Auto-Generate Payments</Text>
+                  <Text style={[styles.toggleHint, { color: textSecondary }]}>Automatically create due payments each month</Text>
                 </View>
                 <Switch
                   value={editAutoGenerate}
                   onValueChange={setEditAutoGenerate}
                   disabled={editLoading}
-                  trackColor={{ false: colors.border.medium, true: colors.primary[200] }}
-                  thumbColor={editAutoGenerate ? colors.primary[500] : colors.text.tertiary}
+                  trackColor={{ false: colors.border.medium, true: colors.primary[300] }}
+                  thumbColor={editAutoGenerate ? brandColor : textTertiary}
                 />
               </View>
 
               {editAutoGenerate && (
                 <>
-                  <View style={styles.inputContainer}>
-                    <Text style={[styles.label, { color: colors.text.primary }]}>Current billing status *</Text>
+                  <View style={styles.field}>
+                    <Text style={[styles.fieldLabel, { color: textPrimary }]}>Current billing status</Text>
                     <TouchableOpacity
-                      style={[styles.pickerButton, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium }]}
-                      onPress={() => setShowEditBillingStatusPicker(true)}
-                      activeOpacity={0.7}
-                      disabled={editLoading}>
-                      <Text style={[styles.pickerButtonText, { color: colors.text.primary }]}>
-                        {editBillingStatus === 'paid' ? 'Paid — this month already collected' : 'Due — this month not yet paid'}
+                      style={[styles.picker, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                      onPress={() => { setShowEditBillingStatusPicker(true); billingSheet.open(); }}
+                      activeOpacity={0.75} disabled={editLoading}>
+                      <Text style={[styles.pickerText, { color: textPrimary }]}>
+                        {editBillingStatus === 'paid' ? 'Paid — this month collected' : 'Due — this month not paid'}
                       </Text>
-                      <ChevronDown size={20} color={colors.text.tertiary} />
+                      <ChevronDown size={18} color={textTertiary} strokeWidth={2} />
                     </TouchableOpacity>
-                    <Text style={[styles.summaryLabel, { color: colors.text.secondary, marginTop: spacing.xs }]}>
-                      Used to create the first payment record correctly
-                    </Text>
+                    <Text style={[styles.fieldHint, { color: textTertiary }]}>Used to create the first payment record correctly</Text>
                   </View>
 
-                  <View style={styles.inputContainer}>
-                    <Text style={[styles.label, { color: colors.text.primary }]}>When is rent due each month?</Text>
+                  <View style={styles.field}>
+                    <Text style={[styles.fieldLabel, { color: textPrimary }]}>When is rent due each month?</Text>
                     <TouchableOpacity
-                      style={[styles.pickerButton, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium }]}
-                      onPress={() => setShowAnchorDayPicker(true)}
-                      activeOpacity={0.7}
-                      disabled={editLoading}>
-                      <Text style={[styles.pickerButtonText, { color: colors.text.primary }]}>📅 Day {editAnchorDay} • Every Month</Text>
-                      <ChevronDown size={20} color={colors.text.tertiary} />
+                      style={[styles.picker, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                      onPress={() => { setShowAnchorDayPicker(true); anchorSheet.open(); }}
+                      activeOpacity={0.75} disabled={editLoading}>
+                      <Text style={[styles.pickerText, { color: textPrimary }]}>📅 Day {editAnchorDay} · Every Month</Text>
+                      <ChevronDown size={18} color={textTertiary} strokeWidth={2} />
                     </TouchableOpacity>
-                    <Text style={[styles.summaryLabel, { color: colors.text.secondary, marginTop: spacing.xs }]}>Same day each month</Text>
+                    <Text style={[styles.fieldHint, { color: textTertiary }]}>Same day each month</Text>
                   </View>
                 </>
               )}
 
               <TouchableOpacity
-                style={[
-                  styles.submitButton,
-                  {
-                    backgroundColor: colors.primary[500],
-                    opacity: editLoading ? 0.6 : 1,
-                  },
-                ]}
-                onPress={handleSaveBillingConfig}
-                activeOpacity={0.8}
-                disabled={editLoading}>
-                {editLoading ? (
-                  <ActivityIndicator color={colors.white} size="small" />
-                ) : (
-                  <Text style={[styles.submitButtonText, { color: colors.white }]}>
-                    Save Changes
-                  </Text>
-                )}
+                style={[styles.submitBtn, { backgroundColor: brandColor, opacity: editLoading ? 0.6 : 1 }]}
+                onPress={handleSaveBillingConfig} activeOpacity={0.85} disabled={editLoading}>
+                {editLoading
+                  ? <ActivityIndicator color={colors.white} size="small" />
+                  : <Text style={[styles.submitBtnText, { color: colors.white }]}>Save Billing</Text>}
               </TouchableOpacity>
             </View>
           </ScrollView>
         </SafeAreaView>
       </Modal>
 
-      {/* Billing Status Picker Modal */}
-      <Modal
-        visible={showEditBillingStatusPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowEditBillingStatusPicker(false)}>
-        <View style={[styles.pickerOverlay, isTablet && styles.pickerOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
-          <View
-            style={[
-              styles.pickerContainer,
-              isTablet && styles.pickerContainerTablet,
-              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
-            ]}>
-            <View style={[styles.pickerHeader, { borderBottomColor: colors.border.light }]}>
-              <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>Current billing status</Text>
+      {/* ── Picker Sheets ─────────────────────────────────────────────────── */}
+      <PickerSheet visible={showEditBillingStatusPicker} onClose={() => { billingSheet.close(() => setShowEditBillingStatusPicker(false)); }} title="Billing Status" anim={billingSheet.anim}>
+        {(['paid','due'] as const).map(s => (
+          <SheetOption key={s} label={s === 'paid' ? 'Paid — this month collected' : 'Due — this month not paid'}
+            active={editBillingStatus === s}
+            onPress={() => { setEditBillingStatus(s); billingSheet.close(() => setShowEditBillingStatusPicker(false)); }} />
+        ))}
+      </PickerSheet>
+
+      <PickerSheet visible={showAnchorDayPicker} onClose={() => { anchorSheet.close(() => setShowAnchorDayPicker(false)); }} title="Rent Due Day" anim={anchorSheet.anim}>
+        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+          <SheetOption key={day} label={`Day ${day} · Every Month`}
+            active={editAnchorDay === day}
+            onPress={() => { setEditAnchorDay(day); anchorSheet.close(() => setShowAnchorDayPicker(false)); }} />
+        ))}
+      </PickerSheet>
+
+      <PickerSheet visible={showStatusPicker} onClose={() => { statusSheet.close(() => setShowStatusPicker(false)); }} title="Tenant Status" anim={statusSheet.anim}>
+        {(['active','vacated'] as const).map(s => (
+          <SheetOption key={s} label={s.charAt(0).toUpperCase() + s.slice(1)}
+            active={editTenantStatus === s}
+            onPress={() => { setEditTenantStatus(s); statusSheet.close(() => setShowStatusPicker(false)); }} />
+        ))}
+      </PickerSheet>
+
+      <PickerSheet visible={showEditRoomPicker} onClose={() => { roomSheet.close(() => setShowEditRoomPicker(false)); }} title="Select Room" anim={roomSheet.anim}>
+        {editRoomsWithBeds.map((rd, idx) => (
+          <SheetOption key={idx}
+            label={`Room ${rd.room.roomNumber}`}
+            sublabel={`Floor ${rd.room.floor} · ${rd.availableBeds.length} available · ₹${rd.room.price}`}
+            active={editTenantRoom?.id === rd.room.id}
+            onPress={() => { setEditTenantRoom(rd.room); roomSheet.close(() => setShowEditRoomPicker(false)); }} />
+        ))}
+      </PickerSheet>
+
+      <PickerSheet visible={showEditBedPicker} onClose={() => { bedSheet.close(() => setShowEditBedPicker(false)); }} title="Select Bed" anim={bedSheet.anim}>
+        {editAvailableBedsForRoom.map((bed, idx) => (
+          <SheetOption key={idx} label={`Bed ${bed.bedNumber}`}
+            active={editTenantBed?.id === bed.id}
+            onPress={() => { setEditTenantBed(bed); bedSheet.close(() => setShowEditBedPicker(false)); }} />
+        ))}
+      </PickerSheet>
+
+      {/* ── Delete Confirm ────────────────────────────────────────────────── */}
+      <Modal visible={showDeleteConfirmModal} transparent animationType="fade" onRequestClose={() => !tenantActionLoading && setShowDeleteConfirmModal(false)}>
+        <View style={[styles.deleteOverlay, { backgroundColor: colors.modal.overlay }]}>
+          <View style={[styles.deleteSheet, { backgroundColor: cardBg, maxWidth: modalMaxWidth }]}>
+            <View style={[styles.deleteIconWrap, { backgroundColor: dangerLight }]}>
+              <Trash2 size={28} color={dangerText} strokeWidth={2} />
             </View>
-            <ScrollView style={styles.pickerScrollView}>
-              {(['paid', 'due'] as const).map((s) => (
-                <TouchableOpacity
-                  key={s}
-                  style={[styles.pickerOption, { borderBottomColor: colors.border.light }]}
-                  onPress={() => { setEditBillingStatus(s); setShowEditBillingStatusPicker(false); }}
-                  activeOpacity={0.7}>
-                  <Text style={[styles.pickerOptionText, {
-                    color: editBillingStatus === s ? colors.primary[500] : colors.text.primary,
-                    fontWeight: editBillingStatus === s ? typography.fontWeight.semibold : typography.fontWeight.regular,
-                  }]}>
-                    {s === 'paid' ? 'Paid — this month already collected' : 'Due — this month not yet paid'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.pickerCloseButton, { borderTopColor: colors.border.light }]}
-              onPress={() => setShowEditBillingStatusPicker(false)}
-              activeOpacity={0.7}>
-              <Text style={[styles.pickerCloseButtonText, { color: colors.text.secondary }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Anchor Day Picker Modal */}
-      <Modal
-        visible={showAnchorDayPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowAnchorDayPicker(false)}>
-        <View style={[styles.pickerOverlay, isTablet && styles.pickerOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
-          <View
-            style={[
-              styles.pickerContainer,
-              isTablet && styles.pickerContainerTablet,
-              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
-            ]}>
-            <View style={[styles.pickerHeader, { borderBottomColor: colors.border.light }]}>
-              <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>When is rent due each month?</Text>
-            </View>
-            <ScrollView style={styles.pickerScrollView}>
-              {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                <TouchableOpacity
-                  key={day}
-                  style={[styles.pickerOption, { borderBottomColor: colors.border.light }]}
-                  onPress={() => {
-                    setEditAnchorDay(day);
-                    setShowAnchorDayPicker(false);
-                  }}
-                  activeOpacity={0.7}>
-                  <Text
-                    style={[
-                      styles.pickerOptionText,
-                      {
-                        color:
-                          editAnchorDay === day ? colors.primary[500] : colors.text.primary,
-                        fontWeight:
-                          editAnchorDay === day
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
-                      },
-                    ]}>
-                    Day {day} • Every Month
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.pickerCloseButton, { borderTopColor: colors.border.light }]}
-              onPress={() => setShowAnchorDayPicker(false)}
-              activeOpacity={0.7}>
-              <Text style={[styles.pickerCloseButtonText, { color: colors.text.secondary }]}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Status Picker Modal */}
-      <Modal
-        visible={showStatusPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowStatusPicker(false)}>
-        <View style={[styles.pickerOverlay, isTablet && styles.pickerOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
-          <View
-            style={[
-              styles.pickerContainer,
-              isTablet && styles.pickerContainerTablet,
-              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
-            ]}>
-            <View style={[styles.pickerHeader, { borderBottomColor: colors.border.light }]}>
-              <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>Select Status</Text>
-            </View>
-            <ScrollView style={styles.pickerScrollView}>
-              <TouchableOpacity
-                style={[styles.pickerOption, { borderBottomColor: colors.border.light }]}
-                onPress={() => {
-                  setEditTenantStatus('active');
-                  setShowStatusPicker(false);
-                }}
-                activeOpacity={0.7}>
-                <Text
-                  style={[
-                    styles.pickerOptionText,
-                    {
-                      color:
-                        editTenantStatus === 'active' ? colors.primary[500] : colors.text.primary,
-                      fontWeight:
-                        editTenantStatus === 'active'
-                          ? typography.fontWeight.semibold
-                          : typography.fontWeight.regular,
-                    },
-                  ]}>
-                  Active
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.pickerOption, { borderBottomColor: colors.border.light }]}
-                onPress={() => {
-                  setEditTenantStatus('vacated');
-                  setShowStatusPicker(false);
-                }}
-                activeOpacity={0.7}>
-                <Text
-                  style={[
-                    styles.pickerOptionText,
-                    {
-                      color:
-                        editTenantStatus === 'vacated' ? colors.primary[500] : colors.text.primary,
-                      fontWeight:
-                        editTenantStatus === 'vacated'
-                          ? typography.fontWeight.semibold
-                          : typography.fontWeight.regular,
-                    },
-                  ]}>
-                  Vacated
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.pickerCloseButton, { borderTopColor: colors.border.light }]}
-              onPress={() => setShowStatusPicker(false)}
-              activeOpacity={0.7}>
-              <Text style={[styles.pickerCloseButtonText, { color: colors.text.secondary }]}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Delete Confirmation Modal */}
-      <Modal
-        visible={showDeleteConfirmModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => !tenantActionLoading && setShowDeleteConfirmModal(false)}>
-        <View style={[styles.deleteModalOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
-          <View
-            style={[
-              styles.deleteModalContent,
-              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
-            ]}>
-            {/* Icon */}
-            <View style={[styles.deleteIconContainer, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50] }]}>
-              <Trash2 size={32} color={isDark ? colors.danger[300] : colors.danger[500]} />
-            </View>
-
-            {/* Title */}
-            <Text style={[styles.deleteModalTitle, { color: colors.text.primary }]}>Delete Tenant?</Text>
-
-            {/* Message */}
-            <Text style={[styles.deleteModalMessage, { color: colors.text.secondary }]}>
-              This will permanently remove {tenant?.name}, their profile, and all payment records.
+            <Text style={[styles.deleteTitle, { color: textPrimary }]}>Delete Tenant?</Text>
+            <Text style={[styles.deleteMsg, { color: textSecondary }]}>
+              This will permanently remove {tenant.name}, their profile, and all payment records.
             </Text>
-
-            {/* Warning */}
-            <View style={[styles.deleteWarning, { backgroundColor: colors.danger[50], borderLeftColor: colors.danger[500] }]}>
-              <Text style={[styles.deleteWarningText, { color: colors.danger[700] }]}>This action cannot be undone.</Text>
+            <View style={[styles.deleteWarning, { backgroundColor: dangerLight, borderLeftColor: dangerColor }]}>
+              <Text style={[styles.deleteWarningText, { color: isDark ? colors.danger[300] : colors.danger[700] }]}>
+                This action cannot be undone.
+              </Text>
             </View>
-
-            {/* Buttons */}
-            <View style={styles.deleteModalButtons}>
+            <View style={styles.deleteBtns}>
               <TouchableOpacity
-                style={[styles.deleteCancelButton, { backgroundColor: colors.background.tertiary }]}
-                onPress={() => setShowDeleteConfirmModal(false)}
-                disabled={tenantActionLoading}
-                activeOpacity={0.7}>
-                <Text style={[styles.deleteCancelButtonText, { color: colors.text.primary }]}>Cancel</Text>
+                style={[styles.deleteCancelBtn, { backgroundColor: colors.background.tertiary }]}
+                onPress={() => setShowDeleteConfirmModal(false)} disabled={tenantActionLoading} activeOpacity={0.75}>
+                <Text style={[styles.deleteCancelText, { color: textPrimary }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.deleteConfirmButton, { backgroundColor: colors.danger[500] }]}
-                onPress={confirmDeleteTenant}
-                disabled={tenantActionLoading}
-                activeOpacity={0.7}>
-                {tenantActionLoading ? (
-                  <ActivityIndicator color={colors.white} size="small" />
-                ) : (
-                  <Text style={[styles.deleteConfirmButtonText, { color: colors.white }]}>Delete</Text>
-                )}
+                style={[styles.deleteConfirmBtn, { backgroundColor: dangerColor }]}
+                onPress={confirmDeleteTenant} disabled={tenantActionLoading} activeOpacity={0.8}>
+                {tenantActionLoading
+                  ? <ActivityIndicator color={colors.white} size="small" />
+                  : <Text style={[styles.deleteConfirmText, { color: colors.white }]}>Delete</Text>}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Edit Room Picker Modal */}
-      <Modal
-        visible={showEditRoomPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowEditRoomPicker(false)}>
-        <View style={[styles.pickerOverlay, isTablet && styles.pickerOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
-          <View
-            style={[
-              styles.pickerContainer,
-              isTablet && styles.pickerContainerTablet,
-              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
-            ]}>
-            <View style={[styles.pickerHeader, { borderBottomColor: colors.border.light }]}>
-              <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>
-                Select Room
-              </Text>
-            </View>
-
-            <ScrollView style={styles.pickerScrollView}>
-              {editRoomsWithBeds.map((roomData, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.pickerOption,
-                    { borderBottomColor: colors.border.light },
-                  ]}
-                  onPress={() => {
-                    setEditTenantRoom(roomData.room);
-                    setShowEditRoomPicker(false);
-                  }}
-                  activeOpacity={0.7}>
-                  <View style={styles.modalOptionContent}>
-                    <Text
-                      style={[
-                        styles.pickerOptionText,
-                        {
-                          color:
-                            editTenantRoom?.id === roomData.room.id
-                              ? colors.primary[500]
-                              : colors.text.primary,
-                          fontWeight:
-                            editTenantRoom?.id === roomData.room.id
-                              ? typography.fontWeight.semibold
-                              : typography.fontWeight.regular,
-                        },
-                      ]}>
-                      Room {roomData.room.roomNumber}
-                    </Text>
-                    <Text style={[styles.pickerOptionSubtext, { color: colors.text.secondary }]}>
-                      Floor {roomData.room.floor} • {roomData.availableBeds.length} available • ₹{roomData.room.price}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <TouchableOpacity
-              style={[styles.pickerCloseButton, { borderTopColor: colors.border.light }]}
-              onPress={() => setShowEditRoomPicker(false)}
-              activeOpacity={0.7}>
-              <Text style={[styles.pickerCloseButtonText, { color: colors.text.secondary }]}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Edit Bed Picker Modal */}
-      <Modal
-        visible={showEditBedPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowEditBedPicker(false)}>
-        <View style={[styles.pickerOverlay, isTablet && styles.pickerOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
-          <View
-            style={[
-              styles.pickerContainer,
-              isTablet && styles.pickerContainerTablet,
-              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
-            ]}>
-            <View style={[styles.pickerHeader, { borderBottomColor: colors.border.light }]}>
-              <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>
-                Select Bed
-              </Text>
-            </View>
-
-            <ScrollView style={styles.pickerScrollView}>
-              {editAvailableBedsForRoom.map((bed, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.pickerOption,
-                    { borderBottomColor: colors.border.light },
-                  ]}
-                  onPress={() => {
-                    setEditTenantBed(bed);
-                    setShowEditBedPicker(false);
-                  }}
-                  activeOpacity={0.7}>
-                  <Text
-                    style={[
-                      styles.pickerOptionText,
-                      {
-                        color:
-                          editTenantBed?.id === bed.id
-                            ? colors.primary[500]
-                            : colors.text.primary,
-                        fontWeight:
-                          editTenantBed?.id === bed.id
-                            ? typography.fontWeight.semibold
-                            : typography.fontWeight.regular,
-                      },
-                    ]}>
-                    Bed {bed.bedNumber}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <TouchableOpacity
-              style={[styles.pickerCloseButton, { borderTopColor: colors.border.light }]}
-              onPress={() => setShowEditBedPicker(false)}
-              activeOpacity={0.7}>
-              <Text style={[styles.pickerCloseButtonText, { color: colors.text.secondary }]}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderBottomWidth: 1,
-  },
-  backButton: {
-    width: 40,
-  },
-  headerTitle: {
-    ...textPresets.h4,
-    color: colors.text.primary,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  iconActionButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  placeholder: {
-    width: 40,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.xxxl,
-  },
-  profileCard: {
-    marginBottom: spacing.lg,
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.lg,
-  },
-  avatarText: {
-    ...textPresets.h3,
-    color: colors.white,
-  },
-  profileInfo: {
-    flex: 1,
-    gap: spacing.sm,
-  },
-  tenantName: {
-    ...textPresets.h3,
-    color: colors.text.primary,
-  },
-  tenantStatus: {
-    ...textPresets.bodyMedium,
-    color: colors.text.secondary,
-  },
-  divider: {
-    height: 1,
-    marginBottom: spacing.lg,
-  },
-  contactSection: {
-    gap: spacing.md,
-  },
-  contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flexWrap: 'wrap',
-  },
-  contactLabel: {
-    ...textPresets.bodyMedium,
-    color: colors.text.secondary,
-  },
-  contactText: {
-    ...textPresets.body,
-    color: colors.text.primary,
-  },
-
-  section: {
-    marginBottom: spacing.lg,
-  },
-  overviewColumns: {
-    width: '100%',
-  },
-  overviewColumnsTablet: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    alignItems: 'flex-start',
-  },
-  overviewColumn: {
-    width: '100%',
-  },
-  overviewColumnTablet: {
-    flex: 1,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  sectionTitle: {
-    ...textPresets.h2,
-    color: colors.text.primary,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    gap: spacing.xs,
-    ...shadows.sm,
-  },
-  addButtonText: {
-    ...textPresets.buttonSm,
-  },
-  summaryCard: {
-    paddingVertical: spacing.lg,
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  summaryItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  summaryLabel: {
-    ...textPresets.caption,
-    color: colors.text.secondary,
-    marginBottom: spacing.sm,
-  },
-  summaryValue: {
-    ...textPresets.h4,
-  },
-  emptyPaymentCard: {
-    paddingVertical: spacing.xl,
-  },
-  paymentCard: {
-    marginBottom: spacing.sm,
-  },
-  paymentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  paymentLeft: {
-    flex: 1,
-  },
-  paymentAmount: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
-    marginBottom: 2,
-  },
-  paymentMethod: {
-    ...textPresets.caption,
-    color: colors.text.secondary,
-  },
-  paymentDetails: {
-    gap: 2,
-  },
-  paymentDetailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  paymentDetailLabel: {
-    ...textPresets.caption,
-    color: colors.text.tertiary,
-  },
-  paymentDetailValue: {
-    ...textPresets.caption,
-    color: colors.text.secondary,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    gap: spacing.xs,
-    ...shadows.sm,
-  },
-  actionButtonText: {
-    ...textPresets.buttonSm,
-    color: colors.white,
-  },
-  nextDueContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing.sm,
-    ...shadows.md,
-  },
-  nextDueText: {
-    ...textPresets.buttonSm,
-  },
-  billingCard: {
-    paddingVertical: spacing.lg,
-  },
-  billingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  billingStatusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-  },
-  billingLabel: {
-    ...textPresets.bodyMedium,
-    color: colors.text.secondary,
-  },
-  billingValue: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
-  },
-  statusBadge: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
-  },
-  statusBadgeText: {
-    ...textPresets.badge,
-  },
-  infoBanner: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-  },
-  infoBannerText: {
-    ...textPresets.bodyMedium,
-    color: colors.text.secondary,
-  },
-  noBillingText: {
-    ...textPresets.body,
-    color: colors.text.secondary,
-    textAlign: 'center',
-    paddingVertical: spacing.lg,
-  },
-  modalContainer: {
-    flex: 1,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderBottomWidth: 1,
-  },
-  modalTitle: {
-    ...textPresets.h4,
-    color: colors.text.primary,
-  },
-  modalScrollContent: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
-  },
-  formContainer: {
-    width: '100%',
-  },
-  formContainerTablet: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  formFieldHalf: {
-    width: '48.5%',
-  },
-  formFieldFull: {
-    width: '100%',
-  },
-  dateInputContainer: {
-    position: 'relative',
-  },
-  dateIcon: {
-    position: 'absolute',
-    left: spacing.lg,
-    top: spacing.md,
-    zIndex: 1,
-  },
-  dateInput: {
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    paddingLeft: 48,
-    fontSize: typography.fontSize.md,
-    borderWidth: 1,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.xl,
-  },
-  toggleLabel: {
-    flex: 1,
-    marginRight: spacing.md,
-  },
-  toggleHint: {
-    ...textPresets.hint,
-  },
-  inputContainer: {
-    marginBottom: spacing.xl,
-  },
-  label: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
-    marginBottom: spacing.sm,
-  },
-  textInput: {
-    ...textPresets.body,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderWidth: 1,
-  },
-  phoneInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  phoneTextInput: {
-    flex: 1,
-  },
-  dialButton: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pickerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderWidth: 1,
-  },
-  pickerButtonText: {
-    ...textPresets.body,
-  },
-  submitButton: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: spacing.sm,
-    ...shadows.lg,
-  },
-  submitButtonText: {
-    ...textPresets.button,
-    color: colors.white,
-  },
-  pickerOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  pickerOverlayTablet: {
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  pickerContainer: {
-    width: '100%',
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    maxHeight: '50%',
+// ── Sheet styles (shared) ─────────────────────────────────────────────────────
+const sheetStyles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end' },
+  sheet: {
+    borderTopLeftRadius: 22, borderTopRightRadius: 22,
     ...shadows.xl,
   },
-  pickerContainerTablet: {
-    alignSelf: 'center',
-    maxHeight: '75%',
-    borderBottomLeftRadius: radius.xl,
-    borderBottomRightRadius: radius.xl,
+  handle: { alignItems: 'center', paddingTop: spacing.sm, paddingBottom: spacing.xs },
+  handleBar: { width: 38, height: 4, borderRadius: 2, opacity: 0.35 },
+  sheetHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1,
   },
-  pickerHeader: {
-    padding: spacing.lg,
-    borderBottomWidth: 1,
+  sheetTitle: { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.md, letterSpacing: typography.letterSpacing.tight },
+  closeBtn: { width: 30, height: 30, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  option: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1 },
+  optionText: { fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.md },
+  optionSub: { fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.xs, marginTop: 2 },
+});
+
+// ── Screen styles ─────────────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+
+  // Nav bar
+  navBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1,
   },
-  pickerTitle: {
-    ...textPresets.h4,
-    color: colors.text.primary,
-    textAlign: 'center',
-  },
-  pickerScrollView: {
-    maxHeight: 250,
-  },
-  pickerOption: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderBottomWidth: 1,
-  },
-  pickerOptionText: {
-    ...textPresets.body,
-  },
-  pickerCloseButton: {
-    padding: spacing.lg,
-    borderTopWidth: 1,
-    alignItems: 'center',
-  },
-  pickerCloseButtonText: {
-    ...textPresets.bodyMedium,
-    color: colors.text.secondary,
-  },
-  infoBox: {
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-  },
-  infoLabel: {
-    ...textPresets.bodyMedium,
-    color: colors.text.secondary,
-    marginBottom: spacing.xs,
-  },
-  infoValue: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
-    marginBottom: spacing.xs,
-  },
-  infoNote: {
-    ...textPresets.hint,
-  },
-  // Delete Confirmation Modal Styles
-  deleteModalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  deleteModalContent: {
-    borderRadius: radius.xl,
-    paddingVertical: spacing.xxl,
-    paddingHorizontal: spacing.xl,
-    alignItems: 'center',
-    width: '100%',
-    maxWidth: 360,
-    ...shadows.lg,
-  },
-  deleteIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  deleteModalTitle: {
-    ...textPresets.h3,
-    color: colors.text.primary,
-    marginBottom: spacing.sm,
-  },
-  deleteModalMessage: {
-    ...textPresets.body,
-    color: colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-  },
-  deleteWarning: {
-    borderLeftWidth: 4,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.lg,
-    width: '100%',
-  },
-  deleteWarningText: {
-    ...textPresets.bodyMedium,
-    color: colors.danger[700],
-  },
-  deleteModalButtons: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    width: '100%',
-  },
-  deleteCancelButton: {
-    flex: 1,
-    paddingVertical: spacing.lg,
-    borderRadius: radius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteCancelButtonText: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
-  },
-  deleteConfirmButton: {
-    flex: 1,
-    paddingVertical: spacing.lg,
-    borderRadius: radius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteConfirmButtonText: {
-    ...textPresets.button,
-    color: colors.white,
-  },
-  modalOptionContent: {
-    gap: spacing.xs,
-  },
-  pickerOptionSubtext: {
-    ...textPresets.caption,
-    color: colors.text.secondary,
-  },
-  loadMoreButton: {
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderRadius: radius.md,
-    marginTop: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  loadMoreText: {
-    ...textPresets.buttonSm,
-    color: colors.primary[500],
-  },
+  navBack: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  navTitle: { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.lg, letterSpacing: typography.letterSpacing.tight },
+  navSpacer: { width: 36 },
+  navActions: { flexDirection: 'row', gap: spacing.xs },
+  navAction: { width: 32, height: 32, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+
+  scrollContent: { paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
+
+  // Profile hero card
+  heroCard: { borderRadius: radius.xl, borderWidth: 1, marginBottom: spacing.md, overflow: 'hidden' },
+  heroTop: { flexDirection: 'row', alignItems: 'center', padding: spacing.lg, gap: spacing.md },
+  avatar: { width: 56, height: 56, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.xl, color: '#FFFFFF', letterSpacing: typography.letterSpacing.tight },
+  heroInfo: { flex: 1, gap: spacing.sm },
+  heroName: { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.xl, letterSpacing: typography.letterSpacing.tight },
+  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.full, borderWidth: 1 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusPillText: { fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.xs, letterSpacing: typography.letterSpacing.wide },
+  heroMeta: { borderTopWidth: 1 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  metaIcon: { width: 26, height: 26, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  metaLabel: { fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.xs, letterSpacing: typography.letterSpacing.wide, textTransform: 'uppercase', width: 68 },
+  metaValue: { fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.sm },
+
+  // KPI cards
+  kpiRow: { marginBottom: spacing.md, gap: spacing.md },
+  kpiCard: { borderRadius: radius.xl, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
+  kpiHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  kpiIconBox: { width: 30, height: 30, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  kpiTitle: { flex: 1, fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.md, letterSpacing: typography.letterSpacing.tight },
+  editChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.full, borderWidth: 1 },
+  editChipText: { fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.xs },
+  kpiGrid: { flexDirection: 'row', alignItems: 'center' },
+  kpiStat: { flex: 1, alignItems: 'center' },
+  kpiStatLabel: { fontFamily: typography.fontFamily.semiBold, fontSize: 9, letterSpacing: typography.letterSpacing.wider, textTransform: 'uppercase', marginBottom: 4 },
+  kpiStatValue: { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.md, letterSpacing: typography.letterSpacing.tight },
+  kpiDivider: { width: 1, height: 36 },
+
+  // Billing rows
+  billingRows: { gap: 0 },
+  billingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.sm },
+  billingDivider: { height: 1 },
+  billingLabel: { fontFamily: typography.fontFamily.semiBold, fontSize: 9, letterSpacing: typography.letterSpacing.wider, textTransform: 'uppercase' },
+  billingValue: { fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.sm },
+  noBillingText: { fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.sm, textAlign: 'center', paddingVertical: spacing.md },
+
+  // Section
+  section: { marginBottom: spacing.lg },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
+  sectionTitle: { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.lg, letterSpacing: typography.letterSpacing.tight },
+  headerAction: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md },
+  headerActionText: { fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.sm },
+
+  emptyCard: { borderRadius: radius.xl, borderWidth: 1, paddingVertical: spacing.xl },
+
+  // Payment rows
+  paymentRow: { flexDirection: 'row', alignItems: 'stretch', borderRadius: radius.lg, borderWidth: 1, marginBottom: spacing.sm, overflow: 'hidden' },
+  paymentStrip: { width: 3 },
+  paymentBody: { flex: 1, padding: spacing.md },
+  paymentTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs },
+  paymentAmount: { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.lg, letterSpacing: typography.letterSpacing.tight },
+  paymentPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.full, borderWidth: 1 },
+  paymentPillText: { fontFamily: typography.fontFamily.semiBold, fontSize: 9, letterSpacing: typography.letterSpacing.wide, textTransform: 'uppercase' },
+  paymentMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  paymentDate: { fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.xs, flex: 1 },
+  methodChip: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.sm, borderWidth: 1 },
+  methodText: { fontFamily: typography.fontFamily.medium, fontSize: 9, letterSpacing: typography.letterSpacing.wide, textTransform: 'uppercase' },
+  loadMoreBtn: { paddingVertical: spacing.md, alignItems: 'center', borderWidth: 1, borderStyle: 'dashed', borderRadius: radius.md, marginTop: spacing.sm },
+  loadMoreText: { fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.sm },
+
+  // Form (edit tenant / billing)
+  formScroll: { paddingHorizontal: spacing.md, paddingTop: spacing.lg, paddingBottom: spacing.xxxl },
+  formWrap: { width: '100%' },
+  formWrapTablet: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start' },
+  field: { marginBottom: spacing.lg },
+  fieldHalf: { width: '48.5%' },
+  fieldFull: { width: '100%' },
+  fieldLabel: { fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.sm, marginBottom: spacing.sm, letterSpacing: typography.letterSpacing.wide },
+  fieldHint: { fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.xs, marginTop: spacing.xs, letterSpacing: typography.letterSpacing.wide },
+  input: { borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderWidth: 1, fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.md },
+  inputMulti: { minHeight: 70, textAlignVertical: 'top' },
+  phoneRow: { flexDirection: 'row', gap: spacing.sm },
+  dialBtn: { width: 48, height: 48, borderRadius: radius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  picker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderWidth: 1 },
+  pickerText: { fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.md, flex: 1 },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', borderRadius: radius.lg, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.md, marginBottom: spacing.lg, gap: spacing.md },
+  toggleHint: { fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.xs, marginTop: 2 },
+  submitBtn: { borderRadius: radius.md, paddingVertical: spacing.lg, alignItems: 'center', justifyContent: 'center', marginTop: spacing.sm, ...shadows.md },
+  submitBtnText: { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.md, letterSpacing: typography.letterSpacing.wide },
+
+  // Delete confirm
+  deleteOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.lg },
+  deleteSheet: { borderRadius: radius.xl, paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl, alignItems: 'center', width: '100%', maxWidth: 360, ...shadows.xl },
+  deleteIconWrap: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
+  deleteTitle: { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.xl, letterSpacing: typography.letterSpacing.tight, marginBottom: spacing.sm },
+  deleteMsg: { fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.md, textAlign: 'center', marginBottom: spacing.lg, lineHeight: 22 },
+  deleteWarning: { borderLeftWidth: 3, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginBottom: spacing.lg, width: '100%' },
+  deleteWarningText: { fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.sm },
+  deleteBtns: { flexDirection: 'row', gap: spacing.md, width: '100%' },
+  deleteCancelBtn: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.lg, alignItems: 'center' },
+  deleteCancelText: { fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.md },
+  deleteConfirmBtn: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.lg, alignItems: 'center' },
+  deleteConfirmText: { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.md },
 });

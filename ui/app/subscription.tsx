@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   useWindowDimensions,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -21,10 +22,12 @@ import {
   CreditCard,
   Gem,
   Trophy,
-  ArrowRight,
+  ArrowUpRight,
   AlertCircle,
+  CheckCircle,
+  Zap,
 } from 'lucide-react-native';
-import { spacing, radius, shadows, colors } from '@/theme';
+import { spacing, radius, shadows } from '@/theme';
 import { typography, textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
@@ -41,91 +44,125 @@ interface SubscriptionCachePayload {
 
 const SUBSCRIPTION_CACHE_STALE_MS = 2 * 60 * 1000;
 
-const getPlanTheme = (planName: string, colors: any, isDark: boolean) => {
-  const freeTheme = {
-    borderColor: isDark ? colors.neutral[600] : colors.neutral[400],
-    iconBg: isDark ? colors.neutral[800] : colors.neutral[200],
-    accentColor: isDark ? colors.neutral[200] : colors.neutral[600],
-    icon: Crown,
-  };
-  const proTheme = {
-    borderColor: isDark ? colors.primary[400] : colors.primary[500],
-    iconBg: isDark ? colors.primary[900] : colors.primary[50],
-    accentColor: isDark ? colors.primary[300] : colors.primary[500],
-    icon: Trophy,
-  };
-  const premiumTheme = {
-    borderColor: isDark ? colors.purple[400] : colors.purple[500],
-    iconBg: isDark ? colors.purple[900] : colors.purple[50],
-    accentColor: isDark ? colors.purple[300] : colors.purple[500],
-    icon: Gem,
-  };
+// Plan tier config — all colors resolved at runtime from theme
+type PlanTier = 'free' | 'pro' | 'premium';
+function getPlanTier(name: string): PlanTier {
+  const n = name.toLowerCase();
+  if (n.includes('premium')) return 'premium';
+  if (n.includes('pro'))     return 'pro';
+  return 'free';
+}
+function getPlanIcon(tier: PlanTier) {
+  if (tier === 'premium') return Gem;
+  if (tier === 'pro')     return Trophy;
+  return Crown;
+}
 
-  const name = planName.toLowerCase();
-  if (name.includes('premium')) return premiumTheme;
-  if (name.includes('pro')) return proTheme;
-  return freeTheme;
-};
+// ── Animated progress bar ─────────────────────────────────────────────────────
+function ProgressBar({ used, limit, fillColor, trackColor }: {
+  used: number; limit: number; fillColor: string; trackColor: string;
+}) {
+  const pct = limit === 999 ? 12 : Math.min((used / limit) * 100, 100);
+  const anim = useRef(new Animated.Value(0)).current;
+  useRef(() => {
+    Animated.timing(anim, { toValue: pct, duration: 800, delay: 200, useNativeDriver: false }).start();
+  }).current?.();
+
+  return (
+    <View style={[pbStyles.track, { backgroundColor: trackColor }]}>
+      <Animated.View
+        style={[pbStyles.fill, {
+          backgroundColor: fillColor,
+          width: anim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
+        }]}
+      />
+    </View>
+  );
+}
+const pbStyles = StyleSheet.create({
+  track: { height: 3, borderRadius: 2, overflow: 'hidden', marginTop: 6, marginBottom: 4 },
+  fill:  { height: '100%', borderRadius: 2 },
+});
 
 export default function SubscriptionScreen() {
   const { colors, isDark } = useTheme();
   const { isTablet, contentMaxWidth } = useResponsiveLayout();
   const { width: windowWidth } = useWindowDimensions();
   const router = useRouter();
+
   const [activeSubscription, setActiveSubscription] = useState<Subscription | null>(null);
-  const [allPlans, setAllPlans] = useState<PlanMetadata[]>([]);
-  const [usage, setUsage] = useState<Usage | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [allPlans,  setAllPlans]  = useState<PlanMetadata[]>([]);
+  const [usage,     setUsage]     = useState<Usage | null>(null);
+  const [loading,   setLoading]   = useState(true);
+  const [refreshing,setRefreshing]= useState(false);
+  const [error,     setError]     = useState<string | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const isFetchingRef = useRef(false);
+
+  const isFetchingRef       = useRef(false);
   const lastFocusRefreshRef = useRef<number>(0);
 
+  // ── Color aliases ──────────────────────────────────────────────────────────
+  const brandColor    = colors.primary[500];
+  const brandLight    = isDark ? colors.primary[900] : colors.primary[50];
+  const purpleColor   = colors.purple[500];
+  const purpleLight   = isDark ? colors.purple[900] : colors.purple[50];
+  const cardBg        = colors.background.secondary;
+  const cardBorder    = colors.border.medium;
+  const pageBg        = colors.background.primary;
+  const textPrimary   = colors.text.primary;
+  const textSecondary = colors.text.secondary;
+  const textTertiary  = colors.text.tertiary;
+
+  function tierColors(tier: PlanTier) {
+    if (tier === 'premium') return {
+      accent: isDark ? colors.purple[300] : colors.purple[500],
+      light:  isDark ? colors.purple[900] : colors.purple[50],
+      border: isDark ? colors.purple[700] : colors.purple[200],
+    };
+    if (tier === 'pro') return {
+      accent: isDark ? colors.primary[300] : colors.primary[500],
+      light:  isDark ? colors.primary[900] : colors.primary[50],
+      border: isDark ? colors.primary[700] : colors.primary[200],
+    };
+    return {
+      accent: isDark ? colors.neutral[300] : colors.neutral[500],
+      light:  isDark ? colors.neutral[800] : colors.neutral[100],
+      border: isDark ? colors.neutral[600] : colors.neutral[300],
+    };
+  }
+
+  // ── Data ───────────────────────────────────────────────────────────────────
   const fetchSubscriptionData = async (forceRefresh = false) => {
     if (isFetchingRef.current) return;
-
     const cacheKey = cacheKeys.subscription();
     if (!forceRefresh) {
-      const cachedData = getScreenCache<SubscriptionCachePayload>(cacheKey, SUBSCRIPTION_CACHE_STALE_MS);
-      if (cachedData) {
-        setActiveSubscription(cachedData.activeSubscription);
-        setUsage(cachedData.usage);
-        setAllPlans(cachedData.allPlans);
-        setError(null);
-        setLoading(false);
-        return;
+      const cached = getScreenCache<SubscriptionCachePayload>(cacheKey, SUBSCRIPTION_CACHE_STALE_MS);
+      if (cached) {
+        setActiveSubscription(cached.activeSubscription);
+        setUsage(cached.usage);
+        setAllPlans(cached.allPlans);
+        setError(null); setLoading(false); return;
       }
     } else {
       clearScreenCache('subscription:');
     }
-
     try {
       isFetchingRef.current = true;
-      setLoading(true);
-      setError(null);
-
+      setLoading(true); setError(null);
       const [subRes, usageRes, plansRes] = await Promise.all([
         subscriptionService.getAllSubscriptions(),
         subscriptionService.getUsage(),
         subscriptionService.getPlans(),
       ]);
-
-      const active = subRes.data.subscriptions.find(s => s.status === 'active');
+      const active = subRes.data.subscriptions.find((s: Subscription) => s.status === 'active');
       setActiveSubscription(active || null);
       setUsage(usageRes.data);
       setAllPlans(plansRes.data.plans);
-
-      setScreenCache(cacheKey, {
-        activeSubscription: active || null,
-        usage: usageRes.data,
-        allPlans: plansRes.data.plans,
-      });
+      setScreenCache(cacheKey, { activeSubscription: active || null, usage: usageRes.data, allPlans: plansRes.data.plans });
     } catch (err: any) {
       setError(err?.message || 'Failed to load subscription');
     } finally {
-      setLoading(false);
-      isFetchingRef.current = false;
+      setLoading(false); isFetchingRef.current = false;
     }
   };
 
@@ -145,17 +182,12 @@ export default function SubscriptionScreen() {
     setRefreshing(false);
   };
 
-  const currentPlan = activeSubscription?.plan || allPlans[0]?.name || '';
-  const activePlanMeta = allPlans.find(
-    (plan) => plan.name.toLowerCase() === currentPlan.toLowerCase()
-  );
-  const propertyLimit = activePlanMeta?.properties ?? activeSubscription?.propertyLimit ?? 0;
-  const tenantLimit = activePlanMeta?.tenants ?? activeSubscription?.tenantLimit ?? 0;
-  const roomLimit = activePlanMeta?.rooms ?? activeSubscription?.roomLimit ?? 0;
-  const staffLimit = activePlanMeta?.staff ?? activeSubscription?.staffLimit ?? 0;
-  const isPaidPlan = currentPlan ? currentPlan.toLowerCase() !== 'free' : false;
-  const availableWidth = isTablet && contentMaxWidth ? Math.min(windowWidth, contentMaxWidth) : windowWidth;
-  const planCardWidth = Math.min(Math.max(availableWidth - 100, 280), 560);
+  const currentPlan    = activeSubscription?.plan || allPlans[0]?.name || '';
+  const activePlanMeta = allPlans.find(p => p.name.toLowerCase() === currentPlan.toLowerCase());
+  const propertyLimit  = activePlanMeta?.properties ?? activeSubscription?.propertyLimit ?? 0;
+  const tenantLimit    = activePlanMeta?.tenants    ?? activeSubscription?.tenantLimit   ?? 0;
+  const roomLimit      = activePlanMeta?.rooms      ?? activeSubscription?.roomLimit     ?? 0;
+  const staffLimit     = activePlanMeta?.staff      ?? activeSubscription?.staffLimit    ?? 0;
 
   const formatPrice = (paise: number) => {
     if (paise === 0) return 'Free';
@@ -170,108 +202,85 @@ export default function SubscriptionScreen() {
     return colors.success[500];
   };
 
-  const getProgressWidth = (used: number, limit: number) => {
-    if (limit === 999) return 15;
-    return Math.min((used / limit) * 100, 100);
+  const getProgressTrack = (used: number, limit: number) => {
+    if (limit === 999) return isDark ? colors.success[900] : colors.success[50];
+    const pct = (used / limit) * 100;
+    if (pct >= 90) return isDark ? colors.danger[900] : colors.danger[50];
+    if (pct >= 70) return isDark ? colors.warning[900] : colors.warning[50];
+    return isDark ? colors.success[900] : colors.success[50];
   };
 
-  const renderPlanPage = (plan: PlanMetadata, index: number) => {
-    const theme = getPlanTheme(plan.name, colors, isDark);
-    const isCurrent = plan.name.toLowerCase() === currentPlan.toLowerCase();
-    const planDisplayName = plan.display_name || plan.name.charAt(0).toUpperCase() + plan.name.slice(1);
-    const PlanIcon = theme.icon;
+  // ── Plan card ──────────────────────────────────────────────────────────────
+  const renderPlanCard = (plan: PlanMetadata) => {
+    const tier        = getPlanTier(plan.name);
+    const tc          = tierColors(tier);
+    const isCurrent   = plan.name.toLowerCase() === currentPlan.toLowerCase();
+    const PlanIcon    = getPlanIcon(tier);
+    const displayName = plan.display_name || plan.name.charAt(0).toUpperCase() + plan.name.slice(1);
+    const price       = plan.periods?.[0]?.price || 0;
 
     return (
-      <View 
-        key={plan.name} 
+      <View
+        key={plan.name}
         style={[
-          styles.pageContainer,
-          { width: planCardWidth },
-          { 
-            backgroundColor: colors.background.secondary,
-            borderColor: theme.borderColor,
-            borderWidth: 2,
-          },
-        ]}
-      >
-        {/* Notebook binding holes */}
-        <View style={styles.bindingHoles}>
-          {[0, 1, 2, 3].map((i) => (
-            <View key={i} style={[styles.bindingHole, { backgroundColor: colors.background.primary, borderColor: colors.neutral[400] }]} />
-          ))}
-        </View>
+          styles.planCard,
+          { backgroundColor: cardBg, borderColor: isCurrent ? tc.accent : cardBorder, borderWidth: isCurrent ? 1.5 : 1 },
+        ]}>
 
-        {/* Page content */}
-        <View style={styles.pageContent}>
-          {/* Plan header */}
-          <View style={styles.planHeaderSection}>
-            <View style={[styles.planIconContainer, { backgroundColor: theme.iconBg }]}>
-              <PlanIcon size={32} color={theme.borderColor} />
+        {/* Top accent strip */}
+        <View style={[styles.planStrip, { backgroundColor: tc.accent }]} />
+
+        <View style={styles.planCardBody}>
+          {/* Icon + name row */}
+          <View style={styles.planNameRow}>
+            <View style={[styles.planIconBox, { backgroundColor: tc.light }]}>
+              <PlanIcon size={18} color={tc.accent} strokeWidth={2} />
             </View>
-            <Text style={[styles.planPageTitle, { color: colors.text.primary }]}>
-              {planDisplayName}
-            </Text>
+            <Text style={[styles.planName, { color: textPrimary }]}>{displayName}</Text>
             {isCurrent && (
-              <View style={[styles.currentBadge, { backgroundColor: theme.borderColor }]}>
-                <Text style={[styles.currentBadgeText, { color: colors.white }]}>Current</Text>
+              <View style={[styles.currentChip, { backgroundColor: tc.light, borderColor: tc.border }]}>
+                <View style={[styles.currentDot, { backgroundColor: tc.accent }]} />
+                <Text style={[styles.currentChipText, { color: tc.accent }]}>Active</Text>
               </View>
             )}
           </View>
 
           {/* Price */}
-          <View style={styles.priceSection}>
-            <Text style={[styles.priceLarge, { color: theme.borderColor }]}>
-              {formatPrice(plan.periods?.[0]?.price || 0)}
-            </Text>
-            <Text style={[styles.pricePeriod, { color: colors.text.secondary }]}>
-              /month
-            </Text>
+          <View style={styles.priceRow}>
+            <Text style={[styles.priceMain, { color: tc.accent }]}>{formatPrice(price)}</Text>
+            {price > 0 && <Text style={[styles.priceSub, { color: textTertiary }]}>/mo</Text>}
           </View>
 
-          {/* Features */}
-          <View style={styles.featuresSection}>
-            <View style={styles.featureRow}>
-              <Building2 size={18} color={theme.borderColor} />
-              <Text style={[styles.featureText, { color: colors.text.primary }]}>
-                {plan.properties} {plan.properties === 1 ? 'Property' : 'Properties'}
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Users size={18} color={theme.borderColor} />
-              <Text style={[styles.featureText, { color: colors.text.primary }]}>
-                {plan.tenants} Tenants per property
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <Bed size={18} color={theme.borderColor} />
-              <Text style={[styles.featureText, { color: colors.text.primary }]}>
-                {plan.rooms} Rooms per property
-              </Text>
-            </View>
-            <View style={styles.featureRow}>
-              <CreditCard size={18} color={theme.borderColor} />
-              <Text style={[styles.featureText, { color: colors.text.primary }]}>
-                {plan.staff} Staff per property
-              </Text>
-            </View>
+          {/* Feature list */}
+          <View style={[styles.featureList, { borderTopColor: colors.border.light }]}>
+            {[
+              { icon: Building2, label: `${plan.properties} ${plan.properties === 1 ? 'Property' : 'Properties'}` },
+              { icon: Users,     label: `${plan.tenants} Tenants / property` },
+              { icon: Bed,       label: `${plan.rooms} Rooms / property` },
+              { icon: CreditCard,label: `${plan.staff} Staff / property` },
+            ].map((f, i) => (
+              <View key={i} style={styles.featureRow}>
+                <f.icon size={14} color={tc.accent} strokeWidth={2} />
+                <Text style={[styles.featureText, { color: textSecondary }]}>{f.label}</Text>
+              </View>
+            ))}
           </View>
 
-          {/* Action button */}
+          {/* CTA */}
           {isCurrent ? (
-            <View style={[styles.currentPlanButton, { backgroundColor: colors.neutral[100] }]}>
-              <Text style={[styles.currentPlanButtonText, { color: colors.text.secondary }]}>
-                Current Plan
-              </Text>
+            <View style={[styles.currentBtn, { backgroundColor: tc.light, borderColor: tc.border }]}>
+              <CheckCircle size={14} color={tc.accent} strokeWidth={2.5} />
+              <Text style={[styles.currentBtnText, { color: tc.accent }]}>Current Plan</Text>
             </View>
           ) : (
             <TouchableOpacity
-              style={[styles.selectButton, { backgroundColor: theme.borderColor }]}
+              style={[styles.upgradeBtn, { backgroundColor: tc.accent }]}
               onPress={() => setShowUpgradeModal(true)}
-              activeOpacity={0.8}>
-              <Text style={[styles.selectButtonText, { color: colors.white }]}>
-                {plan.periods?.[0]?.price ? 'Upgrade' : 'Select'}
+              activeOpacity={0.82}>
+              <Text style={[styles.upgradeBtnText, { color: colors.white }]}>
+                {price > 0 ? 'Upgrade' : 'Select'}
               </Text>
-              <ArrowRight size={18} color={colors.white} />
+              <ArrowUpRight size={15} color={colors.white} strokeWidth={2.5} />
             </TouchableOpacity>
           )}
         </View>
@@ -279,14 +288,50 @@ export default function SubscriptionScreen() {
     );
   };
 
+  // ── Usage stat card ────────────────────────────────────────────────────────
+  const UsageStat = ({
+    icon: Icon, label, used, limit, accentColor,
+  }: { icon: any; label: string; used: number; limit: number; accentColor: string }) => {
+    const fillColor  = getProgressColor(used, limit);
+    const trackColor = getProgressTrack(used, limit);
+    const pct        = limit === 999 ? null : Math.round((used / limit) * 100);
+
+    return (
+      <View style={[styles.usageStat, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+        <View style={styles.usageStatTop}>
+          <View style={[styles.usageIconBox, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[100] }]}>
+            <Icon size={14} color={accentColor} strokeWidth={2} />
+          </View>
+          <Text style={[styles.usageStatLabel, { color: textTertiary }]}>{label.toUpperCase()}</Text>
+          {pct !== null && (
+            <View style={[styles.usagePctChip, {
+              backgroundColor: fillColor === colors.danger[500]
+                ? (isDark ? colors.danger[900] : colors.danger[50])
+                : (isDark ? colors.success[900] : colors.success[50]),
+            }]}>
+              <Text style={[styles.usagePctText, { color: fillColor }]}>{pct}%</Text>
+            </View>
+          )}
+        </View>
+        <Text style={[styles.usageValue, { color: textPrimary }]}>{used}</Text>
+        <ProgressBar used={used} limit={limit} fillColor={fillColor} trackColor={trackColor} />
+        <Text style={[styles.usageLimitText, { color: textTertiary }]}>
+          {limit === 999 ? 'Unlimited' : `of ${limit}`}
+        </Text>
+      </View>
+    );
+  };
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background.primary }]} edges={['top', 'bottom']}>
-      <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}>
-          <ChevronLeft size={24} color={colors.text.primary} />
+    <SafeAreaView style={[styles.container, { backgroundColor: pageBg }]} edges={['top','bottom']}>
+
+      {/* ── Nav bar ─────────────────────────────────────────────────────── */}
+      <View style={[styles.navBar, { backgroundColor: cardBg, borderBottomColor: colors.border.light }]}>
+        <TouchableOpacity style={styles.navBack} onPress={() => router.back()} activeOpacity={0.7}>
+          <ChevronLeft size={22} color={textPrimary} strokeWidth={2} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Subscription Plans</Text>
-        <View style={{ width: 24 }} />
+        <Text style={[styles.navTitle, { color: textPrimary }]}>Subscription</Text>
+        <View style={styles.navSpacer} />
       </View>
 
       <ScrollView
@@ -296,99 +341,97 @@ export default function SubscriptionScreen() {
         ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[colors.primary[500]]} />
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[brandColor]} tintColor={brandColor} />
         }>
+
         {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary[500]} />
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={brandColor} />
           </View>
         ) : error ? (
-          <TouchableOpacity style={[styles.errorCard, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50] }]} onPress={() => fetchSubscriptionData()}>
-            <AlertCircle size={20} color={isDark ? colors.danger[300] : colors.danger[500]} />
+          <TouchableOpacity
+            style={[styles.errorCard, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50], borderColor: isDark ? colors.danger[700] : colors.danger[200] }]}
+            onPress={() => fetchSubscriptionData(true)}
+            activeOpacity={0.8}>
+            <AlertCircle size={18} color={isDark ? colors.danger[300] : colors.danger[500]} strokeWidth={2} />
             <Text style={[styles.errorText, { color: isDark ? colors.danger[300] : colors.danger[700] }]}>{error}</Text>
+            <Text style={[styles.errorRetry, { color: isDark ? colors.danger[300] : colors.danger[500] }]}>Tap to retry</Text>
           </TouchableOpacity>
         ) : (
           <>
-            {/* Notebook-style pages - side by side */}
-            <View style={styles.notebookContainer}>
-              {/* Pages side by side */}
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.pagesScrollContent}
-                pagingEnabled
-                decelerationRate="fast"
-                snapToInterval={planCardWidth + spacing.md}
-              >
-                {allPlans.map((plan, index) => renderPlanPage(plan, index))}
-              </ScrollView>
+            {/* ── Current plan banner ──────────────────────────────────── */}
+            {currentPlan ? (() => {
+              const tier = getPlanTier(currentPlan);
+              const tc   = tierColors(tier);
+              const Icon = getPlanIcon(tier);
+              return (
+                <View style={[styles.bannerCard, { backgroundColor: tc.light, borderColor: tc.border }]}>
+                  <View style={[styles.bannerIconBox, { backgroundColor: tc.accent }]}>
+                    <Icon size={20} color={colors.white} strokeWidth={2} />
+                  </View>
+                  <View style={styles.bannerInfo}>
+                    <Text style={[styles.bannerLabel, { color: tc.accent }]}>CURRENT PLAN</Text>
+                    <Text style={[styles.bannerPlan, { color: textPrimary }]}>
+                      {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}
+                    </Text>
+                  </View>
+                  {activeSubscription?.currentPeriodEnd && (
+                    <Text style={[styles.bannerExpiry, { color: textTertiary }]}>
+                      Renews {new Date(activeSubscription.currentPeriodEnd).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                    </Text>
+                  )}
+                </View>
+              );
+            })() : null}
+
+            {/* ── Plans ─────────────────────────────────────────────────── */}
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Zap size={14} color={brandColor} strokeWidth={2} />
+                <Text style={[styles.sectionTitle, { color: textPrimary }]}>Choose a Plan</Text>
+              </View>
             </View>
 
-            {/* Usage Section */}
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Current Usage</Text>
-              
-              <View style={styles.usageGrid}>
-                <View style={[styles.usageCard, { backgroundColor: colors.background.secondary }]}>
-                  <Building2 size={20} color={colors.primary[500]} />
-                  <Text style={[styles.usageValue, { color: colors.text.primary }]}>{usage?.properties || 0}</Text>
-                  <Text style={[styles.usageLabel, { color: colors.text.secondary }]}>Properties</Text>
-                  <View style={[styles.progressBg, { backgroundColor: colors.neutral[200] }]}>
-                    <View style={[styles.progressFill, { 
-                      width: `${getProgressWidth(usage?.properties || 0, propertyLimit)}%`,
-                      backgroundColor: getProgressColor(usage?.properties || 0, propertyLimit),
-                    }]} />
-                  </View>
-                  <Text style={[styles.usageLimit, { color: colors.text.tertiary }]}>
-                    of {propertyLimit}
-                  </Text>
-                </View>
+            {/* Horizontal scroll for plans */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.plansScroll}
+              decelerationRate="fast"
+              snapToInterval={PLAN_CARD_WIDTH + spacing.sm}
+              snapToAlignment="start">
+              {allPlans.map(plan => renderPlanCard(plan))}
+            </ScrollView>
 
-                <View style={[styles.usageCard, { backgroundColor: colors.background.secondary }]}>
-                  <Users size={20} color={colors.success[500]} />
-                  <Text style={[styles.usageValue, { color: colors.text.primary }]}>{usage?.tenants || 0}</Text>
-                  <Text style={[styles.usageLabel, { color: colors.text.secondary }]}>Tenants</Text>
-                  <View style={[styles.progressBg, { backgroundColor: colors.neutral[200] }]}>
-                    <View style={[styles.progressFill, { 
-                      width: `${getProgressWidth(usage?.tenants || 0, tenantLimit)}%`,
-                      backgroundColor: getProgressColor(usage?.tenants || 0, tenantLimit),
-                    }]} />
-                  </View>
-                  <Text style={[styles.usageLimit, { color: colors.text.tertiary }]}>
-                    of {tenantLimit} per property
-                  </Text>
-                </View>
-
-                <View style={[styles.usageCard, { backgroundColor: colors.background.secondary }]}>
-                  <Bed size={20} color={colors.warning[500]} />
-                  <Text style={[styles.usageValue, { color: colors.text.primary }]}>{usage?.rooms || 0}</Text>
-                  <Text style={[styles.usageLabel, { color: colors.text.secondary }]}>Rooms</Text>
-                  <View style={[styles.progressBg, { backgroundColor: colors.neutral[200] }]}>
-                    <View style={[styles.progressFill, { 
-                      width: `${getProgressWidth(usage?.rooms || 0, roomLimit)}%`,
-                      backgroundColor: getProgressColor(usage?.rooms || 0, roomLimit),
-                    }]} />
-                  </View>
-                  <Text style={[styles.usageLimit, { color: colors.text.tertiary }]}>
-                    of {roomLimit} per property
-                  </Text>
-                </View>
-
-                <View style={[styles.usageCard, { backgroundColor: colors.background.secondary }]}>
-                  <CreditCard size={20} color={colors.primary[500]} />
-                  <Text style={[styles.usageValue, { color: colors.text.primary }]}>{usage?.staff || 0}</Text>
-                  <Text style={[styles.usageLabel, { color: colors.text.secondary }]}>Staff</Text>
-                  <View style={[styles.progressBg, { backgroundColor: colors.neutral[200] }]}>
-                    <View style={[styles.progressFill, { 
-                      width: `${getProgressWidth(usage?.staff || 0, staffLimit)}%`,
-                      backgroundColor: getProgressColor(usage?.staff || 0, staffLimit),
-                    }]} />
-                  </View>
-                  <Text style={[styles.usageLimit, { color: colors.text.tertiary }]}>
-                    of {staffLimit} per property
-                  </Text>
-                </View>
+            {/* ── Usage ─────────────────────────────────────────────────── */}
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Building2 size={14} color={brandColor} strokeWidth={2} />
+                <Text style={[styles.sectionTitle, { color: textPrimary }]}>Current Usage</Text>
               </View>
+            </View>
+
+            <View style={styles.usageGrid}>
+              <UsageStat
+                icon={Building2} label="Properties"
+                used={usage?.properties || 0} limit={propertyLimit}
+                accentColor={brandColor}
+              />
+              <UsageStat
+                icon={Users} label="Tenants"
+                used={usage?.tenants || 0} limit={tenantLimit}
+                accentColor={colors.success[500]}
+              />
+              <UsageStat
+                icon={Bed} label="Rooms"
+                used={usage?.rooms || 0} limit={roomLimit}
+                accentColor={colors.warning[500]}
+              />
+              <UsageStat
+                icon={CreditCard} label="Staff"
+                used={usage?.staff || 0} limit={staffLimit}
+                accentColor={purpleColor}
+              />
             </View>
           </>
         )}
@@ -397,203 +440,263 @@ export default function SubscriptionScreen() {
       <UpgradeModal
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
-        onSelectPlan={() => {
-          setShowUpgradeModal(false);
-          fetchSubscriptionData();
-        }}
+        onSelectPlan={() => { setShowUpgradeModal(false); fetchSubscriptionData(true); }}
       />
     </SafeAreaView>
   );
 }
 
+const PLAN_CARD_WIDTH = 260;
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
+
+  // Nav
+  navBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1,
   },
-  headerTitle: {
-    ...textPresets.h4,
-    color: colors.text.primary,
-  },
+  navBack:    { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  navTitle:   { fontFamily: typography.fontFamily.bold, fontSize: typography.fontSize.lg, letterSpacing: typography.letterSpacing.tight },
+  navSpacer:  { width: 36 },
+
   scrollContent: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxxl,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: spacing.xxxl,
-  },
-  errorCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    borderRadius: radius.md,
-    gap: spacing.sm,
-  },
-  errorText: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
-    flex: 1,
-  },
-  
-  // Notebook style
-  notebookContainer: {
-    marginBottom: spacing.xl,
-  },
-  pagesScrollContent: {
     paddingHorizontal: spacing.md,
-    gap: spacing.md,
+    paddingTop:        spacing.md,
+    paddingBottom:     spacing.xxxl,
   },
-  pageContainer: {
-    minHeight: 340,
-    borderRadius: radius.lg,
-    marginRight: spacing.md,
-    ...shadows.md,
+
+  loadingBox: {
+    paddingVertical: spacing.xxxl,
+    alignItems:      'center',
   },
-  bindingHoles: {
-    position: 'absolute',
-    left: 8,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'space-evenly',
-    paddingVertical: spacing.xl,
+
+  // Error
+  errorCard: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    padding:           spacing.md,
+    borderRadius:      radius.lg,
+    borderWidth:       1,
+    gap:               spacing.sm,
   },
-  bindingHole: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
+  errorText:  { fontFamily: typography.fontFamily.medium, fontSize: typography.fontSize.sm, flex: 1 },
+  errorRetry: { fontFamily: typography.fontFamily.semiBold, fontSize: typography.fontSize.xs },
+
+  // Current plan banner
+  bannerCard: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    borderRadius:   radius.xl,
+    borderWidth:    1,
+    padding:        spacing.md,
+    gap:            spacing.md,
+    marginBottom:   spacing.lg,
   },
-  pageContent: {
-    padding: spacing.lg,
-    paddingLeft: spacing.xl,
-  },
-  planHeaderSection: {
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  planIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.full,
-    alignItems: 'center',
+  bannerIconBox: {
+    width:          40,
+    height:         40,
+    borderRadius:   radius.md,
+    alignItems:     'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm,
   },
-  planPageTitle: {
-    ...textPresets.h3,
-    color: colors.text.primary,
+  bannerInfo:   { flex: 1 },
+  bannerLabel:  {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      9,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom:  2,
   },
-  currentBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-    marginTop: spacing.xs,
+  bannerPlan: {
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.lg,
+    letterSpacing: typography.letterSpacing.tight,
   },
-  currentBadgeText: {
-    ...textPresets.badge,
-    color: colors.white,
+  bannerExpiry: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.xs,
   },
-  priceSection: {
+
+  // Section header
+  sectionHeader:   { marginBottom: spacing.md },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sectionTitle:    {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.normal,
+  },
+
+  // Plans horizontal scroll
+  plansScroll: {
+    paddingRight:  spacing.md,
+    gap:           spacing.sm,
+    marginBottom:  spacing.xl,
+  },
+
+  // Plan card
+  planCard: {
+    width:        PLAN_CARD_WIDTH,
+    borderRadius: radius.xl,
+    overflow:     'hidden',
+    ...shadows.sm,
+  },
+  planStrip: {
+    height: 3,
+  },
+  planCardBody: {
+    padding: spacing.md,
+  },
+  planNameRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems:    'center',
+    gap:           spacing.sm,
+    marginBottom:  spacing.md,
+  },
+  planIconBox: {
+    width:          32,
+    height:         32,
+    borderRadius:   radius.md,
+    alignItems:     'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
   },
-  priceLarge: {
-    ...textPresets.display,
+  planName: {
+    flex:          1,
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.tight,
   },
-  pricePeriod: {
-    ...textPresets.body,
-    color: colors.text.secondary,
-    marginLeft: spacing.xs,
+  currentChip: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
+    paddingHorizontal: 7,
+    paddingVertical:   3,
+    borderRadius:      radius.full,
+    borderWidth:       1,
   },
-  featuresSection: {
-    marginBottom: spacing.lg,
+  currentDot: {
+    width:        5,
+    height:       5,
+    borderRadius: 3,
+  },
+  currentChipText: {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      9,
+    letterSpacing: typography.letterSpacing.wide,
+  },
+
+  // Price
+  priceRow: {
+    flexDirection:  'row',
+    alignItems:     'baseline',
+    marginBottom:   spacing.md,
+    gap:            4,
+  },
+  priceMain: {
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.xxl,
+    letterSpacing: typography.letterSpacing.tight,
+  },
+  priceSub: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.sm,
+  },
+
+  // Features
+  featureList: {
+    borderTopWidth: 1,
+    paddingTop:     spacing.sm,
+    marginBottom:   spacing.md,
+    gap:            spacing.xs,
   },
   featureRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
+    alignItems:    'center',
+    gap:           spacing.sm,
+    paddingVertical: 2,
   },
   featureText: {
-    ...textPresets.body,
-    color: colors.text.primary,
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.sm,
   },
-  selectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    gap: spacing.sm,
+
+  // CTA buttons
+  currentBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'center',
+    gap:               6,
+    paddingVertical:   spacing.sm,
+    borderRadius:      radius.md,
+    borderWidth:       1,
   },
-  selectButtonText: {
-    ...textPresets.button,
-    color: colors.white,
+  currentBtnText: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize:   typography.fontSize.sm,
   },
-  currentPlanButton: {
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
+  upgradeBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'center',
+    gap:               6,
+    paddingVertical:   spacing.sm,
+    borderRadius:      radius.md,
   },
-  currentPlanButtonText: {
-    ...textPresets.bodyMedium,
-    color: colors.text.secondary,
+  upgradeBtnText: {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      typography.fontSize.sm,
+    letterSpacing: typography.letterSpacing.wide,
   },
-  
-  // Usage Section
-  section: {
-    marginBottom: spacing.xl,
-  },
-  sectionTitle: {
-    ...textPresets.h2,
-    color: colors.text.primary,
-    marginBottom: spacing.md,
-  },
+
+  // Usage grid
   usageGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+    flexWrap:      'wrap',
+    gap:           spacing.sm,
+    marginBottom:  spacing.xl,
   },
-  usageCard: {
-    width: '48%',
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-    ...shadows.sm,
+  usageStat: {
+    width:         '48%',
+    borderRadius:  radius.lg,
+    borderWidth:   1,
+    padding:       spacing.md,
+  },
+  usageStatTop: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing.xs,
+    marginBottom:  spacing.xs,
+  },
+  usageIconBox: {
+    width:          24,
+    height:         24,
+    borderRadius:   radius.sm,
+    alignItems:     'center',
+    justifyContent: 'center',
+  },
+  usageStatLabel: {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      9,
+    letterSpacing: typography.letterSpacing.wider,
+    flex:          1,
+  },
+  usagePctChip: {
+    paddingHorizontal: 5,
+    paddingVertical:   2,
+    borderRadius:      radius.sm,
+  },
+  usagePctText: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize:   9,
   },
   usageValue: {
-    ...textPresets.display,
-    color: colors.text.primary,
-    marginTop: spacing.sm,
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.xxl,
+    letterSpacing: typography.letterSpacing.tight,
   },
-  usageLabel: {
-    ...textPresets.caption,
-    color: colors.text.secondary,
-    marginBottom: spacing.sm,
-  },
-  progressBg: {
-    width: '100%',
-    height: 4,
-    borderRadius: radius.full,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: radius.full,
-  },
-  usageLimit: {
-    ...textPresets.hint,
-    color: colors.text.tertiary,
-    marginTop: spacing.xs,
+  usageLimitText: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   9,
+    letterSpacing: typography.letterSpacing.wide,
   },
 });

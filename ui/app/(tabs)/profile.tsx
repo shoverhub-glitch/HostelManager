@@ -19,87 +19,102 @@ import {
   Shield,
   HelpCircle,
   LogOut,
-  ChevronRight,
+  ArrowUpRight,
   CreditCard,
   Moon,
+  Sun,
 } from 'lucide-react-native';
-import { spacing, radius, shadows } from '@/theme';
+import { spacing, radius } from '@/theme';
 import { typography } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 
 export default function ProfileScreen() {
   const { colors, toggleTheme, isDark } = useTheme();
-  const { logout, user } = useAuth();
-  const router = useRouter();
+  const { logout, user }                = useAuth();
+  const router                          = useRouter();
 
   const handleLogout = async () => { await logout(); };
 
-  const settingsOptions: Array<{
+  // ── Color aliases ─────────────────────────────────────────────────────────
+  const brandColor    = colors.primary[500];
+  const brandLight    = isDark ? colors.primary[900] : colors.primary[50];
+  const brandText     = isDark ? colors.primary[300] : colors.primary[600];
+  const cardBg        = colors.background.secondary;
+  const cardBorder    = colors.border.medium;
+  const pageBg        = colors.background.primary;
+  const textPrimary   = colors.text.primary;
+  const textSecondary = colors.text.secondary;
+  const textTertiary  = colors.text.tertiary;
+
+  // ── Settings list ─────────────────────────────────────────────────────────
+  type SettingOption = {
     icon: any;
     title: string;
     description: string;
-    color: string;
-    bg: string;
+    accentColor: string;
+    accentBg: string;
     route?: Href;
-  }> = [
+  };
+
+  const settingsOptions: SettingOption[] = [
     {
       icon:        MapPin,
       title:       'My Property',
-      description: 'View current property and quick actions',
-      color:       colors.primary[500],
-      bg:          isDark ? colors.primary[900] : colors.primary[50],
+      description: 'View property and quick actions',
+      accentColor: brandText,
+      accentBg:    brandLight,
       route:       '/my-property' as Href,
     },
     {
       icon:        Building2,
       title:       'Manage Properties',
       description: 'Add, edit, or remove properties',
-      color:       colors.primary[400],
-      bg:          isDark ? colors.primary[900] : colors.primary[50],
+      accentColor: isDark ? colors.primary[300] : colors.primary[500],
+      accentBg:    isDark ? colors.primary[900] : colors.primary[50],
       route:       '/manage-properties' as Href,
     },
     {
       icon:        CreditCard,
       title:       'Subscription & Billing',
       description: 'Manage your plan and billing',
-      color:       colors.warning[500],
-      bg:          isDark ? colors.warning[900] : colors.warning[50],
+      accentColor: isDark ? colors.warning[300] : colors.warning[600],
+      accentBg:    isDark ? colors.warning[900] : colors.warning[50],
       route:       '/subscription' as Href,
     },
     {
       icon:        Bell,
       title:       'Notifications',
       description: 'Manage notification preferences',
-      color:       colors.purple[500],
-      bg:          isDark ? colors.purple[900] : colors.purple[50],
+      accentColor: isDark ? colors.purple[300] : colors.purple[500],
+      accentBg:    isDark ? colors.purple[900] : colors.purple[50],
     },
     {
       icon:        Shield,
       title:       'Privacy & Security',
       description: 'Password and security settings',
-      color:       colors.success[500],
-      bg:          isDark ? colors.success[900] : colors.success[50],
+      accentColor: isDark ? colors.success[300] : colors.success[600],
+      accentBg:    isDark ? colors.success[900] : colors.success[50],
       route:       '/privacy-security' as Href,
     },
     {
       icon:        HelpCircle,
       title:       'Help & Support',
       description: 'Get help and contact support',
-      color:       colors.danger[500],
-      bg:          isDark ? colors.danger[900] : colors.danger[50],
+      accentColor: isDark ? colors.danger[300] : colors.danger[600],
+      accentBg:    isDark ? colors.danger[900] : colors.danger[50],
     },
   ];
 
   return (
     <ScreenContainer edges={['top']}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { backgroundColor: pageBg }]}
         showsVerticalScrollIndicator={false}>
 
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Profile</Text>
+        {/* ── Page title ─────────────────────────────────────────────────── */}
+        <View style={styles.topBar}>
+          <Text style={[styles.screenTitle, { color: textPrimary }]}>Profile</Text>
         </View>
 
         {/* ── Profile card ── */}
@@ -132,25 +147,27 @@ export default function ProfileScreen() {
               }]}>
                 <Mail size={18} color={colors.primary[500]} strokeWidth={1.5} />
               </View>
-              <View style={styles.infoContent}>
-                <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>EMAIL</Text>
-                <Text style={[styles.infoValue, { color: colors.text.primary }]}>
-                  {user?.email || 'owner@example.com'}
+              <View style={styles.heroInfo}>
+                <Text style={[styles.heroName, { color: textPrimary }]} numberOfLines={1}>
+                  {user?.name || 'Property Owner'}
                 </Text>
+                <View style={[styles.rolePill, { backgroundColor: brandLight, borderColor: isDark ? colors.primary[700] : colors.primary[200] }]}>
+                  <Text style={[styles.roleText, { color: brandText }]}>Hostel Manager</Text>
+                </View>
               </View>
             </View>
-          </Card>
 
-          <Card style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <View style={[styles.infoIconWrap, {
-                backgroundColor: isDark ? colors.success[900] : colors.success[50],
-              }]}>
-                <Phone size={18} color={colors.success[500]} strokeWidth={1.5} />
+            {/* Contact chips */}
+            <View style={[styles.contactRow, { borderTopColor: colors.border.light }]}>
+              <View style={[styles.contactChip, { backgroundColor: pageBg, borderColor: cardBorder }]}>
+                <Mail size={12} color={textTertiary} strokeWidth={2} />
+                <Text style={[styles.contactText, { color: textSecondary }]} numberOfLines={1}>
+                  {user?.email || 'Not provided'}
+                </Text>
               </View>
-              <View style={styles.infoContent}>
-                <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>PHONE</Text>
-                <Text style={[styles.infoValue, { color: colors.text.primary }]}>
+              <View style={[styles.contactChip, { backgroundColor: pageBg, borderColor: cardBorder }]}>
+                <Phone size={12} color={textTertiary} strokeWidth={2} />
+                <Text style={[styles.contactText, { color: textSecondary }]} numberOfLines={1}>
                   {user?.phone || 'Not provided'}
                 </Text>
               </View>
@@ -158,230 +175,302 @@ export default function ProfileScreen() {
           </Card>
         </View>
 
-        {/* ── Appearance ── */}
+        {/* ── Appearance ─────────────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Appearance</Text>
-
-          <Card style={styles.settingCard}>
-            <View style={styles.settingRow}>
-              <View style={[styles.settingIconWrap, {
-                backgroundColor: isDark ? colors.primary[900] : colors.primary[50],
+          <Text style={[styles.sectionLabel, { color: textTertiary }]}>APPEARANCE</Text>
+          <View style={[styles.row, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            {/* Left accent strip tied to mode */}
+            <View style={[styles.rowStrip, { backgroundColor: isDark ? colors.neutral[400] : colors.primary[500] }]} />
+            <View style={styles.rowBody}>
+              <View style={[styles.rowIconBox, {
+                backgroundColor: isDark
+                  ? (isDark ? colors.neutral[800] : colors.neutral[100])
+                  : brandLight,
               }]}>
-                <Moon size={18} color={colors.primary[500]} strokeWidth={1.5} />
+                {isDark
+                  ? <Moon size={16} color={colors.neutral[300]} strokeWidth={2} />
+                  : <Sun  size={16} color={brandColor}           strokeWidth={2} />}
               </View>
-              <View style={styles.settingContent}>
-                <Text style={[styles.settingTitle, { color: colors.text.primary }]}>
-                  Dark mode
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, { color: textPrimary }]}>
+                  {isDark ? 'Dark Mode' : 'Light Mode'}
                 </Text>
-                <Text style={[styles.settingDesc, { color: colors.text.secondary }]}>
+                <Text style={[styles.rowDesc, { color: textSecondary }]}>
                   {isDark ? 'Currently enabled' : 'Currently disabled'}
                 </Text>
               </View>
               <Switch
                 value={isDark}
                 onValueChange={toggleTheme}
-                trackColor={{ false: colors.neutral[300], true: colors.primary[500] }}
+                trackColor={{ false: colors.neutral[300], true: brandColor }}
                 thumbColor={colors.white}
               />
             </View>
-          </Card>
+          </View>
         </View>
 
-        {/* ── Settings ── */}
+        {/* ── Settings ───────────────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Settings</Text>
-
-          {settingsOptions.map((option, i) => (
-            <TouchableOpacity
-              key={i}
-              activeOpacity={0.7}
-              onPress={() => option.route && router.push(option.route)}>
-              <Card style={styles.settingCard}>
-                <View style={styles.settingRow}>
-                  <View style={[styles.settingIconWrap, { backgroundColor: option.bg }]}>
-                    <option.icon size={18} color={option.color} strokeWidth={1.5} />
+          <Text style={[styles.sectionLabel, { color: textTertiary }]}>SETTINGS</Text>
+          {settingsOptions.map((option, i) => {
+            const isLast = i === settingsOptions.length - 1;
+            return (
+              <TouchableOpacity
+                key={i}
+                style={[
+                  styles.row,
+                  { backgroundColor: cardBg, borderColor: cardBorder },
+                  !isLast && { marginBottom: spacing.sm },
+                ]}
+                onPress={() => option.route && router.push(option.route)}
+                activeOpacity={0.72}
+                disabled={!option.route}>
+                <View style={[styles.rowStrip, { backgroundColor: option.accentColor }]} />
+                <View style={styles.rowBody}>
+                  <View style={[styles.rowIconBox, { backgroundColor: option.accentBg }]}>
+                    <option.icon size={16} color={option.accentColor} strokeWidth={2} />
                   </View>
-                  <View style={styles.settingContent}>
-                    <Text style={[styles.settingTitle, { color: colors.text.primary }]}>
-                      {option.title}
-                    </Text>
-                    <Text style={[styles.settingDesc, { color: colors.text.secondary }]}>
-                      {option.description}
-                    </Text>
+                  <View style={styles.rowText}>
+                    <Text style={[styles.rowTitle, { color: textPrimary }]}>{option.title}</Text>
+                    <Text style={[styles.rowDesc, { color: textSecondary }]}>{option.description}</Text>
                   </View>
-                  <ChevronRight size={16} color={colors.text.tertiary} strokeWidth={1.5} />
+                  {option.route
+                    ? <ArrowUpRight size={14} color={textTertiary} strokeWidth={2} />
+                    : <View style={[styles.comingSoonChip, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[100] }]}>
+                        <Text style={[styles.comingSoonText, { color: textTertiary }]}>Soon</Text>
+                      </View>}
                 </View>
-              </Card>
-            </TouchableOpacity>
-          ))}
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* ── Logout ── */}
+        {/* ── Sign out ───────────────────────────────────────────────────── */}
         <TouchableOpacity
           style={[
-            styles.logoutBtn,
+            styles.signOutBtn,
             {
               backgroundColor: isDark ? colors.danger[900] : colors.danger[50],
               borderColor:     isDark ? colors.danger[700] : colors.danger[200],
             },
           ]}
           onPress={handleLogout}
-          activeOpacity={0.7}>
-          <LogOut size={18} color={colors.danger[500]} strokeWidth={1.5} />
-          <Text style={[styles.logoutText, { color: colors.danger[500] }]}>Sign out</Text>
+          activeOpacity={0.78}>
+          <LogOut size={16} color={colors.danger[500]} strokeWidth={2} />
+          <Text style={[styles.signOutText, { color: colors.danger[500] }]}>Sign out</Text>
         </TouchableOpacity>
+
+        {/* App version hint */}
+        <Text style={[styles.versionText, { color: textTertiary }]}>Hostel Manager · v1.0</Text>
 
       </ScrollView>
     </ScreenContainer>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+
   scrollContent: {
     paddingHorizontal: spacing.md,
     paddingBottom:     spacing.xxxl,
   },
 
-  // ── Header ───────────────────────────────────────────────────────────────
-  header: {
-    paddingVertical:   spacing.md,
-    paddingHorizontal: spacing.sm,
+  // Top bar
+  topBar: {
+    paddingVertical: spacing.md,
+    paddingLeft:     spacing.xs,
   },
-
-  headerTitle: {
+  screenTitle: {
     fontFamily:    typography.fontFamily.bold,
     fontSize:      typography.fontSize.xxl,
     letterSpacing: typography.letterSpacing.tight,
   },
 
-  // ── Profile card ─────────────────────────────────────────────────────────
+  // Profile card
   profileCard: {
-    alignItems:      'center',
-    paddingVertical: spacing.xl,
-    marginBottom:    spacing.lg,
+    borderRadius:  radius.xl,
+    borderWidth:   1,
+    overflow:      'hidden',
+    marginBottom:  spacing.lg,
+    alignItems:    'center',
+    paddingTop:    spacing.lg,
+    paddingBottom: spacing.lg,
   },
-
   avatarRing: {
-    width:          88,
-    height:         88,
+    width:          74,
+    height:         74,
     borderRadius:   radius.full,
     borderWidth:    2,
     alignItems:     'center',
     justifyContent: 'center',
-    marginBottom:   spacing.lg,
+    marginBottom:   spacing.sm,
   },
-
   avatar: {
-    width:          76,
-    height:         76,
+    width:          52,
+    height:         52,
     borderRadius:   radius.full,
     alignItems:     'center',
     justifyContent: 'center',
+    flexShrink:     0,
   },
-
   ownerName: {
     fontFamily:    typography.fontFamily.bold,
-    fontSize:      typography.fontSize.xl,
+    fontSize:      typography.fontSize.lg,
     letterSpacing: typography.letterSpacing.tight,
-    marginBottom:  spacing.sm,
+    marginBottom:  spacing.xs,
   },
-
+  sectionTitle: {
+    fontFamily:   typography.fontFamily.semiBold,
+    fontSize:     typography.fontSize.md,
+    marginBottom: spacing.sm,
+    marginLeft:   spacing.xs,
+  },
+  infoCard: {
+    borderRadius: radius.lg,
+    borderWidth:  1,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing.md,
+    marginBottom:  spacing.md,
+  },
+  infoIconWrap: {
+    width:          36,
+    height:         36,
+    borderRadius:   radius.md,
+    alignItems:     'center',
+    justifyContent: 'center',
+    flexShrink:     0,
+  },
+  heroInfo: { flex: 1 },
+  heroName: {
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.lg,
+    letterSpacing: typography.letterSpacing.tight,
+    marginBottom:  6,
+  },
   rolePill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical:   4,
+    alignSelf:         'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical:   3,
     borderRadius:      radius.full,
+    borderWidth:       1,
   },
-
   roleText: {
     fontFamily:    typography.fontFamily.semiBold,
-    fontSize:      typography.fontSize.xs,
+    fontSize:      9,
+    letterSpacing: typography.letterSpacing.wider,
+    textTransform: 'uppercase',
+  },
+
+  // Contact chips
+  contactRow: {
+    flexDirection:  'row',
+    gap:            spacing.sm,
+    paddingTop:     spacing.md,
+    borderTopWidth: 1,
+  },
+  contactChip: {
+    flex:              1,
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               5,
+    paddingHorizontal: spacing.sm,
+    paddingVertical:   spacing.sm,
+    borderRadius:      radius.md,
+    borderWidth:       1,
+    overflow:          'hidden',
+  },
+  contactText: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.xs,
+    flex:       1,
+  },
+
+  // Section
+  section:      { marginBottom: spacing.lg },
+  sectionLabel: {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      9,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom:  spacing.sm,
+    marginLeft:    spacing.xs,
+  },
+
+  // Rows (appearance + settings share this pattern)
+  row: {
+    flexDirection:  'row',
+    alignItems:     'stretch',
+    borderRadius:   radius.lg,
+    borderWidth:    1,
+    overflow:       'hidden',
+    marginBottom:   spacing.sm,
+  },
+  rowStrip: { width: 3 },
+  rowBody: {
+    flex:              1,
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               spacing.md,
+    paddingVertical:   spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  rowIconBox: {
+    width:          36,
+    height:         36,
+    borderRadius:   radius.md,
+    alignItems:     'center',
+    justifyContent: 'center',
+    flexShrink:     0,
+  },
+  rowText: { flex: 1 },
+  rowTitle: {
+    fontFamily:   typography.fontFamily.semiBold,
+    fontSize:     typography.fontSize.md,
+    marginBottom: 2,
+    letterSpacing: typography.letterSpacing.tight,
+  },
+  rowDesc: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.xs,
+  },
+
+  // Coming soon chip
+  comingSoonChip: {
+    paddingHorizontal: 7,
+    paddingVertical:   3,
+    borderRadius:      radius.full,
+  },
+  comingSoonText: {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      9,
     letterSpacing: typography.letterSpacing.wide,
     textTransform: 'uppercase',
   },
 
-  // ── Section ──────────────────────────────────────────────────────────────
-  section: { marginBottom: spacing.lg },
-
-  sectionTitle: {
-    fontFamily:    typography.fontFamily.semiBold,
-    fontSize:      typography.fontSize.sm,
-    letterSpacing: typography.letterSpacing.wider,
-    textTransform: 'uppercase',
-    marginBottom:  spacing.md,
-    marginLeft:    spacing.xs,
+  // Sign out
+  signOutBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             spacing.sm,
+    borderRadius:    radius.lg,
+    paddingVertical: spacing.md,
+    borderWidth:     1,
+    marginBottom:    spacing.md,
   },
-
-  // ── Info cards ───────────────────────────────────────────────────────────
-  infoCard: { marginBottom: spacing.sm },
-
-  infoRow: { flexDirection: 'row', alignItems: 'center' },
-
-  infoIconWrap: {
-    width:          40,
-    height:         40,
-    borderRadius:   radius.full,
-    alignItems:     'center',
-    justifyContent: 'center',
-    marginRight:    spacing.md,
-  },
-
-  infoContent: { flex: 1 },
-
-  infoLabel: {
-    fontFamily:    typography.fontFamily.semiBold,
-    fontSize:      typography.fontSize.xs,
-    letterSpacing: typography.letterSpacing.wider,
-    marginBottom:  spacing.xs,
-  },
-
-  infoValue: {
-    fontFamily: typography.fontFamily.semiBold,
-    fontSize:   typography.fontSize.md,
-  },
-
-  // ── Setting cards ─────────────────────────────────────────────────────────
-  settingCard: { marginBottom: spacing.sm },
-
-  settingRow: { flexDirection: 'row', alignItems: 'center' },
-
-  settingIconWrap: {
-    width:          40,
-    height:         40,
-    borderRadius:   radius.full,
-    alignItems:     'center',
-    justifyContent: 'center',
-    marginRight:    spacing.md,
-  },
-
-  settingContent: { flex: 1 },
-
-  settingTitle: {
-    fontFamily:   typography.fontFamily.semiBold,
-    fontSize:     typography.fontSize.md,
-    marginBottom: 2,
-  },
-
-  settingDesc: {
-    fontFamily: typography.fontFamily.regular,
-    fontSize:   typography.fontSize.sm,
-  },
-
-  // ── Logout ───────────────────────────────────────────────────────────────
-  logoutBtn: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    justifyContent: 'center',
-    borderRadius:   radius.md,
-    paddingVertical: spacing.lg,
-    marginTop:      spacing.sm,
-    borderWidth:    0.5,
-    gap:            spacing.sm,
-  },
-
-  logoutText: {
+  signOutText: {
     fontFamily:    typography.fontFamily.semiBold,
     fontSize:      typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.wide,
+  },
+
+  // Version
+  versionText: {
+    fontFamily:  typography.fontFamily.regular,
+    fontSize:    10,
+    textAlign:   'center',
     letterSpacing: typography.letterSpacing.wide,
   },
 });

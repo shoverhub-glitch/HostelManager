@@ -14,9 +14,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { UserPlus, ChevronLeft, ChevronDown} from 'lucide-react-native';
-import { spacing, radius, shadows, addActionTokens, colors} from '@/theme';
-import { typography ,textPresets} from '@/theme/typography';
+import { UserPlus, ChevronLeft, ChevronDown } from 'lucide-react-native';
+import { spacing, radius, shadows, addActionTokens } from '@/theme';
+import { typography } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -26,8 +26,6 @@ import EmptyState from '@/components/EmptyState';
 import UpgradeModal from '@/components/UpgradeModal';
 import DatePicker from '@/components/DatePicker';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
-
-const FORM_CACHE_STALE_MS = 60 * 1000;
 
 export default function AddTenantScreen() {
   const { colors, isDark } = useTheme();
@@ -276,21 +274,39 @@ export default function AddTenantScreen() {
     );
   };
 
+  const brandColor = colors.primary[500];
+  const brandLight = isDark ? colors.primary[900] : colors.primary[50];
+  const brandText = isDark ? colors.primary[300] : colors.primary[700];
+  const cardBg = colors.background.secondary;
+  const cardBorder = colors.border.medium;
+  const textPrimary = colors.text.primary;
+  const textSecondary = colors.text.secondary;
+  const textTertiary = colors.text.tertiary;
+
+  const renderNavBar = () => (
+    <View style={[styles.navBar, { backgroundColor: cardBg, borderBottomColor: colors.border.light }]}>
+      <TouchableOpacity
+        style={[styles.navBack, { backgroundColor: colors.background.primary, borderColor: cardBorder }]}
+        onPress={() => router.back()}
+        activeOpacity={0.75}>
+        <ChevronLeft size={20} color={textPrimary} strokeWidth={2.4} />
+      </TouchableOpacity>
+
+      <View style={styles.navCenter}>
+        <Text style={[styles.navEyebrow, { color: textTertiary }]}>TENANT</Text>
+        <Text style={[styles.navTitle, { color: textPrimary }]}>Add Tenant</Text>
+      </View>
+
+      <View style={styles.navSpacer} />
+    </View>
+  );
+
   if (!selectedPropertyId) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background.primary }]}
         edges={['top', 'bottom']}>
-        <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}>
-            <ChevronLeft size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Add Tenant</Text>
-          <View style={styles.placeholder} />
-        </View>
+        {renderNavBar()}
         <View style={styles.emptyContainer}>
           <EmptyState
             icon={UserPlus}
@@ -309,18 +325,9 @@ export default function AddTenantScreen() {
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background.primary }]}
         edges={['top', 'bottom']}>
-        <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}>
-            <ChevronLeft size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Add Tenant</Text>
-          <View style={styles.placeholder} />
-        </View>
+        {renderNavBar()}
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary[500]} />
+          <ActivityIndicator size="large" color={brandColor} />
         </View>
       </SafeAreaView>
     );
@@ -331,16 +338,7 @@ export default function AddTenantScreen() {
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background.primary }]}
         edges={['top', 'bottom']}>
-        <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}>
-            <ChevronLeft size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Add Tenant</Text>
-          <View style={styles.placeholder} />
-        </View>
+        {renderNavBar()}
         <View style={styles.emptyContainer}>
           <EmptyState
             icon={UserPlus}
@@ -354,20 +352,13 @@ export default function AddTenantScreen() {
     );
   }
 
+  const submitDisabled = loading || !isFormValid() || !isOnline;
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background.primary }]}
       edges={['top', 'bottom']}>
-      <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}>
-          <ChevronLeft size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Add Tenant</Text>
-        <View style={styles.placeholder} />
-      </View>
+      {renderNavBar()}
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -378,16 +369,24 @@ export default function AddTenantScreen() {
             isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
           ]}
           keyboardShouldPersistTaps="handled">
-          <View style={styles.logoContainer}>
-            <View style={[styles.logoCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
-              <UserPlus size={addActionTokens.iconSize.userPlus.form} color={isDark ? colors.primary[300] : colors.action.add.background} />
+          <View style={[styles.heroCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={[styles.heroIconWrap, { backgroundColor: brandLight }]}>
+              <UserPlus
+                size={addActionTokens.iconSize.userPlus.form}
+                color={isDark ? colors.primary[300] : colors.action.add.background}
+              />
             </View>
-            <Text style={[styles.title, { color: colors.text.primary }]}>Add New Tenant</Text>
+            <View style={styles.heroCopy}>
+              <Text style={[styles.heroEyebrow, { color: textTertiary }]}>TENANT ONBOARDING</Text>
+              <Text style={[styles.heroTitle, { color: textPrimary }]}>Add new tenant</Text>
+              <Text style={[styles.heroSubtitle, { color: textSecondary }]}>Profile, room assignment, and billing setup in one flow.</Text>
+            </View>
           </View>
 
           <View
             style={[
-              styles.formContainer,
+              styles.formCard,
+              { backgroundColor: cardBg, borderColor: cardBorder },
               isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
             ]}>
             {error && (
@@ -395,27 +394,27 @@ export default function AddTenantScreen() {
                 style={[
                   styles.errorContainer,
                   {
-                    backgroundColor: colors.danger[50],
-                    borderColor: colors.danger[200],
+                    backgroundColor: isDark ? colors.danger[900] : colors.danger[50],
+                    borderColor: isDark ? colors.danger[700] : colors.danger[200],
                   },
                 ]}>
-                <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
+                <Text style={[styles.errorText, { color: isDark ? colors.danger[300] : colors.danger[700] }]}>{error}</Text>
               </View>
             )}
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Name *</Text>
+              <Text style={[styles.fieldLabel, { color: textSecondary }]}>Name *</Text>
               <TextInput
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.background.secondary,
-                    color: colors.text.primary,
-                    borderColor: errors.name ? colors.danger[500] : colors.border.medium,
+                    backgroundColor: colors.background.primary,
+                    color: textPrimary,
+                    borderColor: errors.name ? colors.danger[500] : cardBorder,
                   },
                 ]}
                 placeholder="e.g., John Smith"
-                placeholderTextColor={colors.text.tertiary}
+                placeholderTextColor={textTertiary}
                 value={name}
                 onChangeText={(text) => {
                   setName(text);
@@ -437,19 +436,19 @@ export default function AddTenantScreen() {
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Document ID</Text>
+              <Text style={[styles.fieldLabel, { color: textSecondary }]}>Document ID</Text>
               <TextInput
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.background.secondary,
-                    color: colors.text.primary,
-                    borderColor: errors.documentId ? colors.danger[500] : colors.border.medium,
+                    backgroundColor: colors.background.primary,
+                    color: textPrimary,
+                    borderColor: errors.documentId ? colors.danger[500] : cardBorder,
                   },
                 ]}
                 placeholder="e.g., AADHAR123456"
                 autoCapitalize="characters"
-                placeholderTextColor={colors.text.tertiary}
+                placeholderTextColor={textTertiary}
                 value={documentId}
                 onChangeText={(text) => {
                   setDocumentId(text);
@@ -470,20 +469,20 @@ export default function AddTenantScreen() {
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Phone *</Text>
+              <Text style={[styles.fieldLabel, { color: textSecondary }]}>Phone *</Text>
               <TextInput
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.background.secondary,
-                    color: colors.text.primary,
-                    borderColor: errors.phone ? colors.danger[500] : colors.border.medium,
+                    backgroundColor: colors.background.primary,
+                    color: textPrimary,
+                    borderColor: errors.phone ? colors.danger[500] : cardBorder,
                   },
                 ]}
                 placeholder="e.g., 9876543210"
                 keyboardType="phone-pad"
                 maxLength={15}
-                placeholderTextColor={colors.text.tertiary}
+                placeholderTextColor={textTertiary}
                 value={phone}
                 onChangeText={(text) => {
                   setPhone(text);
@@ -504,18 +503,19 @@ export default function AddTenantScreen() {
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Address</Text>
+              <Text style={[styles.fieldLabel, { color: textSecondary }]}>Address</Text>
               <TextInput
                 style={[
                   styles.input,
+                  styles.inputMultiline,
                   {
-                    backgroundColor: colors.background.secondary,
-                    color: colors.text.primary,
-                    borderColor: errors.address ? colors.danger[500] : colors.border.medium,
+                    backgroundColor: colors.background.primary,
+                    color: textPrimary,
+                    borderColor: errors.address ? colors.danger[500] : cardBorder,
                   },
                 ]}
                 placeholder="e.g., 123 Main St, City"
-                placeholderTextColor={colors.text.tertiary}
+                placeholderTextColor={textTertiary}
                 value={address}
                 onChangeText={(text) => {
                   setAddress(text);
@@ -538,13 +538,13 @@ export default function AddTenantScreen() {
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Room *</Text>
+              <Text style={[styles.fieldLabel, { color: textSecondary }]}>Room *</Text>
               <TouchableOpacity
                 style={[
                   styles.pickerButton,
                   {
-                    backgroundColor: colors.background.secondary,
-                    borderColor: colors.border.medium,
+                    backgroundColor: colors.background.primary,
+                    borderColor: selectedRoom ? brandColor : cardBorder,
                   },
                 ]}
                 onPress={() => setShowRoomPicker(true)}
@@ -554,23 +554,24 @@ export default function AddTenantScreen() {
                   style={[
                     styles.pickerButtonText,
                     {
-                      color: selectedRoom ? colors.text.primary : colors.text.tertiary,
+                      color: selectedRoom ? textPrimary : textTertiary,
                     },
                   ]}>
                   {selectedRoom ? `Room ${selectedRoom.roomNumber}` : 'Select Room'}
                 </Text>
-                <ChevronDown size={20} color={colors.text.tertiary} />
+                <ChevronDown size={18} color={selectedRoom ? brandColor : textTertiary} />
               </TouchableOpacity>
+              <Text style={[styles.pickerMeta, { color: textTertiary }]}>Pick a room to fetch available beds and default rent.</Text>
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Bed *</Text>
+              <Text style={[styles.fieldLabel, { color: textSecondary }]}>Bed *</Text>
               <TouchableOpacity
                 style={[
                   styles.pickerButton,
                   {
-                    backgroundColor: colors.background.secondary,
-                    borderColor: colors.border.medium,
+                    backgroundColor: colors.background.primary,
+                    borderColor: selectedBed ? brandColor : cardBorder,
                     opacity: !selectedRoom ? 0.5 : 1,
                   },
                 ]}
@@ -581,18 +582,18 @@ export default function AddTenantScreen() {
                   style={[
                     styles.pickerButtonText,
                     {
-                      color: selectedBed ? colors.text.primary : colors.text.tertiary,
+                      color: selectedBed ? textPrimary : textTertiary,
                     },
                   ]}>
                   {selectedBed
                     ? `Bed ${selectedBed.bedNumber}`
                     : 'Select Bed'}
                 </Text>
-                <ChevronDown size={20} color={colors.text.tertiary} />
+                <ChevronDown size={18} color={selectedBed ? brandColor : textTertiary} />
               </TouchableOpacity>
               {selectedRoom && availableBedsForRoom.length === 0 && (
-                <View style={[styles.infoContainer, { backgroundColor: colors.warning[50], borderColor: colors.warning[200] }]}>
-                  <Text style={[styles.infoText, { color: colors.warning[700] }]}>
+                <View style={[styles.infoContainer, { backgroundColor: isDark ? colors.warning[900] : colors.warning[50], borderColor: isDark ? colors.warning[700] : colors.warning[200] }]}>
+                  <Text style={[styles.infoText, { color: isDark ? colors.warning[300] : colors.warning[700] }]}>
                     No available beds in this room
                   </Text>
                 </View>
@@ -600,19 +601,19 @@ export default function AddTenantScreen() {
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.text.primary }]}>Rent Amount *</Text>
+              <Text style={[styles.fieldLabel, { color: textSecondary }]}>Rent Amount *</Text>
               <TextInput
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.background.secondary,
-                    color: colors.text.primary,
-                    borderColor: errors.rent ? colors.danger[500] : colors.border.medium,
+                    backgroundColor: colors.background.primary,
+                    color: textPrimary,
+                    borderColor: errors.rent ? colors.danger[500] : cardBorder,
                   },
                 ]}
                 placeholder="e.g., 5000"
                 keyboardType="numeric"
-                placeholderTextColor={colors.text.tertiary}
+                placeholderTextColor={textTertiary}
                 value={rent}
                 onChangeText={(text) => {
                   const cleaned = text.replace(/[^0-9.]/g, '');
@@ -644,12 +645,10 @@ export default function AddTenantScreen() {
               required
             />
 
-            {/* Billing settings removed */}
-
             {!isOnline && (
-              <View style={[styles.offlineWarning, { backgroundColor: colors.warning[50], borderColor: colors.warning[200] }]}>
-                <Text style={[styles.offlineWarningText, { color: colors.warning[900] }]}>
-                  📡 Offline - You cannot add tenants without internet connection
+              <View style={[styles.offlineWarning, { backgroundColor: isDark ? colors.warning[900] : colors.warning[50], borderColor: isDark ? colors.warning[700] : colors.warning[200] }]}>
+                <Text style={[styles.offlineWarningText, { color: isDark ? colors.warning[300] : colors.warning[900] }]}>
+                  Offline: internet connection is required to add tenants.
                 </Text>
               </View>
             )}
@@ -658,18 +657,18 @@ export default function AddTenantScreen() {
               style={[
                 styles.submitButton,
                 {
-                  backgroundColor: colors.primary[500],
-                  opacity: loading || !isFormValid() || !isOnline ? 0.6 : 1,
+                  backgroundColor: brandColor,
+                  opacity: submitDisabled ? 0.6 : 1,
                 },
               ]}
               onPress={handleNext}
               activeOpacity={0.8}
-              disabled={loading || !isFormValid() || !isOnline}>
+              disabled={submitDisabled}>
               {loading ? (
                 <ActivityIndicator color={colors.white} size="small" />
               ) : (
                 <Text style={[styles.submitButtonText, { color: colors.white }]}> 
-                  {isOnline ? 'Next' : 'Offline'}
+                  {isOnline ? 'Continue to Billing' : 'Offline'}
                 </Text>
               )}
             </TouchableOpacity>
@@ -683,45 +682,53 @@ export default function AddTenantScreen() {
         animationType="fade"
         onRequestClose={() => setShowRoomPicker(false)}>
         <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setShowRoomPicker(false)} activeOpacity={1} />
           <View
             style={[
-              styles.modalContainer,
-              { backgroundColor: colors.background.secondary },
-              isTablet && { alignSelf: 'center', width: '100%', maxWidth: modalMaxWidth },
+              styles.sheet,
+              styles.sheetTablet,
+              {
+                backgroundColor: cardBg,
+                maxWidth: isTablet ? modalMaxWidth : undefined,
+              },
             ]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
-              <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
+            <View style={styles.sheetHandle}>
+              <View style={[styles.handleBar, { backgroundColor: colors.border.dark }]} />
+            </View>
+
+            <View style={[styles.sheetHeader, { borderBottomColor: colors.border.light }]}>
+              <Text style={[styles.sheetTitle, { color: textPrimary }]}>
                 Select Room
               </Text>
             </View>
 
-            <ScrollView style={styles.modalScrollView}>
+            <ScrollView style={styles.sheetBody}>
               {roomsWithBeds.map((roomData, index) => (
                 <TouchableOpacity
                   key={index}
                   style={[
-                    styles.modalOption,
+                    styles.sheetOption,
                     { borderBottomColor: colors.border.light },
                   ]}
                   onPress={() => {
                     setSelectedRoom(roomData.room);
                     setShowRoomPicker(false);
                   }}
-                  activeOpacity={0.7}>
-                  <View style={styles.modalOptionContent}>
+                  activeOpacity={0.75}>
+                  <View style={styles.sheetOptionContent}>
                     <Text
                       style={[
-                        styles.modalOptionText,
+                        styles.sheetOptionTitle,
                         {
                           color:
                             selectedRoom?.id === roomData.room.id
-                              ? colors.primary[500]
-                              : colors.text.primary,
+                              ? brandText
+                              : textPrimary,
                         },
                       ]}>
                       Room {roomData.room.roomNumber}
                     </Text>
-                    <Text style={[styles.modalOptionSubtext, { color: colors.text.secondary }]}>
+                    <Text style={[styles.sheetOptionMeta, { color: textSecondary }]}>
                       Floor {roomData.room.floor} • {roomData.availableBeds.length} available • ₹{roomData.room.price}
                     </Text>
                   </View>
@@ -730,10 +737,10 @@ export default function AddTenantScreen() {
             </ScrollView>
 
             <TouchableOpacity
-              style={[styles.modalCloseButton, { borderTopColor: colors.border.light }]}
+              style={[styles.sheetFooterBtn, { borderTopColor: colors.border.light }]}
               onPress={() => setShowRoomPicker(false)}
-              activeOpacity={0.7}>
-              <Text style={[styles.modalCloseButtonText, { color: colors.text.secondary }]}>
+              activeOpacity={0.75}>
+              <Text style={[styles.sheetFooterBtnText, { color: textSecondary }]}>
                 Cancel
               </Text>
             </TouchableOpacity>
@@ -747,39 +754,47 @@ export default function AddTenantScreen() {
         animationType="fade"
         onRequestClose={() => setShowBedPicker(false)}>
         <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setShowBedPicker(false)} activeOpacity={1} />
           <View
             style={[
-              styles.modalContainer,
-              { backgroundColor: colors.background.secondary },
-              isTablet && { alignSelf: 'center', width: '100%', maxWidth: modalMaxWidth },
+              styles.sheet,
+              styles.sheetTablet,
+              {
+                backgroundColor: cardBg,
+                maxWidth: isTablet ? modalMaxWidth : undefined,
+              },
             ]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
-              <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
+            <View style={styles.sheetHandle}>
+              <View style={[styles.handleBar, { backgroundColor: colors.border.dark }]} />
+            </View>
+
+            <View style={[styles.sheetHeader, { borderBottomColor: colors.border.light }]}>
+              <Text style={[styles.sheetTitle, { color: textPrimary }]}>
                 Select Bed
               </Text>
             </View>
 
-            <ScrollView style={styles.modalScrollView}>
+            <ScrollView style={styles.sheetBody}>
               {availableBedsForRoom.map((bed, index) => (
                 <TouchableOpacity
                   key={index}
                   style={[
-                    styles.modalOption,
+                    styles.sheetOption,
                     { borderBottomColor: colors.border.light },
                   ]}
                   onPress={() => {
                     setSelectedBed(bed);
                     setShowBedPicker(false);
                   }}
-                  activeOpacity={0.7}>
+                  activeOpacity={0.75}>
                   <Text
                     style={[
-                      styles.modalOptionText,
+                      styles.sheetOptionTitle,
                       {
                         color:
                           selectedBed?.id === bed.id
-                            ? colors.primary[500]
-                            : colors.text.primary,
+                            ? brandText
+                            : textPrimary,
                       },
                     ]}>
                     Bed {bed.bedNumber}
@@ -789,10 +804,10 @@ export default function AddTenantScreen() {
             </ScrollView>
 
             <TouchableOpacity
-              style={[styles.modalCloseButton, { borderTopColor: colors.border.light }]}
+              style={[styles.sheetFooterBtn, { borderTopColor: colors.border.light }]}
               onPress={() => setShowBedPicker(false)}
-              activeOpacity={0.7}>
-              <Text style={[styles.modalCloseButtonText, { color: colors.text.secondary }]}>
+              activeOpacity={0.75}>
+              <Text style={[styles.sheetFooterBtnText, { color: textSecondary }]}>
                 Cancel
               </Text>
             </TouchableOpacity>
@@ -813,27 +828,43 @@ export default function AddTenantScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
+  container: { flex: 1 },
+
+  navBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
   },
-  backButton: {
-    width: 40,
+  navBack: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  headerTitle: {
-    ...textPresets.h4,
-    color: colors.text.primary,
+  navCenter: {
+    flex: 1,
+    alignItems: 'center',
   },
-  placeholder: {
-    width: 40,
+  navEyebrow: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: 9,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom: 1,
   },
+  navTitle: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.lg,
+    letterSpacing: typography.letterSpacing.tight,
+  },
+  navSpacer: {
+    width: 36,
+    height: 36,
+  },
+
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -844,75 +875,111 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  keyboardView: {
-    flex: 1,
-  },
+  keyboardView: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxxl,
   },
-  logoContainer: {
+
+  heroCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    gap: spacing.md,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
   },
-  logoCircle: {
-    width: 60,
-    height: 60,
+  heroIconWrap: {
+    width: 56,
+    height: 56,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
   },
-  title: {
-    ...textPresets.h3,
-    color: colors.text.primary,
+  heroCopy: {
+    flex: 1,
   },
-  formContainer: {
+  heroEyebrow: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: 9,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom: 3,
+  },
+  heroTitle: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.xl,
+    letterSpacing: typography.letterSpacing.tight,
+    marginBottom: 2,
+  },
+  heroSubtitle: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.sm,
+    lineHeight: 19,
+  },
+
+  formCard: {
     width: '100%',
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    padding: spacing.lg,
   },
   errorContainer: {
     borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   errorText: {
-    ...textPresets.hint,
-    color: colors.danger[600],
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.xs,
+    lineHeight: 16,
     marginTop: spacing.xs,
   },
   inputContainer: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
-  label: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
+  fieldLabel: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wider,
+    textTransform: 'uppercase',
     marginBottom: spacing.sm,
   },
   input: {
-    ...textPresets.body,
-    color: colors.text.primary,
     borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
     borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.md,
+  },
+  inputMultiline: {
+    minHeight: 82,
+    textAlignVertical: 'top',
   },
   pickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
     borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
   },
   pickerButtonText: {
-    ...textPresets.body,
+    flex: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.md,
   },
-  helperText: {
-    ...textPresets.hint,
+  pickerMeta: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wide,
     marginTop: spacing.xs,
   },
   infoContainer: {
@@ -923,26 +990,21 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   infoText: {
-    ...textPresets.bodyMedium,
-    color: colors.warning[700],
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wide,
   },
-  dateInputContainer: {
-    position: 'relative',
-  },
-  dateIcon: {
-    position: 'absolute',
-    left: spacing.lg,
-    top: spacing.md,
-    zIndex: 1,
-  },
-  dateInput: {
-    ...textPresets.body,
-    color: colors.text.primary,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    paddingLeft: 48,
+  offlineWarning: {
+    borderRadius: radius.lg,
     borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+  },
+  offlineWarningText: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.fontSize.sm,
+    lineHeight: 20,
   },
   submitButton: {
     borderRadius: radius.md,
@@ -950,98 +1012,76 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: spacing.sm,
-    ...shadows.lg,
+    ...shadows.md,
   },
   submitButtonText: {
-    ...textPresets.button,
-    color: colors.white,
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.wide,
   },
-  offlineWarning: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  offlineWarningText: {
-    ...textPresets.bodyMedium,
-    color: colors.warning[900],
-  },
+
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
   },
-  modalContainer: {
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    maxHeight: '70%',
+  sheet: {
+    width: '100%',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     ...shadows.xl,
   },
-  modalHeader: {
-    padding: spacing.lg,
-    borderBottomWidth: 1,
+  sheetTablet: {
+    alignSelf: 'center',
   },
-  modalTitle: {
-    ...textPresets.h4,
-    color: colors.text.primary,
-    textAlign: 'center',
-  },
-  modalScrollView: {
-    maxHeight: 400,
-  },
-  modalOption: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderBottomWidth: 1,
-  },
-  modalOptionContent: {
-    gap: spacing.xs,
-  },
-  modalOptionText: {
-    ...textPresets.body,
-    color: colors.text.primary,
-  },
-  modalOptionSubtext: {
-    ...textPresets.caption,
-    color: colors.text.secondary,
-  },
-  modalCloseButton: {
-    padding: spacing.lg,
-    borderTopWidth: 1,
+  sheetHandle: {
     alignItems: 'center',
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
   },
-  modalCloseButtonText: {
-    ...textPresets.button,
-    color: colors.text.secondary,
+  handleBar: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    opacity: 0.35,
   },
-  billingSection: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  billingSectionTitle: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
-    marginBottom: spacing.lg,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: radius.md,
-    borderWidth: 1,
+  sheetHeader: {
+    borderBottomWidth: 1,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    marginTop: spacing.md,
   },
-  toggleLabel: {
-    flex: 1,
-    marginRight: spacing.md,
+  sheetTitle: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.tight,
+    textAlign: 'center',
   },
-  toggleHint: {
-    ...textPresets.hint,
-    marginTop: spacing.xs,
+  sheetBody: {
+    maxHeight: 380,
+  },
+  sheetOption: {
+    borderBottomWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  sheetOptionContent: {
+    gap: spacing.xs,
+  },
+  sheetOptionTitle: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.md,
+  },
+  sheetOptionMeta: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.xs,
+  },
+  sheetFooterBtn: {
+    borderTopWidth: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+  },
+  sheetFooterBtnText: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.sm,
+    letterSpacing: typography.letterSpacing.wide,
   },
 });

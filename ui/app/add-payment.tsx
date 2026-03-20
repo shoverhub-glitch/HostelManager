@@ -15,8 +15,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Wallet, ChevronLeft, ChevronDown } from 'lucide-react-native';
-import { spacing, radius, shadows, colors } from '@/theme';
-import { typography,textPresets } from '@/theme/typography';
+import { spacing, radius, shadows } from '@/theme';
+import { typography } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useProperty } from '@/context/PropertyContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -267,21 +267,39 @@ export default function AddPaymentScreen() {
     return baseValid && isPaymentMethodValid;
   };
 
+  const brandColor = colors.primary[500];
+  const brandLight = isDark ? colors.primary[900] : colors.primary[50];
+  const brandText = isDark ? colors.primary[300] : colors.primary[700];
+  const cardBg = colors.background.secondary;
+  const cardBorder = colors.border.medium;
+  const textPrimary = colors.text.primary;
+  const textSecondary = colors.text.secondary;
+  const textTertiary = colors.text.tertiary;
+
+  const renderNavBar = () => (
+    <View style={[styles.navBar, { backgroundColor: cardBg, borderBottomColor: colors.border.light }]}>
+      <TouchableOpacity
+        style={[styles.navBack, { backgroundColor: colors.background.primary, borderColor: cardBorder }]}
+        onPress={() => router.back()}
+        activeOpacity={0.75}>
+        <ChevronLeft size={20} color={textPrimary} strokeWidth={2.4} />
+      </TouchableOpacity>
+
+      <View style={styles.navCenter}>
+        <Text style={[styles.navEyebrow, { color: textTertiary }]}>STEP 2</Text>
+        <Text style={[styles.navTitle, { color: textPrimary }]}>Record Payment</Text>
+      </View>
+
+      <View style={styles.navSpacer} />
+    </View>
+  );
+
   if (!selectedPropertyId) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background.primary }]}
         edges={['top', 'bottom']}>
-        <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}>
-            <ChevronLeft size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Record Payment</Text>
-          <View style={styles.placeholder} />
-        </View>
+        {renderNavBar()}
         <View style={styles.emptyContainer}>
           <EmptyState
             icon={Wallet}
@@ -301,16 +319,7 @@ export default function AddPaymentScreen() {
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background.primary }]}
       edges={['top', 'bottom']}>
-      <View style={[styles.header, { backgroundColor: colors.background.secondary, borderBottomColor: colors.border.light }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}>
-          <ChevronLeft size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Record Payment</Text>
-        <View style={styles.placeholder} />
-      </View>
+      {renderNavBar()}
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -321,54 +330,62 @@ export default function AddPaymentScreen() {
             isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
           ]}
           keyboardShouldPersistTaps="handled">
-          <View style={styles.logoContainer}>
-            <View style={[styles.logoCircle, { backgroundColor: isDark ? colors.primary[900] : colors.primary[50] }]}>
-              <Wallet size={32} color={isDark ? colors.primary[300] : colors.primary[500]} />
+          <View style={[styles.heroCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={[styles.heroIconWrap, { backgroundColor: brandLight }]}>
+              <Wallet size={30} color={isDark ? colors.primary[300] : brandColor} />
             </View>
-            <Text style={[styles.title, { color: colors.text.primary }]}>Record Payment</Text>
+            <View style={styles.heroCopy}>
+              <Text style={[styles.heroEyebrow, { color: textTertiary }]}>BILLING SETUP</Text>
+              <Text style={[styles.heroTitle, { color: textPrimary }]}>Record payment</Text>
+              <Text style={[styles.heroSubtitle, { color: textSecondary }]}>Define current status and monthly due cycle for this tenant.</Text>
+            </View>
           </View>
 
           <View
             style={[
-              styles.formContainer,
+              styles.formCard,
+              { backgroundColor: cardBg, borderColor: cardBorder },
               isTablet && { alignSelf: 'center', width: '100%', maxWidth: formMaxWidth },
             ]}>
             {error && (
-              <View style={[styles.errorContainer, { backgroundColor: colors.danger[50], borderColor: colors.danger[200] }]}>
-                <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
+              <View style={[styles.errorContainer, {
+                backgroundColor: isDark ? colors.danger[900] : colors.danger[50],
+                borderColor: isDark ? colors.danger[700] : colors.danger[200],
+              }]}>
+                <Text style={[styles.errorText, { color: isDark ? colors.danger[300] : colors.danger[700] }]}>{error}</Text>
               </View>
             )}
             {!shouldHideStatus && (
               <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: colors.text.primary }]}>Status *</Text>
+                <Text style={[styles.fieldLabel, { color: textSecondary }]}>Status *</Text>
                 <TouchableOpacity
                   style={[
                     styles.pickerButton,
                     {
-                      backgroundColor: !autoGeneratePayments ? colors.neutral[700] : colors.background.secondary,
-                      borderColor: colors.border.medium,
+                      backgroundColor: !autoGeneratePayments ? colors.neutral[700] : colors.background.primary,
+                      borderColor: !autoGeneratePayments ? colors.border.dark : cardBorder,
                     },
                   ]}
                   onPress={() => setShowStatusPicker(true)}
                   activeOpacity={0.7}
                   disabled={loading || !autoGeneratePayments}>
-                  <Text style={[styles.pickerButtonText, { color: !autoGeneratePayments ? colors.text.tertiary : colors.text.primary }]}>
+                  <Text style={[styles.pickerButtonText, { color: !autoGeneratePayments ? textTertiary : textPrimary }]}>
                     {status === 'paid' ? 'Paid' : 'Due'}
                   </Text>
-                  <ChevronDown size={20} color={colors.text.tertiary} />
+                  <ChevronDown size={18} color={!autoGeneratePayments ? textTertiary : brandColor} />
                 </TouchableOpacity>
               </View>
             )}
 
             {autoGeneratePayments && effectiveStatus === 'paid' && (
               <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: colors.text.primary }]}>Payment Method *</Text>
+                <Text style={[styles.fieldLabel, { color: textSecondary }]}>Payment Method *</Text>
                 <TouchableOpacity
                   style={[
                     styles.pickerButton,
                     {
-                      backgroundColor: colors.background.secondary,
-                      borderColor: colors.border.medium,
+                      backgroundColor: colors.background.primary,
+                      borderColor: cardBorder,
                     },
                   ]}
                   onPress={() => setShowMethodPicker(true)}
@@ -378,12 +395,12 @@ export default function AddPaymentScreen() {
                     style={[
                       styles.pickerButtonText,
                       {
-                        color: paymentMethod ? colors.text.primary : colors.text.tertiary,
+                        color: paymentMethod ? textPrimary : textTertiary,
                       },
                     ]}>
                     {paymentMethod || 'Select Payment Method'}
                   </Text>
-                  <ChevronDown size={20} color={colors.text.tertiary} />
+                  <ChevronDown size={18} color={paymentMethod ? brandColor : textTertiary} />
                 </TouchableOpacity>
               </View>
             )}
@@ -393,59 +410,65 @@ export default function AddPaymentScreen() {
               <>
                 {/* Anchor Day */}
                 <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: colors.text.primary }]}>When is rent due? *</Text>
+                <Text style={[styles.fieldLabel, { color: textSecondary }]}>When Is Rent Due? *</Text>
                 {shouldHideStatus ? (
                   <>
                     <TouchableOpacity
-                      style={[styles.pickerButton, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium }]}
+                      style={[styles.pickerButton, { backgroundColor: colors.background.primary, borderColor: cardBorder }]}
                       onPress={() => setShowAnchorDayPicker(true)}
                       activeOpacity={0.7}
                       disabled={loading}>
                       <Text style={[styles.pickerButtonText, { color: colors.text.primary }]}> 
                         Day {anchorDay} • Every Month
                       </Text>
-                      <ChevronDown size={20} color={colors.text.tertiary} />
+                      <ChevronDown size={18} color={brandColor} />
                     </TouchableOpacity>
-                    <View style={[styles.scheduleHintBox, { backgroundColor: colors.primary[50], borderColor: colors.primary[200] }]}>
-                      <Text style={[styles.scheduleHintText, { color: colors.primary[700] }]}>
+                    <View style={[styles.scheduleHintBox, {
+                      backgroundColor: isDark ? colors.primary[900] : colors.primary[50],
+                      borderColor: isDark ? colors.primary[700] : colors.primary[200],
+                    }]}>
+                      <Text style={[styles.scheduleHintText, { color: brandText }]}>
                         Payment will be generated on {nextScheduledDueDateLabel}.
                       </Text>
-                      <Text style={[styles.infoNote, { color: colors.text.secondary }]}>
+                      <Text style={[styles.infoNote, { color: textSecondary }]}>
                         Status and method are set automatically.
                       </Text>
                     </View>
                   </>
                 ) : status === 'due' ? (
                   // For monthly + due: lock to today (rent is due today)
-                  <View style={[styles.infoBox, { backgroundColor: colors.primary[50], borderColor: colors.primary[200] }]}>
-                    <Text style={[styles.infoValue, { color: colors.primary[700] }]}>
+                  <View style={[styles.infoBox, {
+                    backgroundColor: isDark ? colors.primary[900] : colors.primary[50],
+                    borderColor: isDark ? colors.primary[700] : colors.primary[200],
+                  }]}>
+                    <Text style={[styles.infoValue, { color: brandText }]}>
                       Day {anchorDay} • Every Month
                     </Text>
-                    <Text style={[styles.infoNote, { color: colors.text.secondary }]}>
+                    <Text style={[styles.infoNote, { color: textSecondary }]}>
                       Automatically set to today (rent is due today)
                     </Text>
                   </View>
                 ) : (
                   // If status is 'paid', allow selection
                   <TouchableOpacity
-                    style={[styles.pickerButton, { backgroundColor: colors.background.secondary, borderColor: colors.border.medium }]}
+                    style={[styles.pickerButton, { backgroundColor: colors.background.primary, borderColor: cardBorder }]}
                     onPress={() => setShowAnchorDayPicker(true)}
                     activeOpacity={0.7}
                     disabled={loading}>
-                    <Text style={[styles.pickerButtonText, { color: colors.text.primary }]}>
+                    <Text style={[styles.pickerButtonText, { color: textPrimary }]}>
                       Day {anchorDay} • Every Month
                     </Text>
-                    <ChevronDown size={20} color={colors.text.tertiary} />
+                    <ChevronDown size={18} color={brandColor} />
                   </TouchableOpacity>
                 )}
                 {!shouldHideStatus && status !== 'due' && (
-                  <Text style={[styles.helperText, { color: colors.text.secondary, marginTop: spacing.sm }]}>
+                  <Text style={[styles.helperText, { color: textSecondary, marginTop: spacing.sm }]}>
                     Same day each month
                   </Text>
                 )}
 
                 {!shouldHideStatus && status === 'due' && (
-                  <Text style={[styles.helperText, { color: colors.text.secondary, marginTop: spacing.sm }]}>
+                  <Text style={[styles.helperText, { color: textSecondary, marginTop: spacing.sm }]}>
                     A due payment record is created immediately for this cycle.
                   </Text>
                 )}
@@ -454,27 +477,33 @@ export default function AddPaymentScreen() {
             )}
 
             {/* Auto-generate Payments Toggle */}
-            <View style={[styles.toggleContainer, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[50], borderColor: colors.border.light }]}>
+            <View style={[styles.toggleContainer, {
+              backgroundColor: colors.background.primary,
+              borderColor: cardBorder,
+            }]}>
               <View style={styles.toggleTextContainer}>
-                <Text style={[styles.toggleLabel, { color: colors.text.primary }]}>Auto-Generate Payments</Text>
-                <Text style={[styles.toggleDescription, { color: colors.text.secondary }]}>
+                <Text style={[styles.toggleLabel, { color: textPrimary }]}>Auto-Generate Payments</Text>
+                <Text style={[styles.toggleDescription, { color: textSecondary }]}>
                   Automatically create monthly payment records for this tenant
                 </Text>
               </View>
               <Switch
                 value={autoGeneratePayments}
                 onValueChange={setAutoGeneratePayments}
-                trackColor={{ false: colors.neutral[300], true: colors.primary[200] }}
-                thumbColor={autoGeneratePayments ? colors.primary[500] : colors.neutral[400]}
+                trackColor={{ false: colors.neutral[300], true: colors.primary[300] }}
+                thumbColor={autoGeneratePayments ? brandColor : colors.neutral[400]}
                 disabled={loading}
               />
             </View>
 
 
             {!isOnline && (
-              <View style={[styles.offlineWarning, { backgroundColor: colors.warning[50], borderColor: colors.warning[200] }]}>
-                <Text style={[styles.offlineWarningText, { color: colors.warning[900] }]}>
-                  📡 Offline - You cannot add payments without internet connection
+              <View style={[styles.offlineWarning, {
+                backgroundColor: isDark ? colors.warning[900] : colors.warning[50],
+                borderColor: isDark ? colors.warning[700] : colors.warning[200],
+              }]}>
+                <Text style={[styles.offlineWarningText, { color: isDark ? colors.warning[300] : colors.warning[900] }]}>
+                  Offline: internet connection is required to complete tenant creation.
                 </Text>
               </View>
             )}
@@ -483,7 +512,7 @@ export default function AddPaymentScreen() {
               style={[
                 styles.submitButton,
                 {
-                  backgroundColor: colors.primary[500],
+                  backgroundColor: brandColor,
                   opacity: loading || !isFormValid() || !isOnline ? 0.6 : 1,
                 },
               ]}
@@ -509,38 +538,46 @@ export default function AddPaymentScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowStatusPicker(false)}>
-        <View style={[styles.modalOverlay, isTablet && styles.modalOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setShowStatusPicker(false)} activeOpacity={1} />
           <View
             style={[
-              styles.modalContainer,
-              isTablet && styles.modalContainerTablet,
-              { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
+              styles.sheet,
+              styles.sheetTablet,
+              {
+                backgroundColor: cardBg,
+                maxWidth: isTablet ? modalMaxWidth : undefined,
+              },
             ]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
-              <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
+            <View style={styles.sheetHandle}>
+              <View style={[styles.handleBar, { backgroundColor: colors.border.dark }]} />
+            </View>
+
+            <View style={[styles.sheetHeader, { borderBottomColor: colors.border.light }]}>
+              <Text style={[styles.sheetTitle, { color: textPrimary }]}>
                 Select Payment Status
               </Text>
             </View>
 
-            <ScrollView style={styles.modalScrollView}>
+            <ScrollView style={styles.sheetBody}>
               {PAYMENT_STATUSES.map((s, index) => (
                 <TouchableOpacity
                   key={index}
                   style={[
-                    styles.modalOption,
+                    styles.sheetOption,
                     { borderBottomColor: colors.border.light },
                   ]}
                   onPress={() => {
                     handleStatusChange(s.value as 'paid' | 'due');
                     setShowStatusPicker(false);
                   }}
-                  activeOpacity={0.7}>
+                  activeOpacity={0.75}>
                   <Text
                     style={[
-                      styles.modalOptionText,
+                      styles.sheetOptionText,
                       {
                         color:
-                          status === s.value ? colors.primary[500] : colors.text.primary,
+                          status === s.value ? brandText : textPrimary,
                       },
                     ]}>
                     {s.label}
@@ -550,10 +587,10 @@ export default function AddPaymentScreen() {
             </ScrollView>
 
             <TouchableOpacity
-              style={[styles.modalCloseButton, { borderTopColor: colors.border.light }]}
+              style={[styles.sheetFooterBtn, { borderTopColor: colors.border.light }]}
               onPress={() => setShowStatusPicker(false)}
-              activeOpacity={0.7}>
-              <Text style={[styles.modalCloseButtonText, { color: colors.text.secondary }]}>
+              activeOpacity={0.75}>
+              <Text style={[styles.sheetFooterBtnText, { color: textSecondary }]}>
                 Cancel
               </Text>
             </TouchableOpacity>
@@ -561,100 +598,119 @@ export default function AddPaymentScreen() {
         </View>
       </Modal>
 
-        <Modal
-          visible={showAnchorDayPicker}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowAnchorDayPicker(false)}>
-          <View style={[styles.modalOverlay, isTablet && styles.modalOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
-            <View
-              style={[
-                styles.modalContainer,
-                isTablet && styles.modalContainerTablet,
-                { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
-              ]}>
-              <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
-                <Text style={[styles.modalTitle, { color: colors.text.primary }]}>When is rent due?</Text>
-              </View>
-              <ScrollView style={styles.modalScrollView}>
-                {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                  <TouchableOpacity
-                    key={day}
-                    style={[styles.modalOption, { borderBottomColor: colors.border.light }]}
-                    onPress={() => {
-                      setAnchorDay(day);
-                      setShowAnchorDayPicker(false);
-                    }}
-                    activeOpacity={0.7}>
-                    <Text
-                      style={[
-                        styles.modalOptionText,
-                        {
-                          color:
-                            anchorDay === day ? colors.primary[500] : colors.text.primary,
-                        },
-                      ]}>
-                      Day {day} • Every Month
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <TouchableOpacity
-                style={[styles.modalCloseButton, { borderTopColor: colors.border.light }]}
-                onPress={() => setShowAnchorDayPicker(false)}
-                activeOpacity={0.7}>
-                <Text style={[styles.modalCloseButtonText, { color: colors.text.secondary }]}>Cancel</Text>
-              </TouchableOpacity>
+      <Modal
+        visible={showAnchorDayPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAnchorDayPicker(false)}>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setShowAnchorDayPicker(false)} activeOpacity={1} />
+          <View
+            style={[
+              styles.sheet,
+              styles.sheetTablet,
+              {
+                backgroundColor: cardBg,
+                maxWidth: isTablet ? modalMaxWidth : undefined,
+              },
+            ]}>
+            <View style={styles.sheetHandle}>
+              <View style={[styles.handleBar, { backgroundColor: colors.border.dark }]} />
             </View>
-          </View>
-        </Modal>
 
-        <Modal
-          visible={showMethodPicker}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowMethodPicker(false)}>
-          <View style={[styles.modalOverlay, isTablet && styles.modalOverlayTablet, { backgroundColor: colors.modal.overlay }]}>
-            <View
-              style={[
-                styles.modalContainer,
-                isTablet && styles.modalContainerTablet,
-                { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
-              ]}>
-              <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
-                <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Select Payment Method</Text>
-              </View>
-              <ScrollView style={styles.modalScrollView}>
-                {PAYMENT_METHODS.map((method) => (
-                  <TouchableOpacity
-                    key={method}
-                    style={[styles.modalOption, { borderBottomColor: colors.border.light }]}
-                    onPress={() => {
-                      setPaymentMethod(method);
-                      setShowMethodPicker(false);
-                    }}
-                    activeOpacity={0.7}>
-                    <Text
-                      style={[
-                        styles.modalOptionText,
-                        {
-                          color: paymentMethod === method ? colors.primary[500] : colors.text.primary,
-                        },
-                      ]}>
-                      {method}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <TouchableOpacity
-                style={[styles.modalCloseButton, { borderTopColor: colors.border.light }]}
-                onPress={() => setShowMethodPicker(false)}
-                activeOpacity={0.7}>
-                <Text style={[styles.modalCloseButtonText, { color: colors.text.secondary }]}>Cancel</Text>
-              </TouchableOpacity>
+            <View style={[styles.sheetHeader, { borderBottomColor: colors.border.light }]}>
+              <Text style={[styles.sheetTitle, { color: textPrimary }]}>When is rent due?</Text>
             </View>
+
+            <ScrollView style={styles.sheetBody}>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                <TouchableOpacity
+                  key={day}
+                  style={[styles.sheetOption, { borderBottomColor: colors.border.light }]}
+                  onPress={() => {
+                    setAnchorDay(day);
+                    setShowAnchorDayPicker(false);
+                  }}
+                  activeOpacity={0.75}>
+                  <Text
+                    style={[
+                      styles.sheetOptionText,
+                      {
+                        color: anchorDay === day ? brandText : textPrimary,
+                      },
+                    ]}>
+                    Day {day} • Every Month
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.sheetFooterBtn, { borderTopColor: colors.border.light }]}
+              onPress={() => setShowAnchorDayPicker(false)}
+              activeOpacity={0.75}>
+              <Text style={[styles.sheetFooterBtnText, { color: textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showMethodPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMethodPicker(false)}>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setShowMethodPicker(false)} activeOpacity={1} />
+          <View
+            style={[
+              styles.sheet,
+              styles.sheetTablet,
+              {
+                backgroundColor: cardBg,
+                maxWidth: isTablet ? modalMaxWidth : undefined,
+              },
+            ]}>
+            <View style={styles.sheetHandle}>
+              <View style={[styles.handleBar, { backgroundColor: colors.border.dark }]} />
+            </View>
+
+            <View style={[styles.sheetHeader, { borderBottomColor: colors.border.light }]}>
+              <Text style={[styles.sheetTitle, { color: textPrimary }]}>Select Payment Method</Text>
+            </View>
+
+            <ScrollView style={styles.sheetBody}>
+              {PAYMENT_METHODS.map((method) => (
+                <TouchableOpacity
+                  key={method}
+                  style={[styles.sheetOption, { borderBottomColor: colors.border.light }]}
+                  onPress={() => {
+                    setPaymentMethod(method);
+                    setShowMethodPicker(false);
+                  }}
+                  activeOpacity={0.75}>
+                  <Text
+                    style={[
+                      styles.sheetOptionText,
+                      {
+                        color: paymentMethod === method ? brandText : textPrimary,
+                      },
+                    ]}>
+                    {method}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.sheetFooterBtn, { borderTopColor: colors.border.light }]}
+              onPress={() => setShowMethodPicker(false)}
+              activeOpacity={0.75}>
+              <Text style={[styles.sheetFooterBtnText, { color: textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <UpgradeModal
         visible={showUpgradeModal}
@@ -668,120 +724,141 @@ export default function AddPaymentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
+  container: { flex: 1 },
+
+  navBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
   },
-  backButton: {
-    width: 40,
+  navBack: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  headerTitle: {
-    ...textPresets.h4,
-    color: colors.text.primary,
+  navCenter: {
+    flex: 1,
+    alignItems: 'center',
   },
-  placeholder: {
-    width: 40,
+  navEyebrow: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: 9,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom: 1,
   },
+  navTitle: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.lg,
+    letterSpacing: typography.letterSpacing.tight,
+  },
+  navSpacer: {
+    width: 36,
+    height: 36,
+  },
+
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  keyboardView: {
-    flex: 1,
-  },
+  keyboardView: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxxl,
   },
-  logoContainer: {
+
+  heroCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    gap: spacing.md,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
   },
-  logoCircle: {
-    width: 60,
-    height: 60,
+  heroIconWrap: {
+    width: 56,
+    height: 56,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
   },
-  title: {
-    ...textPresets.h2,
-    color: colors.text.primary,
+  heroCopy: {
+    flex: 1,
   },
-  formContainer: {
+  heroEyebrow: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: 9,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom: 3,
+  },
+  heroTitle: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.xl,
+    letterSpacing: typography.letterSpacing.tight,
+    marginBottom: 2,
+  },
+  heroSubtitle: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.sm,
+    lineHeight: 19,
+  },
+
+  formCard: {
     width: '100%',
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    padding: spacing.lg,
   },
   errorContainer: {
     borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   errorText: {
-    ...textPresets.bodyMedium,
-    color: colors.danger[700],
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.xs,
+    lineHeight: 16,
   },
   inputContainer: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
-  label: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
+  fieldLabel: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wider,
+    textTransform: 'uppercase',
     marginBottom: spacing.sm,
-  },
-  input: {
-    ...textPresets.body,
-    color: colors.text.primary,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderWidth: 1,
   },
   pickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     borderWidth: 1,
+    gap: spacing.sm,
   },
   pickerButtonText: {
-    ...textPresets.body,
-    color: colors.text.primary,
-  },
-  infoContainer: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  infoText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
+    flex: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.md,
   },
   toggleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     marginBottom: spacing.md,
@@ -792,21 +869,15 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
   },
   toggleLabel: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.sm,
+    letterSpacing: typography.letterSpacing.wide,
     marginBottom: spacing.xs,
   },
   toggleDescription: {
-    ...textPresets.caption,
-    color: colors.text.secondary,
-  },
-  submitButtonText: {
-    ...textPresets.button,
-    color: colors.white,
-  },
-  offlineWarningText: {
-    ...textPresets.bodyMedium,
-    color: colors.warning[900],
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.xs,
+    lineHeight: 18,
   },
   submitButton: {
     borderRadius: radius.md,
@@ -814,77 +885,88 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: spacing.sm,
-    ...shadows.lg,
+    ...shadows.md,
+  },
+  submitButtonText: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.wide,
   },
   offlineWarning: {
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
+  offlineWarningText: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.fontSize.sm,
+    lineHeight: 20,
+  },
+
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
   },
-  modalOverlayTablet: {
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  modalContainer: {
+  sheet: {
+    width: '100%',
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
-    maxHeight: '70%',
     ...shadows.xl,
   },
-  modalContainerTablet: {
-    width: '100%',
+  sheetTablet: {
     alignSelf: 'center',
-    maxHeight: '85%',
-    borderBottomLeftRadius: radius.xl,
-    borderBottomRightRadius: radius.xl,
   },
-  modalHeader: {
-    padding: spacing.lg,
+  sheetHandle: {
+    alignItems: 'center',
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  handleBar: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    opacity: 0.35,
+  },
+  sheetHeader: {
     borderBottomWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
-  modalTitle: {
-    ...textPresets.h4,
-    color: colors.text.primary,
+  sheetTitle: {
+    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.tight,
     textAlign: 'center',
   },
-  modalScrollView: {
-    maxHeight: 400,
+  sheetBody: {
+    maxHeight: 380,
   },
-  modalOption: {
+  sheetOption: {
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
   },
-  modalOptionContent: {
-    gap: spacing.xs,
+  sheetOptionText: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.md,
   },
-  modalOptionText: {
-    ...textPresets.body,
-    color: colors.text.primary,
-  },
-  modalOptionSubtext: {
-    ...textPresets.caption,
-    color: colors.text.secondary,
-  },
-  modalCloseButton: {
-    padding: spacing.lg,
+  sheetFooterBtn: {
     borderTopWidth: 1,
     alignItems: 'center',
+    paddingVertical: spacing.md,
   },
-  modalCloseButtonText: {
-    ...textPresets.button,
-    color: colors.text.secondary,
+  sheetFooterBtnText: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.sm,
+    letterSpacing: typography.letterSpacing.wide,
   },
+
   helperText: {
-    ...textPresets.hint,
-    color: colors.text.secondary,
-    marginTop: spacing.sm,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wide,
   },
   infoBox: {
     marginTop: spacing.md,
@@ -900,22 +982,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   scheduleHintText: {
-    ...textPresets.hint,
-    color: colors.primary[700],
-  },
-  infoLabel: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
-    marginBottom: spacing.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wide,
   },
   infoValue: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.sm,
+    letterSpacing: typography.letterSpacing.wide,
     marginBottom: spacing.xs,
   },
   infoNote: {
-    ...textPresets.hint,
-    color: colors.text.secondary,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.xs,
+    lineHeight: 16,
     marginTop: spacing.xs,
   },
 });

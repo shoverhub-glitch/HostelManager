@@ -7,19 +7,19 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
+  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenContainer from '@/components/ScreenContainer';
 import StatusBadge from '@/components/StatusBadge';
-import Card from '@/components/Card';
 import EmptyState from '@/components/EmptyState';
 import Skeleton from '@/components/Skeleton';
 import ApiErrorCard from '@/components/ApiErrorCard';
 import FAB from '@/components/FAB';
 import UpgradeModal from '@/components/UpgradeModal';
 import {
-  Filter,
+  SlidersHorizontal,
   CheckCircle,
   Clock,
   Calendar,
@@ -29,7 +29,7 @@ import {
   ChevronRight,
   X,
   LogOut,
-  Check,
+  ArrowRight,
 } from 'lucide-react-native';
 import { spacing, radius, shadows } from '@/theme';
 import { typography } from '@/theme/typography';
@@ -40,8 +40,8 @@ import { paymentService } from '@/services/apiClient';
 import type { Payment, PaginatedResponse } from '@/services/apiTypes';
 import { cacheKeys, getScreenCache, setScreenCache, clearScreenCache } from '@/services/screenCache';
 
-const PAYMENTS_CACHE_STALE_MS = 30 * 1000;
-const PAYMENTS_PAGE_SIZE      = 50;
+const PAYMENTS_CACHE_STALE_MS  = 30 * 1000;
+const PAYMENTS_PAGE_SIZE       = 50;
 const MAX_ERROR_MESSAGE_LENGTH = 220;
 
 function normalizeErrorMessage(message?: string): string {
@@ -58,6 +58,84 @@ const MONTH_NAMES = [
   'July','August','September','October','November','December',
 ];
 
+type StatusFilter = 'all' | 'paid' | 'due';
+type MethodFilter = 'all' | 'Cash' | 'Online' | 'Bank Transfer' | 'UPI' | 'Cheque';
+
+// ── Pill Selector ─────────────────────────────────────────────────────────────
+// Compact horizontal pill group — single selection
+function PillGroup<T extends string>({
+  options,
+  value,
+  onChange,
+  activeColor,
+  activeBg,
+  inactiveBg,
+  inactiveBorder,
+  activeText,
+  inactiveText,
+}: {
+  options: { label: string; value: T }[];
+  value: T;
+  onChange: (v: T) => void;
+  activeColor: string;
+  activeBg: string;
+  inactiveBg: string;
+  inactiveBorder: string;
+  activeText: string;
+  inactiveText: string;
+}) {
+  return (
+    <View style={pillStyles.row}>
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <TouchableOpacity
+            key={opt.value}
+            style={[
+              pillStyles.pill,
+              {
+                backgroundColor: active ? activeBg    : inactiveBg,
+                borderColor:     active ? activeColor : inactiveBorder,
+              },
+            ]}
+            onPress={() => onChange(opt.value)}
+            activeOpacity={0.75}>
+            <Text style={[
+              pillStyles.pillText,
+              {
+                color:      active ? activeText : inactiveText,
+                fontFamily: active
+                  ? typography.fontFamily.semiBold
+                  : typography.fontFamily.regular,
+              },
+            ]}>
+              {opt.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+const pillStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    flexWrap:      'wrap',
+    gap:           spacing.xs,
+  },
+  pill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical:   7,
+    borderRadius:      radius.full,
+    borderWidth:       1,
+  },
+  pillText: {
+    fontSize:      typography.fontSize.sm,
+    letterSpacing: typography.letterSpacing.wide,
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 export default function PaymentsScreen() {
   const { colors, isDark } = useTheme();
   const router = useRouter();
@@ -81,8 +159,23 @@ export default function PaymentsScreen() {
   const [selectedDate,     setSelectedDate]     = useState(new Date());
   const [currentPage,      setCurrentPage]      = useState(1);
   const [showFilterModal,  setShowFilterModal]  = useState(false);
-  const [statusFilter,     setStatusFilter]     = useState<'all' | 'paid' | 'due'>('all');
-  const [methodFilter,     setMethodFilter]     = useState<'all' | 'Cash' | 'Online' | 'Bank Transfer' | 'UPI' | 'Cheque'>('all');
+  const [statusFilter,     setStatusFilter]     = useState<StatusFilter>('all');
+  const [methodFilter,     setMethodFilter]     = useState<MethodFilter>('all');
+
+  // Modal slide animation
+  const slideAnim = useRef(new Animated.Value(400)).current;
+
+  const openModal = () => {
+    setShowFilterModal(true);
+    Animated.spring(slideAnim, {
+      toValue: 0, useNativeDriver: true, tension: 65, friction: 11,
+    }).start();
+  };
+  const closeModal = () => {
+    Animated.timing(slideAnim, {
+      toValue: 400, duration: 220, useNativeDriver: true,
+    }).start(() => setShowFilterModal(false));
+  };
 
   const getPaymentsCacheKey = useCallback(
     (propertyId: string, keyMonth: string, page: number) =>
@@ -106,10 +199,10 @@ export default function PaymentsScreen() {
     [selectedDate]
   );
 
-  const isFetchingRef        = useRef(false);
-  const lastFocusRefreshRef  = useRef<number>(Date.now());
+  const isFetchingRef       = useRef(false);
+  const lastFocusRefreshRef = useRef<number>(Date.now());
 
-  const fetchPayments = useCallback(async (forceNetwork: boolean = false) => {
+  const fetchPayments = useCallback(async (forceNetwork = false) => {
     if (!selectedPropertyId) {
       setPayments([]); setTotal(0); setError(null); setIsRefreshing(false); return;
     }
@@ -187,15 +280,12 @@ export default function PaymentsScreen() {
     setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1));
     setCurrentPage(1);
   };
-
   const handleNextMonth = () => {
     clearScreenCache('payments:');
     setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1));
     setCurrentPage(1);
   };
-
   const handleRetry = () => fetchPayments(true);
-
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true); setError(null);
     clearScreenCache('payments:');
@@ -207,14 +297,10 @@ export default function PaymentsScreen() {
     finally { setIsRefreshing(false); }
   }, [selectedDate, currentPage, fetchPayments]);
 
-  const handleFabPress = () => router.push('/manual-payment');
-
-  const getStatusIcon = (status: string) => {
-    if (status === 'paid') return <CheckCircle size={18} color={colors.success[500]} strokeWidth={1.5} />;
-    return <Clock size={18} color={colors.warning[500]} strokeWidth={1.5} />;
-  };
-
-  const isLoadingState = isRefreshing && payments.length === 0;
+  const isLoadingState     = isRefreshing && payments.length === 0;
+  const hasActiveFilters   = statusFilter !== 'all' || methodFilter !== 'all';
+  const totalPages         = Math.max(1, Math.ceil(total / PAYMENTS_PAGE_SIZE));
+  const clearFilters       = () => { setStatusFilter('all'); setMethodFilter('all'); };
 
   const filteredPayments = useMemo(() =>
     payments.filter((p) => {
@@ -225,56 +311,112 @@ export default function PaymentsScreen() {
     [payments, statusFilter, methodFilter]
   );
 
-  const hasActiveFilters = statusFilter !== 'all' || methodFilter !== 'all';
-  const totalPages       = Math.max(1, Math.ceil(total / PAYMENTS_PAGE_SIZE));
-  const clearFilters     = () => { setStatusFilter('all'); setMethodFilter('all'); };
+  // ── Color aliases ─────────────────────────────────────────────────────────
+  const brandColor     = colors.primary[500];
+  const brandLight     = isDark ? colors.primary[900] : colors.primary[50];
+  const brandText      = isDark ? colors.primary[300] : colors.primary[700];
+  const cardBg         = colors.background.secondary;
+  const cardBorder     = colors.border.medium;
+  const pageBg         = colors.background.primary;
+  const textPrimary    = colors.text.primary;
+  const textSecondary  = colors.text.secondary;
+  const textTertiary   = colors.text.tertiary;
+
+  // ── Status options for filter ─────────────────────────────────────────────
+  const statusOptions: { label: string; value: StatusFilter }[] = [
+    { label: 'All',  value: 'all'  },
+    { label: 'Paid', value: 'paid' },
+    { label: 'Due',  value: 'due'  },
+  ];
+  const methodOptions: { label: string; value: MethodFilter }[] = [
+    { label: 'All',           value: 'all'           },
+    { label: 'Cash',          value: 'Cash'          },
+    { label: 'UPI',           value: 'UPI'           },
+    { label: 'Online',        value: 'Online'        },
+    { label: 'Bank Transfer', value: 'Bank Transfer' },
+    { label: 'Cheque',        value: 'Cheque'        },
+  ];
 
   return (
     <ScreenContainer edges={['top']}>
 
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Payments</Text>
+      {/* ── Top Bar ─────────────────────────────────────────────────────── */}
+      <View style={styles.topBar}>
+        {/* Month navigator embedded in header */}
+        <View style={styles.monthRow}>
+          <TouchableOpacity
+            style={[styles.monthArrow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+            onPress={handlePreviousMonth}
+            activeOpacity={0.7}>
+            <ChevronLeft size={18} color={textSecondary} strokeWidth={2} />
+          </TouchableOpacity>
+
+          <View style={styles.monthCenter}>
+            <Text style={[styles.monthLabel, { color: textTertiary }]}>PAYMENTS</Text>
+            <Text style={[styles.monthValue, { color: textPrimary }]}>{monthYearString}</Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.monthArrow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+            onPress={handleNextMonth}
+            activeOpacity={0.7}>
+            <ChevronRight size={18} color={textSecondary} strokeWidth={2} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Filter trigger */}
         <TouchableOpacity
           style={[
-            styles.filterBtn,
+            styles.filterTrigger,
             {
-              backgroundColor: hasActiveFilters
-                ? colors.primary[500]
-                : isDark ? colors.background.tertiary : colors.primary[50],
-              borderColor: hasActiveFilters ? colors.primary[500] : colors.border.medium,
+              backgroundColor: hasActiveFilters ? brandColor : cardBg,
+              borderColor:     hasActiveFilters ? brandColor : cardBorder,
             },
           ]}
-          activeOpacity={0.7}
-          onPress={() => setShowFilterModal(true)}>
-          <Filter
-            size={18}
-            color={hasActiveFilters ? colors.white : colors.primary[500]}
-            strokeWidth={1.5}
+          onPress={openModal}
+          activeOpacity={0.75}>
+          <SlidersHorizontal
+            size={16}
+            color={hasActiveFilters ? colors.white : brandColor}
+            strokeWidth={2}
           />
+          {hasActiveFilters && (
+            <View style={[styles.filterDot, { backgroundColor: colors.warning[400] }]} />
+          )}
         </TouchableOpacity>
       </View>
 
-      {/* ── Month Navigator ── */}
-      <View style={[
-        styles.monthNav,
-        { backgroundColor: colors.background.secondary, borderColor: colors.border.medium },
-      ]}>
-        <TouchableOpacity style={styles.monthNavBtn} onPress={handlePreviousMonth} activeOpacity={0.7}>
-          <ChevronLeft size={20} color={colors.text.secondary} strokeWidth={1.5} />
-        </TouchableOpacity>
-        <View style={styles.monthDisplay}>
-          <Calendar size={14} color={colors.primary[500]} strokeWidth={1.5} />
-          <Text style={[styles.monthText, { color: colors.text.primary }]}>{monthYearString}</Text>
+      {/* ── Active filter chips ──────────────────────────────────────────── */}
+      {hasActiveFilters && (
+        <View style={styles.activeFilters}>
+          {statusFilter !== 'all' && (
+            <View style={[styles.activeChip, { backgroundColor: brandLight, borderColor: isDark ? colors.primary[700] : colors.primary[200] }]}>
+              <Text style={[styles.activeChipText, { color: brandText }]}>
+                {statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+              </Text>
+              <TouchableOpacity onPress={() => setStatusFilter('all')} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <X size={12} color={brandText} strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
+          )}
+          {methodFilter !== 'all' && (
+            <View style={[styles.activeChip, { backgroundColor: brandLight, borderColor: isDark ? colors.primary[700] : colors.primary[200] }]}>
+              <Text style={[styles.activeChipText, { color: brandText }]}>{methodFilter}</Text>
+              <TouchableOpacity onPress={() => setMethodFilter('all')} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <X size={12} color={brandText} strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
+          )}
+          <TouchableOpacity onPress={clearFilters} style={styles.clearAllBtn}>
+            <Text style={[styles.clearAllText, { color: textTertiary }]}>Clear all</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.monthNavBtn} onPress={handleNextMonth} activeOpacity={0.7}>
-          <ChevronRight size={20} color={colors.text.secondary} strokeWidth={1.5} />
-        </TouchableOpacity>
-      </View>
+      )}
 
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
+          { backgroundColor: pageBg },
           isTablet && { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth },
         ]}
         showsVerticalScrollIndicator={false}
@@ -282,13 +424,13 @@ export default function PaymentsScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            colors={[colors.primary[500]]}
-            tintColor={colors.primary[500]}
+            colors={[brandColor]}
+            tintColor={brandColor}
           />
         }>
 
         {isLoadingState ? (
-          <Skeleton height={150} count={2} />
+          <Skeleton height={110} count={4} />
         ) : !selectedProperty ? (
           <EmptyState
             icon={Building2}
@@ -306,144 +448,153 @@ export default function PaymentsScreen() {
             subtitle="Payment history will appear here once tenants start making payments"
           />
         ) : (
-          <View style={{ opacity: isRefreshing ? 0.5 : 1 }}>
+          <View style={{ opacity: isRefreshing ? 0.45 : 1 }}>
 
-            {/* Active filter summary */}
-            {hasActiveFilters && (
-              <View style={[
-                styles.filterSummary,
-                {
-                  backgroundColor: isDark ? colors.primary[900] : colors.primary[50],
-                  borderColor:     isDark ? colors.primary[700] : colors.primary[200],
-                },
-              ]}>
-                <Text style={[styles.filterSummaryText, {
-                  color: isDark ? colors.primary[300] : colors.primary[700],
-                }]}>
-                  {filteredPayments.length} of {payments.length} payments
-                </Text>
-                <TouchableOpacity onPress={clearFilters} activeOpacity={0.7}>
-                  <Text style={[styles.clearFiltersText, { color: colors.primary[500] }]}>
-                    Clear filters
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            {/* Count bar */}
+            <View style={styles.countBar}>
+              <Text style={[styles.countText, { color: textSecondary }]}>
+                {hasActiveFilters
+                  ? `${filteredPayments.length} of ${payments.length} payments`
+                  : `${payments.length} payment${payments.length !== 1 ? 's' : ''}`}
+              </Text>
+            </View>
 
             {/* Payment cards */}
-            {filteredPayments.map((payment) => (
-              <TouchableOpacity
-                key={payment.id}
-                activeOpacity={0.7}
-                onPress={() => router.push(`/edit-payment?paymentId=${payment.id}`)}>
-                <Card style={styles.paymentCard}>
+            {filteredPayments.map((payment) => {
+              const isPaid = payment.status === 'paid';
+              const statusColor  = isPaid ? colors.success[500] : colors.warning[500];
+              const statusBg     = isPaid
+                ? (isDark ? colors.success[900] : colors.success[50])
+                : (isDark ? colors.warning[900] : colors.warning[50]);
+              const statusBorder = isPaid
+                ? (isDark ? colors.success[700] : colors.success[200])
+                : (isDark ? colors.warning[700] : colors.warning[200]);
 
-                  {/* Card header */}
-                  <View style={styles.paymentHeader}>
-                    <View style={styles.statusIcon}>{getStatusIcon(payment.status)}</View>
-                    <View style={styles.paymentInfo}>
-                      <View style={styles.tenantNameRow}>
-                        <Text style={[styles.tenantName, { color: colors.text.primary }]}
-                          numberOfLines={1} ellipsizeMode="tail">
-                          {payment.tenantName || 'Unknown Tenant'}
-                        </Text>
-                        {payment.tenantStatus === 'vacated' && (
-                          <View style={[styles.badge, {
-                            backgroundColor: isDark ? colors.danger[900] : colors.danger[50],
-                            borderColor:     isDark ? colors.danger[700] : colors.danger[200],
-                          }]}>
-                            <LogOut size={10} color={isDark ? colors.danger[300] : colors.danger[600]} strokeWidth={2} />
-                            <Text style={[styles.badgeText, {
-                              color: isDark ? colors.danger[300] : colors.danger[700],
-                            }]}>
-                              Vacated
+              return (
+                <TouchableOpacity
+                  key={payment.id}
+                  activeOpacity={0.72}
+                  onPress={() => router.push(`/edit-payment?paymentId=${payment.id}`)}>
+
+                  <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    {/* Status strip on left */}
+                    <View style={[styles.cardStrip, { backgroundColor: statusColor }]} />
+
+                    <View style={styles.cardBody}>
+                      {/* Row 1 — name + amount */}
+                      <View style={styles.cardTop}>
+                        <View style={styles.cardLeft}>
+                          <View style={styles.nameRow}>
+                            <Text
+                              style={[styles.tenantName, { color: textPrimary }]}
+                              numberOfLines={1} ellipsizeMode="tail">
+                              {payment.tenantName || 'Unknown Tenant'}
+                            </Text>
+                            {payment.tenantStatus === 'vacated' && (
+                              <View style={[styles.vacatedBadge, {
+                                backgroundColor: isDark ? colors.danger[900] : colors.danger[50],
+                                borderColor:     isDark ? colors.danger[700] : colors.danger[200],
+                              }]}>
+                                <LogOut size={9} color={isDark ? colors.danger[300] : colors.danger[600]} strokeWidth={2.5} />
+                                <Text style={[styles.vacatedText, { color: isDark ? colors.danger[300] : colors.danger[700] }]}>
+                                  Vacated
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={[styles.roomText, { color: textTertiary }]}>
+                            Room {payment.roomNumber || 'N/A'}
+                          </Text>
+                        </View>
+
+                        <View style={styles.cardRight}>
+                          <Text style={[styles.amount, { color: textPrimary }]} numberOfLines={1}>
+                            {payment.amount}
+                          </Text>
+                          <View style={[styles.statusPill, { backgroundColor: statusBg, borderColor: statusBorder }]}>
+                            {isPaid
+                              ? <CheckCircle size={10} color={statusColor} strokeWidth={2.5} />
+                              : <Clock size={10} color={statusColor} strokeWidth={2.5} />
+                            }
+                            <Text style={[styles.statusPillText, { color: statusColor }]}>
+                              {isPaid ? 'Paid' : 'Due'}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Row 2 — meta */}
+                      <View style={[styles.cardMeta, { borderTopColor: colors.border.light }]}>
+                        <View style={styles.metaItem}>
+                          <Calendar size={11} color={textTertiary} strokeWidth={1.5} />
+                          <Text style={[styles.metaText, { color: textSecondary }]}>
+                            {isPaid
+                              ? (payment.paidDate || payment.dueDate || '—')
+                              : (payment.dueDate || '—')}
+                          </Text>
+                        </View>
+                        {payment.method && (
+                          <View style={[styles.methodChip, { backgroundColor: isDark ? colors.neutral[800] : colors.neutral[100], borderColor: cardBorder }]}>
+                            <Text style={[styles.methodText, { color: textSecondary }]}>
+                              {payment.method}
                             </Text>
                           </View>
                         )}
+                        <ArrowRight size={13} color={textTertiary} strokeWidth={1.5} style={styles.cardArrow} />
                       </View>
-                      <Text style={[styles.roomText, { color: colors.text.tertiary }]}
-                        numberOfLines={1} ellipsizeMode="tail">
-                        Room: {payment.roomNumber || 'N/A'}
-                      </Text>
-                    </View>
-                    <View style={styles.amountBlock}>
-                      <Text style={[styles.amount, { color: colors.text.primary }]}
-                        numberOfLines={1} ellipsizeMode="tail">
-                        {payment.amount}
-                      </Text>
-                      <StatusBadge status={payment.status} />
                     </View>
                   </View>
-
-                  {/* Divider */}
-                  <View style={[styles.divider, { backgroundColor: colors.border.light }]} />
-
-                  {/* Card footer */}
-                  <View style={styles.paymentFooter}>
-                    <View style={styles.footerRow}>
-                      <Calendar size={13} color={colors.text.tertiary} strokeWidth={1.5} />
-                      <Text style={[styles.footerLabel, { color: colors.text.secondary }]}>
-                        {payment.status === 'paid' ? 'Paid on:' : 'Due:'}
-                      </Text>
-                      <Text style={[styles.footerValue, { color: colors.text.primary }]}
-                        numberOfLines={1} ellipsizeMode="tail">
-                        {payment.status === 'paid'
-                          ? (payment.paidDate || payment.dueDate || '—')
-                          : (payment.dueDate || '—')}
-                      </Text>
-                    </View>
-                    {payment.method && (
-                      <View style={styles.footerRow}>
-                        <Text style={[styles.footerLabel, { color: colors.text.secondary }]}>Method:</Text>
-                        <Text style={[styles.footerValue, { color: colors.primary[500] }]}
-                          numberOfLines={1} ellipsizeMode="tail">
-                          {payment.method}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </Card>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
 
             {/* Pagination */}
             {total > PAYMENTS_PAGE_SIZE && (
-              <View style={[
-                styles.paginationRow,
-                { backgroundColor: colors.background.secondary, borderTopColor: colors.border.light },
-              ]}>
+              <View style={[styles.pagination, { borderTopColor: colors.border.light }]}>
                 <TouchableOpacity
-                  style={[styles.pageBtn, {
-                    backgroundColor: currentPage === 1 ? colors.background.tertiary : colors.primary[500],
-                    borderColor:     currentPage === 1 ? colors.border.medium       : colors.primary[500],
-                  }]}
+                  style={[
+                    styles.pageBtn,
+                    {
+                      backgroundColor: currentPage === 1 ? colors.background.tertiary : brandColor,
+                      borderColor:     currentPage === 1 ? cardBorder               : brandColor,
+                    },
+                  ]}
                   onPress={() => { if (currentPage > 1) setCurrentPage(currentPage - 1); }}
                   disabled={currentPage === 1 || isRefreshing}
-                  activeOpacity={0.7}>
-                  <ChevronLeft size={16} color={currentPage === 1 ? colors.text.tertiary : colors.white} strokeWidth={2} />
-                  <Text style={[styles.pageBtnText, { color: currentPage === 1 ? colors.text.tertiary : colors.white }]}>
+                  activeOpacity={0.75}>
+                  <ChevronLeft
+                    size={15}
+                    color={currentPage === 1 ? textTertiary : colors.white}
+                    strokeWidth={2.5}
+                  />
+                  <Text style={[styles.pageBtnText, { color: currentPage === 1 ? textTertiary : colors.white }]}>
                     Prev
                   </Text>
                 </TouchableOpacity>
 
-                <View style={styles.pageInfo}>
-                  <Text style={[styles.pageInfoText, { color: colors.text.primary }]}>
-                    {currentPage} / {totalPages}
-                  </Text>
-                </View>
+                <Text style={[styles.pageCount, { color: textSecondary }]}>
+                  {currentPage} / {totalPages}
+                </Text>
 
                 <TouchableOpacity
-                  style={[styles.pageBtn, {
-                    backgroundColor: currentPage >= totalPages ? colors.background.tertiary : colors.primary[500],
-                    borderColor:     currentPage >= totalPages ? colors.border.medium       : colors.primary[500],
-                  }]}
+                  style={[
+                    styles.pageBtn,
+                    {
+                      backgroundColor: currentPage >= totalPages ? colors.background.tertiary : brandColor,
+                      borderColor:     currentPage >= totalPages ? cardBorder               : brandColor,
+                    },
+                  ]}
                   onPress={() => { if (currentPage < totalPages) setCurrentPage(currentPage + 1); }}
                   disabled={currentPage >= totalPages || isRefreshing}
-                  activeOpacity={0.7}>
-                  <Text style={[styles.pageBtnText, { color: currentPage >= totalPages ? colors.text.tertiary : colors.white }]}>
+                  activeOpacity={0.75}>
+                  <Text style={[styles.pageBtnText, { color: currentPage >= totalPages ? textTertiary : colors.white }]}>
                     Next
                   </Text>
-                  <ChevronRight size={16} color={currentPage >= totalPages ? colors.text.tertiary : colors.white} strokeWidth={2} />
+                  <ChevronRight
+                    size={15}
+                    color={currentPage >= totalPages ? textTertiary : colors.white}
+                    strokeWidth={2.5}
+                  />
                 </TouchableOpacity>
               </View>
             )}
@@ -451,119 +602,117 @@ export default function PaymentsScreen() {
         )}
       </ScrollView>
 
-      {selectedProperty && !isLoadingState && <FAB onPress={handleFabPress} />}
+      {selectedProperty && !isLoadingState && <FAB onPress={() => router.push('/manual-payment')} />}
 
-      {/* ── Filter Modal ── */}
+      {/* ── Filter Bottom Sheet ──────────────────────────────────────────── */}
       <Modal
         visible={showFilterModal}
         transparent
-        animationType="slide"
-        onRequestClose={() => setShowFilterModal(false)}>
-        <View style={[
-          styles.modalOverlay,
-          isTablet && styles.modalOverlayTablet,
-          { backgroundColor: colors.modal.overlay },
-        ]}>
-          <View style={[
-            styles.modalSheet,
-            isTablet && styles.modalSheetTablet,
-            { backgroundColor: colors.background.secondary, maxWidth: modalMaxWidth },
-          ]}>
+        animationType="none"
+        onRequestClose={closeModal}>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.modal.overlay }]}
+          // tap outside to close
+        >
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={closeModal} activeOpacity={1} />
 
-            {/* Modal header */}
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border.light }]}>
-              <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Filter payments</Text>
-              <TouchableOpacity onPress={() => setShowFilterModal(false)} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <X size={20} color={colors.text.secondary} strokeWidth={1.5} />
+          <Animated.View
+            style={[
+              styles.sheet,
+              isTablet && styles.sheetTablet,
+              {
+                backgroundColor: colors.background.secondary,
+                maxWidth:        isTablet ? modalMaxWidth : undefined,
+                transform:       [{ translateY: slideAnim }],
+              },
+            ]}>
+
+            {/* Sheet handle */}
+            <View style={styles.sheetHandle}>
+              <View style={[styles.handleBar, { backgroundColor: colors.border.dark }]} />
+            </View>
+
+            {/* Sheet header */}
+            <View style={[styles.sheetHeader, { borderBottomColor: colors.border.light }]}>
+              <View>
+                <Text style={[styles.sheetTitle, { color: textPrimary }]}>Filter Payments</Text>
+                {hasActiveFilters && (
+                  <Text style={[styles.sheetSubtitle, { color: brandColor }]}>
+                    {filteredPayments.length} result{filteredPayments.length !== 1 ? 's' : ''}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                onPress={closeModal}
+                style={[styles.sheetCloseBtn, { backgroundColor: colors.background.tertiary }]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <X size={16} color={textSecondary} strokeWidth={2} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.sheetBody}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: spacing.lg }}>
 
-              {/* Status */}
-              <View style={styles.filterSection}>
-                <Text style={[styles.filterSectionTitle, { color: colors.text.primary }]}>
-                  Payment status
-                </Text>
-                <View style={styles.filterOptions}>
-                  {(['all', 'paid', 'due'] as const).map((s) => {
-                    const active = statusFilter === s;
-                    return (
-                      <TouchableOpacity
-                        key={s}
-                        style={[styles.filterOption, {
-                          backgroundColor: active
-                            ? (isDark ? colors.primary[900] : colors.primary[50])
-                            : colors.background.primary,
-                          borderColor: active ? colors.primary[400] : colors.border.medium,
-                        }]}
-                        onPress={() => setStatusFilter(s)}
-                        activeOpacity={0.7}>
-                        <Text style={[styles.filterOptionText, {
-                          color:      active ? colors.primary[isDark ? 300 : 700] : colors.text.primary,
-                          fontFamily: active ? typography.fontFamily.semiBold : typography.fontFamily.regular,
-                        }]}>
-                          {s === 'all' ? 'All payments' : s.charAt(0).toUpperCase() + s.slice(1)}
-                        </Text>
-                        {active && <Check size={16} color={colors.primary[500]} strokeWidth={2.5} />}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+              {/* ── Status filter ── */}
+              <View style={styles.filterBlock}>
+                <Text style={[styles.filterBlockLabel, { color: textTertiary }]}>STATUS</Text>
+                <PillGroup
+                  options={statusOptions}
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  activeColor={brandColor}
+                  activeBg={isDark ? colors.primary[900] : colors.primary[50]}
+                  inactiveBg={colors.background.primary}
+                  inactiveBorder={cardBorder}
+                  activeText={isDark ? colors.primary[300] : colors.primary[700]}
+                  inactiveText={textPrimary}
+                />
               </View>
 
-              {/* Method */}
-              <View style={styles.filterSection}>
-                <Text style={[styles.filterSectionTitle, { color: colors.text.primary }]}>
-                  Payment method
-                </Text>
-                <View style={styles.filterOptions}>
-                  {(['all', 'Cash', 'Online', 'Bank Transfer', 'UPI', 'Cheque'] as const).map((m) => {
-                    const active = methodFilter === m;
-                    return (
-                      <TouchableOpacity
-                        key={m}
-                        style={[styles.filterOption, {
-                          backgroundColor: active
-                            ? (isDark ? colors.primary[900] : colors.primary[50])
-                            : colors.background.primary,
-                          borderColor: active ? colors.primary[400] : colors.border.medium,
-                        }]}
-                        onPress={() => setMethodFilter(m)}
-                        activeOpacity={0.7}>
-                        <Text style={[styles.filterOptionText, {
-                          color:      active ? colors.primary[isDark ? 300 : 700] : colors.text.primary,
-                          fontFamily: active ? typography.fontFamily.semiBold : typography.fontFamily.regular,
-                        }]}>
-                          {m === 'all' ? 'All methods' : m}
-                        </Text>
-                        {active && <Check size={16} color={colors.primary[500]} strokeWidth={2.5} />}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+              {/* ── Method filter ── */}
+              <View style={styles.filterBlock}>
+                <Text style={[styles.filterBlockLabel, { color: textTertiary }]}>METHOD</Text>
+                <PillGroup
+                  options={methodOptions}
+                  value={methodFilter}
+                  onChange={setMethodFilter}
+                  activeColor={brandColor}
+                  activeBg={isDark ? colors.primary[900] : colors.primary[50]}
+                  inactiveBg={colors.background.primary}
+                  inactiveBorder={cardBorder}
+                  activeText={isDark ? colors.primary[300] : colors.primary[700]}
+                  inactiveText={textPrimary}
+                />
               </View>
+
             </ScrollView>
 
-            {/* Modal footer */}
-            <View style={[styles.modalFooter, { borderTopColor: colors.border.light }]}>
+            {/* Sheet footer */}
+            <View style={[styles.sheetFooter, { borderTopColor: colors.border.light }]}>
               <TouchableOpacity
-                style={[styles.clearBtn, {
+                style={[styles.footerClearBtn, {
                   backgroundColor: colors.background.primary,
-                  borderColor:     colors.border.medium,
+                  borderColor:     cardBorder,
+                  opacity: hasActiveFilters ? 1 : 0.4,
                 }]}
                 onPress={clearFilters}
-                activeOpacity={0.7}>
-                <Text style={[styles.clearBtnText, { color: colors.text.primary }]}>Clear all</Text>
+                disabled={!hasActiveFilters}
+                activeOpacity={0.75}>
+                <Text style={[styles.footerClearText, { color: textPrimary }]}>Clear all</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={[styles.applyBtn, { backgroundColor: colors.primary[500] }]}
-                onPress={() => setShowFilterModal(false)}
+                style={[styles.footerApplyBtn, { backgroundColor: brandColor }]}
+                onPress={closeModal}
                 activeOpacity={0.85}>
-                <Text style={[styles.applyBtnText, { color: colors.white }]}>Apply</Text>
+                <Text style={[styles.footerApplyText, { color: colors.white }]}>
+                  {hasActiveFilters ? `Show ${filteredPayments.length} results` : 'Done'}
+                </Text>
               </TouchableOpacity>
             </View>
-          </View>
+
+          </Animated.View>
         </View>
       </Modal>
 
@@ -578,134 +727,178 @@ export default function PaymentsScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  // ── Header ───────────────────────────────────────────────────────────────
-  header: {
-    flexDirection:  'row',
-    justifyContent: 'space-between',
-    alignItems:     'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical:   spacing.md,
-  },
 
-  headerTitle: {
-    fontFamily:    typography.fontFamily.bold,
-    fontSize:      typography.fontSize.xxl,
-    letterSpacing: typography.letterSpacing.tight,
-  },
-
-  filterBtn: {
-    width:          40,
-    height:         40,
-    borderRadius:   radius.full,
-    alignItems:     'center',
-    justifyContent: 'center',
-    borderWidth:    0.5,
-  },
-
-  // ── Month Nav ────────────────────────────────────────────────────────────
-  monthNav: {
+  // ── Top bar ───────────────────────────────────────────────────────────────
+  topBar: {
     flexDirection:     'row',
     alignItems:        'center',
-    justifyContent:    'space-between',
-    marginHorizontal:  spacing.md,
-    marginBottom:      spacing.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical:   spacing.sm,
-    borderRadius:      radius.md,
-    borderWidth:       0.5,
+    paddingHorizontal: spacing.md,
+    paddingVertical:   spacing.md,
+    gap:               spacing.sm,
   },
 
-  monthNavBtn: {
+  monthRow: {
+    flex:           1,
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    gap:            spacing.sm,
+  },
+
+  monthArrow: {
     width:          36,
     height:         36,
     borderRadius:   radius.md,
     alignItems:     'center',
     justifyContent: 'center',
+    borderWidth:    1,
   },
 
-  monthDisplay: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           spacing.xs,
+  monthCenter: {
+    flex:      1,
+    alignItems: 'center',
   },
 
-  monthText: {
+  monthLabel: {
     fontFamily:    typography.fontFamily.semiBold,
-    fontSize:      typography.fontSize.md,
-    letterSpacing: 0,
-    minWidth:      130,
-    textAlign:     'center',
+    fontSize:      9,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom:  1,
   },
 
-  // ── Scroll ───────────────────────────────────────────────────────────────
+  monthValue: {
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.tight,
+  },
+
+  filterTrigger: {
+    width:          40,
+    height:         40,
+    borderRadius:   radius.md,
+    alignItems:     'center',
+    justifyContent: 'center',
+    borderWidth:    1,
+    position:       'relative',
+  },
+
+  filterDot: {
+    position:     'absolute',
+    top:    6,
+    right:  6,
+    width:  7,
+    height: 7,
+    borderRadius: radius.full,
+  },
+
+  // ── Active filter chips ───────────────────────────────────────────────────
+  activeFilters: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    flexWrap:          'wrap',
+    gap:               spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingBottom:     spacing.sm,
+  },
+
+  activeChip: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               5,
+    paddingHorizontal: spacing.sm,
+    paddingVertical:   5,
+    borderRadius:      radius.full,
+    borderWidth:       1,
+  },
+
+  activeChipText: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize:   typography.fontSize.xs,
+  },
+
+  clearAllBtn: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical:   5,
+  },
+
+  clearAllText: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.xs,
+    textDecorationLine: 'underline',
+  },
+
+  // ── Scroll ────────────────────────────────────────────────────────────────
   scrollContent: {
     paddingHorizontal: spacing.md,
     paddingBottom:     spacing.xxxl,
   },
 
-  // ── Filter summary ───────────────────────────────────────────────────────
-  filterSummary: {
-    flexDirection:     'row',
-    justifyContent:    'space-between',
-    alignItems:        'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical:   spacing.sm,
-    borderRadius:      radius.md,
-    borderWidth:       0.5,
-    marginBottom:      spacing.md,
+  // ── Count bar ─────────────────────────────────────────────────────────────
+  countBar: {
+    marginBottom: spacing.sm,
   },
 
-  filterSummaryText: {
-    fontFamily: typography.fontFamily.semiBold,
-    fontSize:   typography.fontSize.sm,
+  countText: {
+    fontFamily:    typography.fontFamily.medium,
+    fontSize:      typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wide,
+    textTransform: 'uppercase',
   },
 
-  clearFiltersText: {
-    fontFamily: typography.fontFamily.semiBold,
-    fontSize:   typography.fontSize.sm,
+  // ── Payment card ──────────────────────────────────────────────────────────
+  card: {
+    flexDirection:  'row',
+    borderRadius:   radius.lg,
+    borderWidth:    1,
+    marginBottom:   spacing.sm,
+    overflow:       'hidden',
   },
 
-  // ── Payment card ─────────────────────────────────────────────────────────
-  paymentCard: { marginBottom: spacing.xs },
+  cardStrip: {
+    width: 3,
+  },
 
-  paymentHeader: {
+  cardBody: {
+    flex:    1,
+    padding: spacing.md,
+  },
+
+  cardTop: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    alignItems:     'flex-start',
+    marginBottom:   spacing.sm,
+  },
+
+  cardLeft:  { flex: 1, paddingRight: spacing.sm },
+
+  nameRow: {
     flexDirection: 'row',
     alignItems:    'center',
-    marginBottom:  spacing.md,
-    minHeight:     40,
-  },
-
-  statusIcon: { marginRight: spacing.sm },
-
-  paymentInfo: { flex: 1 },
-
-  tenantNameRow: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           spacing.xs,
     flexWrap:      'wrap',
+    gap:           spacing.xs,
+    marginBottom:  2,
   },
 
   tenantName: {
-    fontFamily:   typography.fontFamily.semiBold,
-    fontSize:     typography.fontSize.md,
-    marginBottom: 2,
-    flexShrink:   1,
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize:   typography.fontSize.md,
+    flexShrink: 1,
   },
 
-  badge: {
+  vacatedBadge: {
     flexDirection:     'row',
     alignItems:        'center',
     gap:               3,
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: 6,
     paddingVertical:   2,
     borderRadius:      radius.full,
-    borderWidth:       0.5,
+    borderWidth:       1,
   },
 
-  badgeText: {
+  vacatedText: {
     fontFamily: typography.fontFamily.semiBold,
-    fontSize:   typography.fontSize.xs,
+    fontSize:   9,
   },
 
   roomText: {
@@ -713,46 +906,78 @@ const styles = StyleSheet.create({
     fontSize:   typography.fontSize.xs,
   },
 
-  amountBlock: { alignItems: 'flex-end' },
+  cardRight: {
+    alignItems: 'flex-end',
+    gap:         4,
+  },
 
   amount: {
     fontFamily:    typography.fontFamily.bold,
     fontSize:      typography.fontSize.lg,
     letterSpacing: typography.letterSpacing.tight,
-    marginBottom:  2,
   },
 
-  divider: { height: 0.5, marginBottom: spacing.sm },
+  statusPill: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
+    paddingHorizontal: 7,
+    paddingVertical:   3,
+    borderRadius:      radius.full,
+    borderWidth:       1,
+  },
 
-  paymentFooter: { gap: spacing.xs },
+  statusPillText: {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      9,
+    letterSpacing: typography.letterSpacing.wide,
+    textTransform: 'uppercase',
+  },
 
-  footerRow: {
+  cardMeta: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    paddingTop:     spacing.sm,
+    borderTopWidth: 1,
+    gap:            spacing.xs,
+  },
+
+  metaItem: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:           spacing.xs,
-    height:        20,
+    gap:           4,
+    flex:          1,
   },
 
-  footerLabel: {
+  metaText: {
     fontFamily: typography.fontFamily.regular,
     fontSize:   typography.fontSize.xs,
   },
 
-  footerValue: {
-    fontFamily: typography.fontFamily.semiBold,
-    fontSize:   typography.fontSize.xs,
+  methodChip: {
+    paddingHorizontal: 7,
+    paddingVertical:   3,
+    borderRadius:      radius.sm,
+    borderWidth:       1,
   },
 
-  // ── Pagination ───────────────────────────────────────────────────────────
-  paginationRow: {
+  methodText: {
+    fontFamily:    typography.fontFamily.medium,
+    fontSize:      9,
+    letterSpacing: typography.letterSpacing.wide,
+    textTransform: 'uppercase',
+  },
+
+  cardArrow: { marginLeft: 'auto' },
+
+  // ── Pagination ────────────────────────────────────────────────────────────
+  pagination: {
     flexDirection:     'row',
     alignItems:        'center',
     justifyContent:    'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical:   spacing.md,
-    marginTop:         spacing.md,
-    borderTopWidth:    0.5,
-    borderRadius:      radius.md,
+    paddingVertical:   spacing.lg,
+    borderTopWidth:    1,
+    marginTop:         spacing.sm,
   },
 
   pageBtn: {
@@ -762,7 +987,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical:   spacing.sm,
     borderRadius:      radius.md,
-    borderWidth:       0.5,
+    borderWidth:       1,
     minWidth:          80,
     justifyContent:    'center',
   },
@@ -772,111 +997,120 @@ const styles = StyleSheet.create({
     fontSize:   typography.fontSize.sm,
   },
 
-  pageInfo:     { flex: 1, alignItems: 'center' },
-
-  pageInfoText: {
+  pageCount: {
     fontFamily: typography.fontFamily.medium,
     fontSize:   typography.fontSize.sm,
   },
 
-  // ── Filter Modal ─────────────────────────────────────────────────────────
+  // ── Bottom sheet ──────────────────────────────────────────────────────────
   modalOverlay: {
     flex:           1,
     justifyContent: 'flex-end',
   },
 
-  modalOverlayTablet: {
-    justifyContent:    'center',
-    paddingHorizontal: spacing.lg,
-  },
-
-  modalSheet: {
-    borderTopLeftRadius:  radius.xl ?? 20,
-    borderTopRightRadius: radius.xl ?? 20,
-    maxHeight:            '85%',
+  sheet: {
+    borderTopLeftRadius:  24,
+    borderTopRightRadius: 24,
+    maxHeight:            '80%',
     ...shadows.xl,
   },
 
-  modalSheetTablet: {
+  sheetTablet: {
     width:                   '100%',
     alignSelf:               'center',
-    borderBottomLeftRadius:  radius.xl ?? 20,
-    borderBottomRightRadius: radius.xl ?? 20,
+    borderBottomLeftRadius:  24,
+    borderBottomRightRadius: 24,
   },
 
-  modalHeader: {
+  sheetHandle: {
+    alignItems:    'center',
+    paddingTop:    spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+
+  handleBar: {
+    width:        40,
+    height:       4,
+    borderRadius: 2,
+    opacity:      0.4,
+  },
+
+  sheetHeader: {
     flexDirection:     'row',
     justifyContent:    'space-between',
-    alignItems:        'center',
+    alignItems:        'flex-start',
     paddingHorizontal: spacing.lg,
     paddingVertical:   spacing.md,
-    borderBottomWidth: 0.5,
+    borderBottomWidth: 1,
   },
 
-  modalTitle: {
+  sheetTitle: {
     fontFamily:    typography.fontFamily.bold,
     fontSize:      typography.fontSize.lg,
     letterSpacing: typography.letterSpacing.tight,
   },
 
-  modalBody: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical:   spacing.md,
-  },
-
-  filterSection: { marginBottom: spacing.xl },
-
-  filterSectionTitle: {
-    fontFamily:   typography.fontFamily.semiBold,
+  sheetSubtitle: {
+    fontFamily:   typography.fontFamily.medium,
     fontSize:     typography.fontSize.sm,
-    letterSpacing: typography.letterSpacing.wide,
-    textTransform: 'uppercase',
-    marginBottom: spacing.md,
+    marginTop:    2,
   },
 
-  filterOptions: { gap: spacing.sm },
-
-  filterOption: {
-    flexDirection:     'row',
-    justifyContent:    'space-between',
-    alignItems:        'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical:   spacing.md,
-    borderRadius:      radius.md,
-    borderWidth:       0.5,
+  sheetCloseBtn: {
+    width:          32,
+    height:         32,
+    borderRadius:   radius.md,
+    alignItems:     'center',
+    justifyContent: 'center',
   },
 
-  filterOptionText: { fontSize: typography.fontSize.md },
+  sheetBody: {
+    paddingHorizontal: spacing.lg,
+    paddingTop:        spacing.lg,
+  },
 
-  modalFooter: {
+  // ── Filter blocks (pills layout) ──────────────────────────────────────────
+  filterBlock: {
+    marginBottom: spacing.xl,
+  },
+
+  filterBlockLabel: {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      9,
+    letterSpacing: typography.letterSpacing.wider,
+    marginBottom:  spacing.md,
+  },
+
+  // ── Sheet footer ──────────────────────────────────────────────────────────
+  sheetFooter: {
     flexDirection:     'row',
     gap:               spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical:   spacing.md,
-    borderTopWidth:    0.5,
+    borderTopWidth:    1,
   },
 
-  clearBtn: {
-    flex:           1,
+  footerClearBtn: {
+    flex:            1,
     paddingVertical: spacing.md,
-    borderRadius:   radius.md,
-    alignItems:     'center',
-    borderWidth:    0.5,
+    borderRadius:    radius.md,
+    alignItems:      'center',
+    borderWidth:     1,
   },
 
-  clearBtnText: {
+  footerClearText: {
     fontFamily: typography.fontFamily.semiBold,
     fontSize:   typography.fontSize.md,
   },
 
-  applyBtn: {
-    flex:            1,
+  footerApplyBtn: {
+    flex:            1.8,
     paddingVertical: spacing.md,
     borderRadius:    radius.md,
     alignItems:      'center',
   },
 
-  applyBtnText: {
+  footerApplyText: {
     fontFamily:    typography.fontFamily.semiBold,
     fontSize:      typography.fontSize.md,
     letterSpacing: typography.letterSpacing.wide,

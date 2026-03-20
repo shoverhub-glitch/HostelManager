@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,10 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  Animated,
 } from 'react-native';
-import { Check, X, AlertCircle, Tag } from 'lucide-react-native';
-import { spacing, radius, shadows, colors } from '@/theme';
+import { Check, X, AlertCircle, Tag, ChevronRight, Zap } from 'lucide-react-native';
+import { spacing, radius, shadows } from '@/theme';
 import { typography, textPresets } from '@/theme/typography';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -29,6 +30,14 @@ interface UpgradeModalProps {
   currentPlan?: string;
 }
 
+function getPlanRank(planName?: string): number {
+  const plan = String(planName || '').toLowerCase();
+  if (plan.includes('free'))    return 0;
+  if (plan.includes('pro'))     return 1;
+  if (plan.includes('premium')) return 2;
+  return -1;
+}
+
 export default function UpgradeModal({
   visible,
   onClose,
@@ -36,47 +45,82 @@ export default function UpgradeModal({
   subscriptions = [],
   currentPlan,
 }: UpgradeModalProps) {
-  const { colors } = useTheme();
-  const { user } = useAuth();
+  const { colors, isDark } = useTheme();
+  const { user }           = useAuth();
   const { isTablet, modalMaxWidth } = useResponsiveLayout();
 
-  const [processing, setProcessing] = useState(false);
-  const [loadingPlans, setLoadingPlans] = useState(false);
-  const [availablePlans, setAvailablePlans] = useState<PlanMetadata[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  const [selectedPlan, setSelectedPlan] = useState<string>('');
-  const [selectedPeriod, setSelectedPeriod] = useState<number>(1);
-
-  const [couponCode, setCouponCode] = useState('');
-  const [couponValidating, setCouponValidating] = useState(false);
-  const [couponApplied, setCouponApplied] = useState<{
-    originalAmount: number;
-    discountAmount: number;
-    finalAmount: number;
-    message?: string;
+  const [processing,      setProcessing]      = useState(false);
+  const [loadingPlans,    setLoadingPlans]    = useState(false);
+  const [availablePlans,  setAvailablePlans]  = useState<PlanMetadata[]>([]);
+  const [error,           setError]           = useState<string | null>(null);
+  const [resolvedActivePlan, setResolvedActivePlan] = useState<string>('');
+  const [selectedPlan,    setSelectedPlan]    = useState<string>('');
+  const [selectedPeriod,  setSelectedPeriod]  = useState<number>(1);
+  const [couponCode,      setCouponCode]      = useState('');
+  const [couponValidating,setCouponValidating]= useState(false);
+  const [couponApplied,   setCouponApplied]   = useState<{
+    originalAmount: number; discountAmount: number; finalAmount: number; message?: string;
   } | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
 
+  // Sheet animation
+  const slideAnim = useRef(new Animated.Value(600)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(slideAnim, { toValue: 0, tension: 65, friction: 12, useNativeDriver: true }).start();
+    } else {
+      Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }).start();
+    }
+  }, [visible]);
+
+  // ── Color aliases ─────────────────────────────────────────────────────────
+  const brandColor    = colors.primary[500];
+  const brandLight    = isDark ? colors.primary[900] : colors.primary[50];
+  const brandText     = isDark ? colors.primary[300] : colors.primary[600];
+  const cardBg        = colors.background.secondary;
+  const cardBorder    = colors.border.medium;
+  const inputBg       = colors.background.primary;
+  const textPrimary   = colors.text.primary;
+  const textSecondary = colors.text.secondary;
+  const textTertiary  = colors.text.tertiary;
+
+  // ── Resolved current plan ─────────────────────────────────────────────────
   const resolvedCurrentPlan = useMemo(() => {
     if (currentPlan) return currentPlan;
-    const active = subscriptions.find((sub) => sub.status === 'active');
-    return active?.plan || '';
+    return subscriptions.find(s => s.status === 'active')?.plan || '';
   }, [currentPlan, subscriptions]);
 
+  useEffect(() => { setResolvedActivePlan(resolvedCurrentPlan); }, [resolvedCurrentPlan]);
+
+  // ── Fetch plans ───────────────────────────────────────────────────────────
   const fetchAvailablePlans = useCallback(async () => {
     try {
-      setLoadingPlans(true);
-      setError(null);
-      const response = await subscriptionService.getPlans();
-      const plans = response.data.plans || [];
+      setLoadingPlans(true); setError(null);
+      const [plansResult, subsResult] = await Promise.allSettled([
+        subscriptionService.getPlans(),
+        subscriptionService.getAllSubscriptions(),
+      ]);
+      if (plansResult.status !== 'fulfilled') throw plansResult.reason;
+
+      const plans = plansResult.value.data.plans || [];
       setAvailablePlans(plans);
 
-      const firstSelectable = plans.find((plan) => plan.name !== resolvedCurrentPlan) || plans[0];
-      if (firstSelectable) {
-        setSelectedPlan(firstSelectable.name);
-        const firstPeriod = firstSelectable.periods?.[0]?.period;
-        setSelectedPeriod(typeof firstPeriod === 'number' ? firstPeriod : Number(firstPeriod) || 1);
+      const activeFromServer = subsResult.status === 'fulfilled'
+        ? subsResult.value.data.subscriptions.find((s: Subscription) => s.status === 'active')?.plan || ''
+        : '';
+      const effective = (resolvedCurrentPlan || activeFromServer || '').toLowerCase();
+      setResolvedActivePlan(effective);
+
+      const currentRank = getPlanRank(effective);
+      const candidates  = plans.filter(p => getPlanRank(p.name) > currentRank);
+      const first       = candidates[0] || null;
+      if (first) {
+        setSelectedPlan(first.name);
+        const fp = first.periods?.[0]?.period;
+        setSelectedPeriod(typeof fp === 'number' ? fp : Number(fp) || 1);
+      } else {
+        setSelectedPlan('');
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to load subscription plans');
@@ -87,25 +131,28 @@ export default function UpgradeModal({
 
   useEffect(() => {
     if (!visible) return;
-
-    setError(null);
-    setCouponApplied(null);
-    setCouponCode('');
-    setCouponError(null);
+    setError(null); setCouponApplied(null); setCouponCode(''); setCouponError(null);
     fetchAvailablePlans();
   }, [visible, fetchAvailablePlans]);
 
-  const formatLimit = (value: number) => {
-    return value === 999 ? 'Unlimited' : `Up to ${value}`;
-  };
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const filteredPlans = useMemo(() => {
+    const currentRank = getPlanRank(resolvedActivePlan);
+    return availablePlans.filter(p => getPlanRank(p.name) > currentRank);
+  }, [availablePlans, resolvedActivePlan]);
+
+  const selectedPlanData = useMemo(() =>
+    filteredPlans.find(p => p.name === selectedPlan) || null, [filteredPlans, selectedPlan]);
+
+  const selectedPeriodData = useMemo(() => {
+    if (!selectedPlanData?.periods) return null;
+    return selectedPlanData.periods.find(p => Number(p.period) === Number(selectedPeriod))
+      || selectedPlanData.periods[0] || null;
+  }, [selectedPlanData, selectedPeriod]);
 
   const formatPrice = (paise: number) => {
     if (paise === 0) return 'Free';
-    const rupees = paise / 100;
-    return `₹${rupees.toLocaleString('en-IN', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    })}`;
+    return `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   };
 
   const getPeriodLabel = (period: number) => {
@@ -114,50 +161,23 @@ export default function UpgradeModal({
     return `${period} Months`;
   };
 
-  const filteredPlans = useMemo(() => {
-    return availablePlans.filter((plan) => plan.name !== resolvedCurrentPlan);
-  }, [availablePlans, resolvedCurrentPlan]);
+  const formatLimit = (value: number) => value === 999 ? 'Unlimited' : `Up to ${value}`;
 
-  const selectedPlanData = useMemo(() => {
-    return filteredPlans.find((plan) => plan.name === selectedPlan) || null;
-  }, [filteredPlans, selectedPlan]);
-
-  const selectedPeriodData = useMemo(() => {
-    if (!selectedPlanData?.periods) return null;
-    return (
-      selectedPlanData.periods.find((period) => Number(period.period) === Number(selectedPeriod)) ||
-      selectedPlanData.periods[0] ||
-      null
-    );
-  }, [selectedPlanData, selectedPeriod]);
-
+  // ── Coupon ────────────────────────────────────────────────────────────────
   const validateCoupon = async () => {
-    if (!couponCode.trim()) {
-      setCouponError('Please enter a coupon code');
-      return;
-    }
-
-    if (!selectedPlanData || !selectedPeriodData) {
-      setCouponError('Plan data not available');
-      return;
-    }
-
+    if (!couponCode.trim()) { setCouponError('Please enter a coupon code'); return; }
+    if (!selectedPlanData || !selectedPeriodData) { setCouponError('Plan data not available'); return; }
     try {
-      setCouponValidating(true);
-      setCouponError(null);
-
+      setCouponValidating(true); setCouponError(null);
       const response = await couponService.validateCoupon(
-        couponCode.trim().toUpperCase(),
-        selectedPeriodData.price,
-        selectedPlanData.name
+        couponCode.trim().toUpperCase(), selectedPeriodData.price, selectedPlanData.name
       );
-
       if (response.data.isValid) {
         setCouponApplied({
           originalAmount: response.data.originalAmount || selectedPeriodData.price,
           discountAmount: response.data.discountAmount || 0,
-          finalAmount: response.data.finalAmount || selectedPeriodData.price,
-          message: response.data.message,
+          finalAmount:    response.data.finalAmount    || selectedPeriodData.price,
+          message:        response.data.message,
         });
       } else {
         setCouponApplied(null);
@@ -171,15 +191,11 @@ export default function UpgradeModal({
     }
   };
 
+  // ── Payment ───────────────────────────────────────────────────────────────
   const handlePaymentError = (paymentError: RazorpayErrorResponse) => {
-    // Check if user cancelled the payment
     if (paymentError.code === 0 && paymentError.description === 'Payment Cancelled') {
-      // Just stop processing, no need to show an alarming error
-      setProcessing(false);
-      return;
+      setProcessing(false); return;
     }
-    
-    // For other errors, show a friendly message
     setError(paymentError.description || 'Payment could not be completed. Please try again.');
     setProcessing(false);
   };
@@ -188,63 +204,31 @@ export default function UpgradeModal({
     try {
       const verifyResponse = await subscriptionService.verifyPayment({
         payment_id: response.razorpay_payment_id,
-        order_id: response.razorpay_order_id,
-        signature: response.razorpay_signature,
+        order_id:   response.razorpay_order_id,
+        signature:  response.razorpay_signature,
       });
-
-      if (!verifyResponse.data.success) {
-        throw new Error('Payment verification incomplete');
-      }
-
-      // Clear caches to ensure immediate UI update
-      clearScreenCache('subscription:');
-      clearScreenCache('dashboard:');
-
+      if (!verifyResponse.data.success) throw new Error('Payment verification incomplete');
+      clearScreenCache('subscription:'); clearScreenCache('dashboard:');
       const confirmedPlan = verifyResponse.data.subscription;
-      if (!confirmedPlan) {
-        throw new Error('Verified payment but no subscription plan returned from server');
-      }
-      onSelectPlan(confirmedPlan);
-      onClose();
-
+      if (!confirmedPlan) throw new Error('No subscription plan returned from server');
+      onSelectPlan(confirmedPlan); onClose();
       Alert.alert('Success', 'Your subscription has been updated successfully.');
     } catch (err: any) {
-      // If verification fails but payment succeeded (we are in success callback),
-      // it's likely a network timeout or temporary API issue.
-      // The webhook will handle the update in the background.
-      
-      console.log('Verification error:', err);
-      
-      // Close the modal and show a reassuring message instead of an error
       onClose();
-      Alert.alert(
-        'Payment Successful',
-        'We received your payment, but the app is taking a moment to update. Your plan will be active automatically in a few minutes.'
-      );
+      Alert.alert('Payment Successful', 'Your plan will be active automatically in a few minutes.');
     } finally {
       setProcessing(false);
     }
   };
 
   const handlePlanUpgrade = async () => {
-    if (!selectedPlan) {
-      setError('Please select a plan');
-      return;
-    }
-
+    if (!selectedPlan) { setError('Please select a plan'); return; }
     if (selectedPlan === 'free') {
       try {
-        setProcessing(true);
-        setError(null);
-        // Free plan downgrade must go through cancel endpoint to trigger archival lifecycle
-        // This ensures excess resources are archived with 30-day recovery grace period
-        const cancelResponse = await subscriptionService.cancelSubscription();
-        const confirmedPlan = cancelResponse.data?.plan;
-        if (!confirmedPlan) {
-          throw new Error('Server did not return updated subscription plan');
-        }
-        onSelectPlan(confirmedPlan);
-        onClose();
+        setProcessing(true); setError(null);
+        const res = await subscriptionService.cancelSubscription();
+        if (!res.data?.plan) throw new Error('Server did not return updated subscription plan');
+        onSelectPlan(res.data.plan); onClose();
       } catch (err: any) {
         setError(err?.message || 'Failed to downgrade subscription');
       } finally {
@@ -252,38 +236,20 @@ export default function UpgradeModal({
       }
       return;
     }
-
-    if (!selectedPlanData || !selectedPeriodData) {
-      setError('Please select a valid plan and billing period');
-      return;
-    }
-
-    if (!user) {
-      setError('User information not available');
-      return;
-    }
-
+    if (!selectedPlanData || !selectedPeriodData) { setError('Please select a valid plan and billing period'); return; }
+    if (!user) { setError('User information not available'); return; }
     try {
-      setProcessing(true);
-      setError(null);
-
+      setProcessing(true); setError(null);
       const sessionResponse = await subscriptionService.createCheckoutSession(
         selectedPlanData.name,
         Number(selectedPeriodData.period),
         couponCode.trim() ? couponCode.trim().toUpperCase() : undefined
       );
-
       openRazorpayCheckout(
-        sessionResponse.data,
-        user.name,
-        user.email,
+        sessionResponse.data, user.name, user.email,
         `${selectedPlanData.name} (${getPeriodLabel(Number(selectedPeriodData.period))})`,
-        async (response: RazorpaySuccessResponse) => {
-          await handlePaymentSuccess(response);
-        },
-        (paymentError: RazorpayErrorResponse) => {
-          handlePaymentError(paymentError);
-        }
+        async (r: RazorpaySuccessResponse)   => { await handlePaymentSuccess(r); },
+        (e: RazorpayErrorResponse)           => { handlePaymentError(e); }
       );
     } catch (err: any) {
       setError(err?.message || 'Failed to initiate checkout');
@@ -291,112 +257,154 @@ export default function UpgradeModal({
     }
   };
 
+  const totalAmount = couponApplied ? couponApplied.finalAmount : (selectedPeriodData?.price ?? 0);
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={processing ? undefined : onClose}>
-      <View style={[styles.overlay, isTablet && styles.overlayTablet]}>
-        <View style={[
-          styles.modalContainer,
-          { backgroundColor: colors.background.secondary },
-          isTablet && { maxWidth: modalMaxWidth, width: '100%', borderBottomLeftRadius: radius.xl, borderBottomRightRadius: radius.xl },
+    <Modal visible={visible} transparent animationType="none" onRequestClose={processing ? undefined : onClose}>
+      <View style={[styles.overlay, isTablet && styles.overlayTablet, { backgroundColor: colors.modal.overlay }]}>
+        {/* Tap backdrop to close */}
+        <TouchableOpacity style={StyleSheet.absoluteFill} onPress={processing ? undefined : onClose} activeOpacity={1} />
+
+        <Animated.View style={[
+          styles.sheet,
+          { backgroundColor: cardBg, transform: [{ translateY: slideAnim }] },
+          isTablet && { maxWidth: modalMaxWidth, width: '100%', borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
         ]}>
-          <View style={[styles.header, { borderBottomColor: colors.border.light }]}> 
-            <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Choose Your Plan</Text>
+
+          {/* Handle */}
+          <View style={styles.handle}>
+            <View style={[styles.handleBar, { backgroundColor: colors.border.dark }]} />
+          </View>
+
+          {/* Header */}
+          <View style={[styles.header, { borderBottomColor: colors.border.light }]}>
+            <View style={styles.headerLeft}>
+              <View style={[styles.headerIconBox, { backgroundColor: brandLight }]}>
+                <Zap size={16} color={brandColor} strokeWidth={2.5} />
+              </View>
+              <View>
+                <Text style={[styles.headerTitle, { color: textPrimary }]}>Upgrade Plan</Text>
+                <Text style={[styles.headerSub, { color: textSecondary }]}>Unlock more features</Text>
+              </View>
+            </View>
             {!processing && (
-              <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
-                <X size={24} color={colors.text.primary} />
+              <TouchableOpacity
+                style={[styles.closeBtn, { backgroundColor: colors.background.tertiary }]}
+                onPress={onClose} activeOpacity={0.75}>
+                <X size={16} color={textSecondary} strokeWidth={2} />
               </TouchableOpacity>
             )}
           </View>
 
           {loadingPlans ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.primary[500]} />
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color={brandColor} />
             </View>
           ) : (
             <>
+              {/* Error banner */}
               {error && (
-                <View style={[styles.errorContainer, { backgroundColor: colors.danger[50], borderColor: colors.danger[200] }]}>
-                  <AlertCircle size={16} color={colors.danger[600]} />
-                  <Text style={[styles.errorText, { color: colors.danger[700] }]}>{error}</Text>
+                <View style={[styles.errorBanner, {
+                  backgroundColor: isDark ? colors.danger[900] : colors.danger[50],
+                  borderColor:     isDark ? colors.danger[700] : colors.danger[200],
+                }]}>
+                  <AlertCircle size={15} color={isDark ? colors.danger[300] : colors.danger[500]} strokeWidth={2} />
+                  <Text style={[styles.errorBannerText, { color: isDark ? colors.danger[300] : colors.danger[700] }]}>
+                    {error}
+                  </Text>
                 </View>
               )}
 
-              <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-                <View style={styles.section}>
-                  <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>Select Plan</Text>
-                  {filteredPlans.map((plan) => (
-                    <TouchableOpacity
-                      key={plan.name}
-                      style={[
-                        styles.planOption,
-                        {
-                          backgroundColor: colors.background.tertiary,
-                          borderColor: selectedPlan === plan.name ? colors.primary[500] : colors.border.light,
-                          borderWidth: selectedPlan === plan.name ? 2 : 1,
-                        },
-                      ]}
-                      onPress={() => {
-                        setSelectedPlan(plan.name);
-                        const firstPeriod = plan.periods?.[0]?.period;
-                        setSelectedPeriod(typeof firstPeriod === 'number' ? firstPeriod : Number(firstPeriod) || 1);
-                        setCouponCode('');
-                        setCouponApplied(null);
-                        setCouponError(null);
-                      }}
-                      activeOpacity={0.7}>
-                      <View style={styles.planOptionContent}>
-                        <Text style={[styles.planOptionName, { color: colors.text.primary }]}>
-                          {plan.name.charAt(0).toUpperCase() + plan.name.slice(1)}
-                        </Text>
-                        <Text style={[styles.planOptionDesc, { color: colors.text.secondary }]}>
-                          {formatLimit(plan.properties)} properties
-                        </Text>
-                      </View>
-                      {selectedPlan === plan.name && <Check size={20} color={colors.primary[500]} />}
-                    </TouchableOpacity>
-                  ))}
+              <ScrollView
+                style={styles.body}
+                contentContainerStyle={styles.bodyContent}
+                showsVerticalScrollIndicator={false}>
 
-                  {!filteredPlans.length && (
-                    <Text style={[styles.helperText, { color: colors.text.secondary }]}>No upgrade plans available right now.</Text>
+                {/* ── Plan selection ─────────────────────────────────── */}
+                <View style={styles.block}>
+                  <Text style={[styles.blockLabel, { color: textTertiary }]}>SELECT PLAN</Text>
+                  {filteredPlans.length === 0 ? (
+                    <Text style={[styles.emptyText, { color: textSecondary }]}>
+                      No higher plans available for your current plan.
+                    </Text>
+                  ) : (
+                    filteredPlans.map(plan => {
+                      const active = selectedPlan === plan.name;
+                      const displayName = plan.display_name || plan.name.charAt(0).toUpperCase() + plan.name.slice(1);
+                      const lowestPrice = plan.periods?.[0]?.price || 0;
+                      return (
+                        <TouchableOpacity
+                          key={plan.name}
+                          style={[
+                            styles.planRow,
+                            {
+                              backgroundColor: active ? brandLight : inputBg,
+                              borderColor:     active ? brandColor : cardBorder,
+                              borderWidth:     active ? 1.5 : 1,
+                            },
+                          ]}
+                          onPress={() => {
+                            setSelectedPlan(plan.name);
+                            const fp = plan.periods?.[0]?.period;
+                            setSelectedPeriod(typeof fp === 'number' ? fp : Number(fp) || 1);
+                            setCouponCode(''); setCouponApplied(null); setCouponError(null);
+                          }}
+                          activeOpacity={0.75}>
+                          <View style={styles.planRowLeft}>
+                            <Text style={[styles.planRowName, { color: textPrimary }]}>{displayName}</Text>
+                            <Text style={[styles.planRowDesc, { color: textTertiary }]}>
+                              {formatLimit(plan.properties)} properties · from {formatPrice(lowestPrice)}/mo
+                            </Text>
+                          </View>
+                          <View style={[styles.planRadio, {
+                            borderColor: active ? brandColor : cardBorder,
+                            backgroundColor: active ? brandColor : 'transparent',
+                          }]}>
+                            {active && <Check size={12} color={colors.white} strokeWidth={3} />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })
                   )}
                 </View>
 
+                {/* ── Billing period ─────────────────────────────────── */}
                 {selectedPlanData?.periods && selectedPlanData.periods.length > 0 && (
-                  <View style={styles.section}>
-                    <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>Billing Period</Text>
-                    <View style={styles.periodGrid}>
-                      {selectedPlanData.periods.map((periodOption) => {
-                        const numericPeriod = Number(periodOption.period);
-                        const isSelected = numericPeriod === Number(selectedPeriod);
-
+                  <View style={styles.block}>
+                    <Text style={[styles.blockLabel, { color: textTertiary }]}>BILLING PERIOD</Text>
+                    <View style={styles.periodRow}>
+                      {selectedPlanData.periods.map(periodOption => {
+                        const num    = Number(periodOption.period);
+                        const active = num === Number(selectedPeriod);
                         return (
                           <TouchableOpacity
-                            key={`${selectedPlanData.name}-${numericPeriod}`}
+                            key={`${selectedPlanData.name}-${num}`}
                             style={[
-                              styles.periodOption,
+                              styles.periodCard,
                               {
-                                backgroundColor: isSelected ? colors.primary[500] : colors.background.tertiary,
-                                borderColor: colors.border.light,
-                                borderWidth: 1,
+                                backgroundColor: active ? brandColor : inputBg,
+                                borderColor:     active ? brandColor : cardBorder,
                               },
                             ]}
                             onPress={() => {
-                              setSelectedPeriod(numericPeriod);
-                              setCouponCode('');
-                              setCouponApplied(null);
-                              setCouponError(null);
+                              setSelectedPeriod(num);
+                              setCouponCode(''); setCouponApplied(null); setCouponError(null);
                             }}
-                            activeOpacity={0.7}>
-                            <Text style={[styles.periodLabel, { color: isSelected ? colors.white : colors.text.primary }]}>
-                              {getPeriodLabel(numericPeriod)}
+                            activeOpacity={0.8}>
+                            <Text style={[styles.periodCardLabel, { color: active ? colors.white : textSecondary }]}>
+                              {getPeriodLabel(num)}
                             </Text>
-                            <Text style={[styles.periodPrice, { color: isSelected ? colors.white : colors.primary[500] }]}>
+                            <Text style={[styles.periodCardPrice, { color: active ? colors.white : textPrimary }]}>
                               {formatPrice(periodOption.price)}
                             </Text>
-                            {numericPeriod > 1 && (
-                              <Text style={[styles.periodMonthly, { color: isSelected ? colors.white : colors.text.secondary }]}>
-                                ₹{Math.round(periodOption.price / (numericPeriod * 100))}/mo
-                              </Text>
+                            {num > 1 && (
+                              <View style={[styles.periodSavingChip, {
+                                backgroundColor: active ? 'rgba(255,255,255,0.2)' : (isDark ? colors.success[900] : colors.success[50]),
+                              }]}>
+                                <Text style={[styles.periodSavingText, { color: active ? colors.white : colors.success[500] }]}>
+                                  ₹{Math.round(periodOption.price / (num * 100))}/mo
+                                </Text>
+                              </View>
                             )}
                           </TouchableOpacity>
                         );
@@ -405,341 +413,419 @@ export default function UpgradeModal({
                   </View>
                 )}
 
+                {/* ── Coupon ─────────────────────────────────────────── */}
                 {selectedPlan && selectedPlan !== 'free' && (
-                  <View style={styles.section}>
-                    <Text style={[styles.sectionLabel, { color: colors.text.primary }]}>Apply Coupon (Optional)</Text>
-                    <View style={[styles.couponInputContainer, { borderColor: colors.border.light, backgroundColor: colors.background.secondary }]}> 
-                      <Tag size={18} color={colors.text.tertiary} style={styles.couponIcon} />
+                  <View style={styles.block}>
+                    <Text style={[styles.blockLabel, { color: textTertiary }]}>COUPON CODE</Text>
+                    <View style={[styles.couponRow, { backgroundColor: inputBg, borderColor: couponApplied ? colors.success[400] : cardBorder }]}>
+                      <Tag size={15} color={couponApplied ? colors.success[500] : textTertiary} strokeWidth={2} />
                       <TextInput
-                        style={[styles.couponInput, { color: colors.text.primary }]}
+                        style={[styles.couponInput, { color: textPrimary }]}
                         placeholder="Enter coupon code"
-                        placeholderTextColor={colors.text.tertiary}
+                        placeholderTextColor={textTertiary}
                         value={couponCode}
-                        onChangeText={setCouponCode}
+                        onChangeText={v => { setCouponCode(v); if (couponApplied) { setCouponApplied(null); setCouponError(null); } }}
                         editable={!couponValidating && !couponApplied}
                         autoCapitalize="characters"
                       />
-                      {!!couponCode && (
+                      {couponApplied ? (
+                        <TouchableOpacity
+                          onPress={() => { setCouponApplied(null); setCouponCode(''); setCouponError(null); }}
+                          style={[styles.couponActionBtn, { backgroundColor: isDark ? colors.danger[900] : colors.danger[50] }]}
+                          activeOpacity={0.75}>
+                          <X size={13} color={colors.danger[500]} strokeWidth={2.5} />
+                        </TouchableOpacity>
+                      ) : couponCode.trim() ? (
                         <TouchableOpacity
                           onPress={validateCoupon}
-                          disabled={couponValidating || !!couponApplied}
-                          style={[
-                            styles.couponButton,
-                            { backgroundColor: couponApplied ? colors.success[500] : colors.primary[500] },
-                          ]}
-                          activeOpacity={0.7}>
-                          {couponValidating ? (
-                            <ActivityIndicator size="small" color={colors.white} />
-                          ) : (
-                            <Text style={[styles.couponButtonText, { color: colors.white }]}>{couponApplied ? 'Applied' : 'Check'}</Text>
-                          )}
+                          disabled={couponValidating}
+                          style={[styles.couponActionBtn, { backgroundColor: brandLight }]}
+                          activeOpacity={0.75}>
+                          {couponValidating
+                            ? <ActivityIndicator size="small" color={brandColor} />
+                            : <ChevronRight size={15} color={brandColor} strokeWidth={2.5} />}
                         </TouchableOpacity>
-                      )}
+                      ) : null}
                     </View>
 
-                    {!!couponError && <Text style={[styles.couponErrorText, { color: colors.danger[600] }]}>{couponError}</Text>}
+                    {couponError && (
+                      <Text style={[styles.couponErrText, { color: colors.danger[500] }]}>{couponError}</Text>
+                    )}
 
-                    {!!couponApplied && (
-                      <View style={[styles.couponResultCard, { backgroundColor: colors.success[50], borderColor: colors.success[200] }]}>
-                        <Text style={[styles.couponResultLabel, { color: colors.success[700] }]}>Discount Applied</Text>
-                        <Text style={[styles.discountText, { color: colors.text.secondary }]}>Original: {formatPrice(couponApplied.originalAmount)}</Text>
-                        <Text style={[styles.discountText, { color: colors.danger[600] }]}>-{formatPrice(couponApplied.discountAmount)}</Text>
-                        <Text style={[styles.discountFinal, { color: colors.text.primary }]}>Final: {formatPrice(couponApplied.finalAmount)}</Text>
+                    {couponApplied && (
+                      <View style={[styles.couponResult, {
+                        backgroundColor: isDark ? colors.success[900] : colors.success[50],
+                        borderColor:     isDark ? colors.success[700] : colors.success[200],
+                      }]}>
+                        <Check size={14} color={colors.success[500]} strokeWidth={2.5} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.couponResultLabel, { color: colors.success[500] }]}>
+                            Coupon applied — saving {formatPrice(couponApplied.discountAmount)}
+                          </Text>
+                          {couponApplied.message && (
+                            <Text style={[styles.couponResultMsg, { color: textSecondary }]}>{couponApplied.message}</Text>
+                          )}
+                        </View>
                       </View>
                     )}
                   </View>
                 )}
 
-                {!!selectedPeriodData && (
-                  <View style={[styles.summaryCard, { backgroundColor: colors.background.tertiary }]}> 
+                {/* ── Order summary ──────────────────────────────────── */}
+                {selectedPeriodData && (
+                  <View style={[styles.summary, { backgroundColor: inputBg, borderColor: cardBorder }]}>
+                    <Text style={[styles.blockLabel, { color: textTertiary, marginBottom: spacing.md }]}>ORDER SUMMARY</Text>
+
                     <View style={styles.summaryRow}>
-                      <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Subtotal</Text>
-                      <Text style={[styles.summaryValue, { color: colors.text.primary }]}>{formatPrice(selectedPeriodData.price)}</Text>
+                      <Text style={[styles.summaryLabel, { color: textSecondary }]}>Subtotal</Text>
+                      <Text style={[styles.summaryValue, { color: textPrimary }]}>{formatPrice(selectedPeriodData.price)}</Text>
                     </View>
-                    {!!couponApplied && (
-                      <>
-                        <View style={styles.summaryRow}>
-                          <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Discount</Text>
-                          <Text style={[styles.summaryValue, { color: colors.danger[600] }]}>-{formatPrice(couponApplied.discountAmount)}</Text>
-                        </View>
-                        <View style={[styles.summaryDivider, { backgroundColor: colors.border.light }]} />
-                      </>
+
+                    {couponApplied && (
+                      <View style={styles.summaryRow}>
+                        <Text style={[styles.summaryLabel, { color: textSecondary }]}>Discount</Text>
+                        <Text style={[styles.summaryValue, { color: colors.success[500] }]}>
+                          − {formatPrice(couponApplied.discountAmount)}
+                        </Text>
+                      </View>
                     )}
+
+                    <View style={[styles.summaryDivider, { backgroundColor: colors.border.light }]} />
+
                     <View style={styles.summaryRow}>
-                      <Text style={[styles.summaryTotal, { color: colors.text.primary }]}>Total Amount</Text>
-                      <Text style={[styles.summaryTotalValue, { color: colors.primary[500] }]}>
-                        {couponApplied ? formatPrice(couponApplied.finalAmount) : formatPrice(selectedPeriodData.price)}
+                      <Text style={[styles.summaryTotal, { color: textPrimary }]}>Total</Text>
+                      <Text style={[styles.summaryTotalValue, { color: brandColor }]}>
+                        {formatPrice(totalAmount)}
                       </Text>
                     </View>
                   </View>
                 )}
+
               </ScrollView>
 
-              <View style={[styles.footer, { borderTopColor: colors.border.light }]}> 
+              {/* ── Footer CTA ──────────────────────────────────────────── */}
+              <View style={[styles.footer, { borderTopColor: colors.border.light }]}>
                 <TouchableOpacity
-                  style={[styles.upgradeButton, { backgroundColor: colors.primary[500], opacity: processing ? 0.5 : 1 }]}
+                  style={[styles.ctaBtn, { backgroundColor: brandColor, opacity: (processing || !selectedPlan) ? 0.55 : 1 }]}
                   onPress={handlePlanUpgrade}
                   disabled={processing || !selectedPlan}
-                  activeOpacity={0.7}>
-                  {processing ? <ActivityIndicator size="small" color={colors.white} /> : <Text style={[styles.upgradeButtonText, { color: colors.white }]}>Proceed</Text>}
+                  activeOpacity={0.85}>
+                  {processing
+                    ? <ActivityIndicator size="small" color={colors.white} />
+                    : (
+                      <>
+                        <Text style={[styles.ctaBtnText, { color: colors.white }]}>
+                          {totalAmount > 0 ? `Pay ${formatPrice(totalAmount)}` : 'Proceed'}
+                        </Text>
+                        <ChevronRight size={18} color={colors.white} strokeWidth={2.5} />
+                      </>
+                    )}
                 </TouchableOpacity>
 
                 {!processing && (
-                  <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
-                    <Text style={[styles.cancelText, { color: colors.text.secondary }]}>Cancel</Text>
+                  <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={styles.cancelBtn}>
+                    <Text style={[styles.cancelText, { color: textTertiary }]}>Cancel</Text>
                   </TouchableOpacity>
                 )}
               </View>
             </>
           )}
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  // Overlay
   overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    flex:           1,
     justifyContent: 'flex-end',
-    paddingHorizontal: 0,
   },
   overlayTablet: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent:    'center',
+    alignItems:        'center',
     paddingHorizontal: spacing.lg,
   },
-  modalContainer: {
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    width: '100%',
-    maxHeight: '95%',
+
+  // Sheet
+  sheet: {
+    borderTopLeftRadius:  24,
+    borderTopRightRadius: 24,
+    width:                '100%',
+    maxHeight:            '92%',
     ...shadows.xl,
   },
-  loadingContainer: {
-    paddingVertical: spacing.xxxl,
-    alignItems: 'center',
-    justifyContent: 'center',
+
+  // Handle
+  handle: {
+    alignItems:    'center',
+    paddingTop:    spacing.sm,
+    paddingBottom: spacing.xs,
   },
+  handleBar: {
+    width:        38,
+    height:       4,
+    borderRadius: 2,
+    opacity:      0.35,
+  },
+
+  // Header
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
+    flexDirection:     'row',
+    justifyContent:    'space-between',
+    alignItems:        'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical:   spacing.md,
     borderBottomWidth: 1,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing.sm,
+  },
+  headerIconBox: {
+    width:          36,
+    height:         36,
+    borderRadius:   radius.md,
+    alignItems:     'center',
+    justifyContent: 'center',
+  },
   headerTitle: {
-    ...textPresets.h2,
-    color: colors.text.primary,
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.lg,
+    letterSpacing: typography.letterSpacing.tight,
   },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
+  headerSub: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.xs,
+    marginTop:  1,
   },
-  errorText: {
-    ...textPresets.bodyMedium,
-    color: colors.danger[700],
-    marginLeft: spacing.sm,
-    flex: 1,
-  },
-  scrollView: {
-    paddingVertical: spacing.lg,
-  },
-  section: {
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  sectionLabel: {
-    ...textPresets.h4,
-    color: colors.text.primary,
-    marginBottom: spacing.md,
-  },
-  planOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.lg,
-    borderRadius: radius.lg,
-    marginBottom: spacing.sm,
-    borderWidth: 2,
-    backgroundColor: 'transparent',
-  },
-  planOptionContent: {
-    flex: 1,
-  },
-  planOptionName: {
-    ...textPresets.h4,
-    color: colors.text.primary,
-    marginBottom: spacing.xs,
-    textTransform: 'capitalize',
-  },
-  planOptionDesc: {
-    ...textPresets.caption,
-    color: colors.text.secondary,
-  },
-  helperText: {
-    ...textPresets.hint,
-    color: colors.text.secondary,
-  },
-  periodGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  periodOption: {
-    flex: 1,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.lg,
-    alignItems: 'center',
-    borderWidth: 2,
-    backgroundColor: 'transparent',
-    minHeight: 100,
+  closeBtn: {
+    width:          32,
+    height:         32,
+    borderRadius:   radius.md,
+    alignItems:     'center',
     justifyContent: 'center',
   },
-  periodLabel: {
-    ...textPresets.buttonSm,
-    color: colors.text.primary,
-    marginBottom: spacing.xs,
-    textAlign: 'center',
+
+  loadingBox: {
+    paddingVertical: spacing.xxxl,
+    alignItems:      'center',
   },
-  periodPrice: {
-    ...textPresets.h3,
+
+  // Error banner
+  errorBanner: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               spacing.sm,
+    marginHorizontal:  spacing.lg,
+    marginTop:         spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical:   spacing.sm,
+    borderRadius:      radius.md,
+    borderWidth:       1,
   },
-  periodMonthly: {
-    ...textPresets.caption,
-    color: colors.text.secondary,
-    marginTop: spacing.sm,
+  errorBannerText: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize:   typography.fontSize.sm,
+    flex:       1,
   },
-  couponSection: {
+
+  // Body
+  body: { flex: 1 },
+  bodyContent: {
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+    paddingTop:        spacing.lg,
+    paddingBottom:     spacing.md,
+    gap:               spacing.lg,
   },
-  couponInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-    height: 44,
+
+  // Block (section)
+  block: { gap: spacing.sm },
+  blockLabel: {
+    fontFamily:    typography.fontFamily.semiBold,
+    fontSize:      9,
+    letterSpacing: typography.letterSpacing.wider,
   },
-  couponIcon: {
-    marginRight: spacing.sm,
-  },
-  couponInput: {
-    ...textPresets.body,
-    color: colors.text.primary,
-    flex: 1,
-    padding: 0,
-  },
-  couponButton: {
-    paddingHorizontal: spacing.md,
+  emptyText: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.sm,
     paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    marginLeft: spacing.sm,
-    height: 32,
+  },
+
+  // Plan row
+  planRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    borderRadius:      radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical:   spacing.md,
+    gap:               spacing.sm,
+  },
+  planRowLeft: { flex: 1 },
+  planRowName: {
+    fontFamily:   typography.fontFamily.semiBold,
+    fontSize:     typography.fontSize.md,
+    marginBottom: 2,
+    letterSpacing: typography.letterSpacing.tight,
+  },
+  planRowDesc: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.xs,
+  },
+  planRadio: {
+    width:          20,
+    height:         20,
+    borderRadius:   10,
+    borderWidth:    1.5,
+    alignItems:     'center',
     justifyContent: 'center',
   },
-  couponButtonText: {
-    ...textPresets.buttonSm,
-    color: colors.white,
+
+  // Period cards
+  periodRow: {
+    flexDirection: 'row',
+    gap:           spacing.sm,
   },
-  couponErrorText: {
-    ...textPresets.hint,
-    color: colors.danger[600],
-    marginTop: spacing.sm,
+  periodCard: {
+    flex:          1,
+    borderRadius:  radius.lg,
+    borderWidth:   1,
+    paddingVertical:   spacing.md,
+    paddingHorizontal: spacing.sm,
+    alignItems:    'center',
+    gap:           4,
   },
-  couponResultCard: {
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderWidth: 1,
-    marginBottom: spacing.md,
-  },
-  couponResultLabel: {
-    ...textPresets.badge,
-    color: colors.success[700],
-    marginBottom: spacing.md,
+  periodCardLabel: {
+    fontFamily:    typography.fontFamily.medium,
+    fontSize:      typography.fontSize.xs,
+    letterSpacing: typography.letterSpacing.wide,
     textTransform: 'uppercase',
   },
-  discountText: {
-    ...textPresets.bodyMedium,
-    marginBottom: spacing.sm,
+  periodCardPrice: {
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.xl,
+    letterSpacing: typography.letterSpacing.tight,
   },
-  discountFinal: {
-    ...textPresets.h3,
-    color: colors.text.primary,
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
+  periodSavingChip: {
+    paddingHorizontal: 6,
+    paddingVertical:   2,
+    borderRadius:      radius.full,
   },
-  summaryCard: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+  periodSavingText: {
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize:   9,
+  },
+
+  // Coupon
+  couponRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               spacing.sm,
+    borderWidth:       1,
+    borderRadius:      radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical:   spacing.sm,
+    height:            48,
+  },
+  couponInput: {
+    flex:       1,
+    fontFamily: typography.fontFamily.medium,
+    fontSize:   typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.wider,
+    padding:    0,
+  },
+  couponActionBtn: {
+    width:          30,
+    height:         30,
+    borderRadius:   radius.md,
+    alignItems:     'center',
+    justifyContent: 'center',
+  },
+  couponErrText: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.xs,
+  },
+  couponResult: {
+    flexDirection:     'row',
+    alignItems:        'flex-start',
+    gap:               spacing.sm,
+    borderRadius:      radius.md,
+    borderWidth:       1,
+    paddingHorizontal: spacing.md,
+    paddingVertical:   spacing.sm,
+  },
+  couponResultLabel: {
+    fontFamily:   typography.fontFamily.semiBold,
+    fontSize:     typography.fontSize.sm,
+    marginBottom: 2,
+  },
+  couponResultMsg: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.xs,
+  },
+
+  // Summary
+  summary: {
+    borderRadius:      radius.xl,
+    borderWidth:       1,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderRadius: radius.lg,
-    borderWidth: 1,
+    paddingVertical:   spacing.md,
   },
   summaryRow: {
-    flexDirection: 'row',
+    flexDirection:  'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-    minHeight: 24,
+    alignItems:     'center',
+    paddingVertical: spacing.xs,
   },
   summaryLabel: {
-    ...textPresets.bodyMedium,
-    color: colors.text.secondary,
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.sm,
   },
   summaryValue: {
-    ...textPresets.h4,
-    color: colors.text.primary,
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize:   typography.fontSize.sm,
   },
   summaryDivider: {
-    height: 1,
-    marginVertical: spacing.md,
+    height:          1,
+    marginVertical:  spacing.sm,
   },
   summaryTotal: {
-    ...textPresets.bodyMedium,
-    color: colors.text.primary,
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize:   typography.fontSize.md,
   },
   summaryTotalValue: {
-    ...textPresets.h2,
-    color: colors.primary[500],
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.xxl,
+    letterSpacing: typography.letterSpacing.tight,
   },
+
+  // Footer
   footer: {
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
-    borderTopWidth: 1,
+    paddingVertical:   spacing.md,
+    borderTopWidth:    1,
+    gap:               spacing.sm,
   },
-  upgradeButton: {
-    borderRadius: radius.lg,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    marginBottom: spacing.md,
-    minHeight: 48,
+  ctaBtn: {
+    flexDirection:  'row',
+    alignItems:     'center',
     justifyContent: 'center',
+    gap:            spacing.xs,
+    borderRadius:   radius.lg,
+    paddingVertical: spacing.md,
+    minHeight:       52,
     ...shadows.md,
   },
-  upgradeButtonText: {
-    ...textPresets.button,
-    color: colors.white,
+  ctaBtnText: {
+    fontFamily:    typography.fontFamily.bold,
+    fontSize:      typography.fontSize.md,
+    letterSpacing: typography.letterSpacing.wide,
   },
+  cancelBtn: { alignItems: 'center', paddingVertical: spacing.sm },
   cancelText: {
-    ...textPresets.bodyMedium,
-    color: colors.text.secondary,
-    textAlign: 'center',
-    paddingVertical: spacing.md,
+    fontFamily: typography.fontFamily.regular,
+    fontSize:   typography.fontSize.sm,
   },
 });

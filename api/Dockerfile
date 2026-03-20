@@ -12,10 +12,12 @@ ENV PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     wget \
-    && wget -qO /usr/share/keyrings/mongodb-archive-keyring.gpg https://www.mongodb.org/static/pgp/server-7.0.asc \
-    && echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-archive-keyring.gpg ] https://repo.mongodb.org/apt/debian bullseye/mongodb-org/7.0 main" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list \
+    gnupg \
+    && wget -qO - https://www.mongodb.org/static/pgp/server-8.0.asc \
+    | gpg --dearmor -o /usr/share/keyrings/mongodb-archive-keyring.gpg \
+    && echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-archive-keyring.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list \
     && apt-get update \
-    && apt-get install -y --allow-unauthenticated mongodb-database-tools \
+    && apt-get install -y mongodb-database-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
@@ -27,7 +29,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
-
 
 # Create non-root user
 RUN adduser --disabled-password --gecos "" appuser && \

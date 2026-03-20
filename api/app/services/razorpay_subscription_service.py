@@ -188,31 +188,31 @@ class RazorpaySubscriptionService:
         """
         try:
             amount_rupees = amount / 100
-                link_payload = {
-                    'amount': amount,
-                    'currency': 'INR',
-                    'description': f'{plan_name.title()} Plan Renewal - Expires {expiry_date}',
-                    'customer': {
-                        'email': owner_email,
-                        'name': owner_name
-                    },
-                    'notify': {
-                        'sms': True,
-                        'email': True
-                    },
-                    'reminder_enable': True,
-                    'notes': {
-                        'order_id': order_id,
-                        'plan': plan_name,
-                        'renewal': 'true'
-                    },
-                    'callback_url': f'{APP_URL}/subscription/verify?order_id={order_id}',
-                    'callback_method': 'get'
-                }
-                loop = asyncio.get_event_loop()
-                payment_link = await loop.run_in_executor(
-                    None, functools.partial(razorpay_client.payment_link.create, link_payload)
-                )
+            link_payload = {
+                'amount': amount,
+                'currency': 'INR',
+                'description': f'{plan_name.title()} Plan Renewal - Expires {expiry_date}',
+                'customer': {
+                    'email': owner_email,
+                    'name': owner_name
+                },
+                'notify': {
+                    'sms': True,
+                    'email': True
+                },
+                'reminder_enable': True,
+                'notes': {
+                    'order_id': order_id,
+                    'plan': plan_name,
+                    'renewal': 'true'
+                },
+                'callback_url': f'{APP_URL}/subscription/verify?order_id={order_id}',
+                'callback_method': 'get'
+            }
+            loop = asyncio.get_event_loop()
+            payment_link = await loop.run_in_executor(
+                None, functools.partial(razorpay_client.payment_link.create, link_payload)
+            )
             
             logger.info(f"✓ Payment link created: {payment_link.get('short_url')}")
             return payment_link.get('short_url') or payment_link.get('long_url')

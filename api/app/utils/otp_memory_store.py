@@ -1,4 +1,5 @@
 """MongoDB-based OTP storage with expiration and resend cooldown"""
+import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
@@ -28,16 +29,19 @@ async def generate_and_store_otp(email: str, otp_type: str = "registration") -> 
     existing = await db[OTP_COLLECTION].find_one({"email": normalized_email})
     
     if existing:
-        # Check resend cooldown
+        # Check resend cooldown regardless of OTP type to prevent bypass by
+        # alternating between registration and password_reset request types.
         resend_cooldown_expires = existing.get("resend_cooldown_expires_at")
         if resend_cooldown_expires:
             if isinstance(resend_cooldown_expires, str):
                 resend_cooldown_expires = datetime.fromisoformat(resend_cooldown_expires)
             if resend_cooldown_expires > now:
-                # Still in cooldown
+                # Still in cooldown — return existing OTP only if type matches
                 existing_type = existing.get("otp_type", "registration")
                 if existing_type == otp_type:
                     return existing.get("otp", ""), False
+                # Different type requested during cooldown: deny resend
+                return "", False
     
     # Generate cryptographically secure 6-digit OTP
     if settings.DEMO_MODE:
@@ -103,9 +107,13 @@ async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tu
         Tuple of (is_valid, error_message)
     """
     normalized_email = email.strip().lower()
-    if settings.DEMO_MODE and otp == settings.DEMO_OTP:
+    if settings.DEMO_MODE and hmac.compare_digest(otp, settings.DEMO_OTP):
+        # Demo bypass: still enforce type to prevent cross-flow abuse
+        stored = await get_otp(normalized_email)
+        if stored and stored.get("otp_type", "registration") != otp_type:
+            return False, "Invalid OTP for this action. Please request a new OTP"
         return True, None
-    
+
     stored = await get_otp(normalized_email)
     
     if not stored:
@@ -132,8 +140,8 @@ async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tu
             minutes_remaining = (remaining_seconds + 59) // 60
             return False, f"Too many failed attempts. Please try again in {minutes_remaining} minutes"
     
-    # Check if OTP matches
-    if stored["otp"] != otp:
+    # Constant-time comparison to prevent timing-based OTP oracle attacks
+    if not hmac.compare_digest(stored["otp"], otp):
         attempt_count = stored.get("attempt_count", 0) + 1
         
         if attempt_count >= 5:

@@ -1,7 +1,6 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from fastapi.exception_handlers import RequestValidationError
-from fastapi.exceptions import HTTPException
+from fastapi.exceptions import HTTPException, RequestValidationError
 import logging
 
 def add_global_exception_handlers(app):

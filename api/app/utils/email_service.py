@@ -182,6 +182,7 @@ async def send_welcome_email(email: str, name: str, app_name: str = "Hostel Mana
         return False
 
     try:
+        first_name = name.split()[0] if name and name.strip() else name or "there"
         html_content = f"""
         <html>
             <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px;">
@@ -189,7 +190,7 @@ async def send_welcome_email(email: str, name: str, app_name: str = "Hostel Mana
                     <h2 style="color: #333; text-align: center; margin-bottom: 20px;">Welcome to {app_name}! 🎉</h2>
                     
                     <p style="color: #666; font-size: 14px; line-height: 1.6;">
-                        Hi {name.split()[0]},
+                        Hi {first_name},
                     </p>
                     
                     <p style="color: #666; font-size: 14px; line-height: 1.6;">
@@ -291,6 +292,7 @@ async def send_renewal_reminder_email(
         return False
 
     try:
+        first_name = name.split()[0] if name and name.strip() else name or "there"
         html_content = f"""
         <html>
             <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px;">
@@ -298,7 +300,7 @@ async def send_renewal_reminder_email(
                     <h2 style="color: #333; text-align: center; margin-bottom: 20px;">Your {app_name} Subscription is Expiring Soon</h2>
                     
                     <p style="color: #666; font-size: 14px; line-height: 1.6;">
-                        Hi {name.split()[0]},
+                        Hi {first_name},
                     </p>
                     
                     <p style="color: #666; font-size: 14px; line-height: 1.6;">

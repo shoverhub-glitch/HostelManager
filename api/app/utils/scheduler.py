@@ -10,10 +10,9 @@ async def db_cleanup_job():
     """Cleanup expired OTPs and old attempt records."""
     now = datetime.now(timezone.utc)
     
-    # 1. Cleanup expired OTPs (older than 10 minutes)
-    otp_expiry = now - timedelta(minutes=10)
-    await db["email_otps"].delete_many({"createdAt": {"$lt": otp_expiry}})
-    await db["password_reset_otps"].delete_many({"createdAt": {"$lt": otp_expiry}})
+    # 1. Cleanup expired OTPs using the expires_at field written by otp_memory_store.
+    # Both registration and password-reset OTPs live in the same email_otps collection.
+    await db["email_otps"].delete_many({"expires_at": {"$lt": now}})
     
     # 2. Cleanup old attempt records (older than 24 hours)
     attempt_expiry = now - timedelta(hours=24)

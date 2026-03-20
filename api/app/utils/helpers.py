@@ -103,9 +103,17 @@ def has_admin_access(user: dict) -> bool:
 def _extract_client_ip(request: Request) -> str:
 	client_host = request.client.host if request.client else ""
 	if getattr(settings, "TRUST_PROXY_HEADERS", False):
+		# Prefer X-Real-IP: nginx sets this directly to $remote_addr so it cannot be
+		# spoofed by the client (unlike X-Forwarded-For which only appends via
+		# $proxy_add_x_forwarded_for, letting clients prepend arbitrary IPs).
+		real_ip = request.headers.get("x-real-ip", "").strip()
+		if real_ip:
+			return real_ip
+		# Fallback: take the rightmost entry in X-Forwarded-For, which is added by
+		# the outermost trusted proxy and is not under client control.
 		xff_header = request.headers.get("x-forwarded-for", "")
 		if xff_header:
-			client_host = xff_header.split(",", 1)[0].strip() or client_host
+			client_host = xff_header.split(",")[-1].strip() or client_host
 	return client_host
 
 

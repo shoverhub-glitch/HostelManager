@@ -1,31 +1,59 @@
-# Use lightweight Python image
-FROM python:3.11-slim
+# ─── Stage 1: Builder ───────────────────────────────────────────────
+FROM python:3.11-slim AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Environment settings
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# Install build dependencies (stays in this stage only)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies into a separate folder
+COPY requirements.txt .
+RUN pip install --upgrade pip --root-user-action=ignore \
+    && pip install --no-cache-dir --prefix=/install -r requirements.txt --root-user-action=ignore
+
+
+# ─── Stage 2: MongoDB tools installer ───────────────────────────────
+FROM python:3.11-slim AS mongo-tools
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
     && wget -qO - https://www.mongodb.org/static/pgp/server-8.0.asc \
     | gpg --dearmor -o /usr/share/keyrings/mongodb-archive-keyring.gpg \
-    && echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-archive-keyring.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list \
+    && echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-archive-keyring.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" \
+    | tee /etc/apt/sources.list.d/mongodb-org-8.0.list \
     && apt-get update \
-    && apt-get install -y mongodb-database-tools \
+    && apt-get install -y --no-install-recommends mongodb-database-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
-RUN pip install --upgrade pip
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# ─── Stage 3: Final runtime image ───────────────────────────────────
+FROM python:3.11-slim AS final
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/install/lib/python3.11/site-packages
+
+# Copy only compiled Python packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy only mongodb binary tools from mongo-tools stage
+COPY --from=mongo-tools /usr/bin/mongodump /usr/bin/mongodump
+COPY --from=mongo-tools /usr/bin/mongorestore /usr/bin/mongorestore
+COPY --from=mongo-tools /usr/bin/mongoexport /usr/bin/mongoexport
+COPY --from=mongo-tools /usr/bin/mongoimport /usr/bin/mongoimport
+
+# Copy shared libraries required by mongo tools
+COPY --from=mongo-tools /usr/lib/x86_64-linux-gnu/libssl.so* /usr/lib/x86_64-linux-gnu/
+COPY --from=mongo-tools /usr/lib/x86_64-linux-gnu/libcrypto.so* /usr/lib/x86_64-linux-gnu/
 
 # Copy application code
 COPY . .
@@ -36,8 +64,6 @@ RUN adduser --disabled-password --gecos "" appuser && \
 
 USER appuser
 
-# Expose application port
 EXPOSE 8000
 
-# Start FastAPI with Gunicorn + Uvicorn workers
 CMD ["gunicorn", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "app.main:app"]

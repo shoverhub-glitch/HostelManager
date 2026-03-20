@@ -6,13 +6,11 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install build dependencies (stays in this stage only)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies into a separate folder
 COPY requirements.txt .
 RUN pip install --upgrade pip --root-user-action=ignore \
     && pip install --no-cache-dir --prefix=/install -r requirements.txt --root-user-action=ignore
@@ -40,18 +38,22 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/install/lib/python3.11/site-packages
 
-# Copy only compiled Python packages from builder
+# Install curl for healthcheck (minimal, no extras)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy compiled Python packages from builder
 COPY --from=builder /install /usr/local
 
-# Copy only mongodb binary tools from mongo-tools stage
+# Copy only the mongo tool binaries needed
 COPY --from=mongo-tools /usr/bin/mongodump /usr/bin/mongodump
 COPY --from=mongo-tools /usr/bin/mongorestore /usr/bin/mongorestore
 COPY --from=mongo-tools /usr/bin/mongoexport /usr/bin/mongoexport
 COPY --from=mongo-tools /usr/bin/mongoimport /usr/bin/mongoimport
 
-# Copy shared libraries required by mongo tools
+# Copy shared libs required by mongo tools
 COPY --from=mongo-tools /usr/lib/x86_64-linux-gnu/libssl.so* /usr/lib/x86_64-linux-gnu/
 COPY --from=mongo-tools /usr/lib/x86_64-linux-gnu/libcrypto.so* /usr/lib/x86_64-linux-gnu/
 

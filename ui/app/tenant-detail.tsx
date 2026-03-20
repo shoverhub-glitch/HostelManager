@@ -93,8 +93,10 @@ export default function TenantDetailScreen() {
   const [editAnchorDay,               setEditAnchorDay]               = useState<number>(1);
   const [editAutoGenerate,            setEditAutoGenerate]            = useState(true);
   const [editBillingStatus,           setEditBillingStatus]           = useState<'paid' | 'due'>('due');
+  const [editPaymentMethod,           setEditPaymentMethod]           = useState<string>('Cash');
   const [showEditBillingStatusPicker, setShowEditBillingStatusPicker] = useState(false);
   const [showAnchorDayPicker,         setShowAnchorDayPicker]         = useState(false);
+  const [showPaymentMethodPicker,      setShowPaymentMethodPicker]      = useState(false);
   const [editLoading,                 setEditLoading]                 = useState(false);
   const [showEditTenantModal,         setShowEditTenantModal]         = useState(false);
   const [editTenantName,              setEditTenantName]              = useState('');
@@ -258,6 +260,7 @@ export default function TenantDetailScreen() {
     setEditAutoGenerate(tenant.autoGeneratePayments === true);
     setEditAnchorDay(tenant.billingConfig?.anchorDay || 1);
     setEditBillingStatus((tenant.billingConfig?.status as 'paid' | 'due') || 'due');
+    setEditPaymentMethod(tenant.billingConfig?.method || 'Cash');
     setShowEditBillingModal(true);
     billingSheet.open();
   };
@@ -266,7 +269,12 @@ export default function TenantDetailScreen() {
     if (!tenant) return;
     try {
       setEditLoading(true);
-      const billingConfig = editAutoGenerate ? { billingCycle: 'monthly' as const, anchorDay: editAnchorDay, status: editBillingStatus } : null;
+      const billingConfig = editAutoGenerate ? {
+        billingCycle: 'monthly' as const,
+        anchorDay: editAnchorDay,
+        status: editBillingStatus,
+        ...(editBillingStatus === 'paid' && { method: editPaymentMethod }),
+      } : null;
       await tenantService.updateTenant(tenant.id, { autoGeneratePayments: editAutoGenerate, billingConfig });
       setTenant({ ...tenant, autoGeneratePayments: editAutoGenerate, billingConfig: billingConfig ?? undefined });
       billingSheet.close(() => setShowEditBillingModal(false));
@@ -319,12 +327,6 @@ export default function TenantDetailScreen() {
       } catch (err) { console.warn('Financial catch-up failed:', err); }
     }
     return { totalPaid, latestPayment, outstanding };
-  };
-
-  const handleMarkAsPaid = async () => {
-    const { latestPayment } = calculateFinancialSummary();
-    if (!latestPayment) return;
-    router.push(`/edit-payment?paymentId=${latestPayment.id}`);
   };
 
   const handleGenerateDue = () => {
@@ -754,14 +756,7 @@ export default function TenantDetailScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={[styles.sectionTitle, { color: textPrimary }]}>Payment History</Text>
-                {latestPayment?.status === 'due' ? (
-                  <TouchableOpacity
-                    style={[styles.headerAction, { backgroundColor: successColor }]}
-                    onPress={handleMarkAsPaid} activeOpacity={0.8}>
-                    <CheckCircle size={14} color={colors.white} strokeWidth={2.5} />
-                    <Text style={[styles.headerActionText, { color: colors.white }]}>Mark Paid</Text>
-                  </TouchableOpacity>
-                ) : !latestPayment && !tenant.autoGeneratePayments ? (
+                {!latestPayment && !tenant.autoGeneratePayments ? (
                   <TouchableOpacity
                     style={[styles.headerAction, { backgroundColor: brandColor }]}
                     onPress={handleGenerateDue} activeOpacity={0.8}>
@@ -786,9 +781,11 @@ export default function TenantDetailScreen() {
                   {payments.map((payment, idx) => {
                     const isPaid = payment.status === 'paid';
                     return (
-                      <View
+                      <TouchableOpacity
                         key={idx}
-                        style={[styles.paymentRow, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        style={[styles.paymentRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                        onPress={() => router.push(`/payment-detail?paymentId=${payment.id}`)}
+                        activeOpacity={0.7}>
                         <View style={[styles.paymentStrip, { backgroundColor: isPaid ? successColor : warningColor }]} />
                         <View style={styles.paymentBody}>
                           <View style={styles.paymentTop}>
@@ -819,7 +816,7 @@ export default function TenantDetailScreen() {
                             )}
                           </View>
                         </View>
-                      </View>
+                      </TouchableOpacity>
                     );
                   })}
 
@@ -1008,6 +1005,21 @@ export default function TenantDetailScreen() {
                     <Text style={[styles.fieldHint, { color: textTertiary }]}>Used to create the first payment record correctly</Text>
                   </View>
 
+                  {editBillingStatus === 'paid' && (
+                    <View style={styles.field}>
+                      <Text style={[styles.fieldLabel, { color: textPrimary }]}>Payment Method</Text>
+                      <TouchableOpacity
+                        style={[styles.picker, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                        onPress={() => { setShowPaymentMethodPicker(true); billingSheet.open(); }}
+                        activeOpacity={0.75} disabled={editLoading}>
+                        <Text style={[styles.pickerText, { color: textPrimary }]}>
+                          {editPaymentMethod}
+                        </Text>
+                        <ChevronDown size={18} color={textTertiary} strokeWidth={2} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
                   <View style={styles.field}>
                     <Text style={[styles.fieldLabel, { color: textPrimary }]}>When is rent due each month?</Text>
                     <TouchableOpacity
@@ -1040,6 +1052,14 @@ export default function TenantDetailScreen() {
           <SheetOption key={s} label={s === 'paid' ? 'Paid — this month collected' : 'Due — this month not paid'}
             active={editBillingStatus === s}
             onPress={() => { setEditBillingStatus(s); billingSheet.close(() => setShowEditBillingStatusPicker(false)); }} />
+        ))}
+      </PickerSheet>
+
+      <PickerSheet visible={showPaymentMethodPicker} onClose={() => { billingSheet.close(() => setShowPaymentMethodPicker(false)); }} title="Payment Method" anim={billingSheet.anim}>
+        {(['Cash', 'Online', 'Bank Transfer', 'UPI', 'Cheque'] as const).map(m => (
+          <SheetOption key={m} label={m}
+            active={editPaymentMethod === m}
+            onPress={() => { setEditPaymentMethod(m); billingSheet.close(() => setShowPaymentMethodPicker(false)); }} />
         ))}
       </PickerSheet>
 

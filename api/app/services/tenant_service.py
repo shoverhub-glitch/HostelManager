@@ -2,10 +2,11 @@ from app.models.tenant_schema import Tenant, TenantOut, BillingStatus, BillingCy
 from app.models.bed_schema import BedUpdate, BedStatus
 from app.models.payment_schema import PaymentMethod
 from app.services.bed_service import BedService
-from app.database.mongodb import getCollection
+from app.database.mongodb import getCollection, client
 from datetime import datetime, timezone, date
 from dateutil.relativedelta import relativedelta
 from bson import ObjectId
+from bson.errors import InvalidId
 from app.models.payment_schema import PaymentCreate
 from app.services.payment_service import PaymentService
 from app.models.tenant_schema import BillingConfig
@@ -235,13 +236,6 @@ class TenantService:
         join_date_value = tenant_data.get("joinDate")
         join_date = self._coerce_to_date(join_date_value) if join_date_value else today_date
 
-        # Validate bed is available if provided
-        bed_id = tenant_data.get("bedId")
-        if bed_id:
-            bed = await bed_service.get_bed(bed_id)
-            if bed and bed.status == BedStatus.OCCUPIED.value:
-                raise ValueError(f"Bed is already occupied")
-        
         # Get autoGeneratePayments flag
         auto_generate = tenant_data.get("autoGeneratePayments", True)
         
@@ -261,34 +255,70 @@ class TenantService:
         elif not auto_generate:
             # Remove billingConfig if auto-generate is disabled
             tenant_data.pop("billingConfig", None)
-        
-        result = await self.collection.insert_one(tenant_data)
-        tenant_data["id"] = str(result.inserted_id)
-        
-        # Update bed with tenantId and occupied status after tenant is created
-        if tenant_data.get("bedId"):
-            await bed_service.update_bed(tenant_data["bedId"], BedUpdate(status=BedStatus.OCCUPIED.value, tenantId=tenant_data["id"]))
 
-        # Create payment only if autoGeneratePayments is True and billingConfig exists
+        # Use transaction to atomically check bed availability, create tenant, and update bed
+        async with await client.start_session() as session:
+            async with session.start_transaction():
+                bed_id = tenant_data.get("bedId")
+                if bed_id:
+                    # Check and reserve bed atomically within transaction
+                    # Use find_one_and_update with condition to ensure bed is available
+                    result = await self.collection.database["beds"].find_one_and_update(
+                        {"_id": ObjectId(bed_id), "status": "available", "isDeleted": {"$ne": True}},
+                        {"$set": {"status": BedStatus.OCCUPIED.value, "updatedAt": now}},
+                        return_document=True,
+                        session=session
+                    )
+                    if not result:
+                        # Try with string id if ObjectId fails
+                        result = await self.collection.database["beds"].find_one_and_update(
+                            {"id": bed_id, "status": "available", "isDeleted": {"$ne": True}},
+                            {"$set": {"status": BedStatus.OCCUPIED.value, "updatedAt": now}},
+                            return_document=True,
+                            session=session
+                        )
+                    if not result:
+                        raise ValueError("Bed is already occupied")
+                
+                # Insert tenant
+                result = await self.collection.insert_one(tenant_data, session=session)
+                tenant_data["id"] = str(result.inserted_id)
+                
+                # Update bed with tenantId
+                if bed_id:
+                    try:
+                        await self.collection.database["beds"].update_one(
+                            {"_id": ObjectId(bed_id)},
+                            {"$set": {"tenantId": tenant_data["id"]}},
+                            session=session
+                        )
+                    except InvalidId:
+                        await self.collection.database["beds"].update_one(
+                            {"id": bed_id},
+                            {"$set": {"tenantId": tenant_data["id"]}},
+                            session=session
+                        )
+
+        # Create payment outside transaction (can be retried independently if it fails)
         if auto_generate and billing_config:
             anchor_day = billing_config.anchorDay
+            current_month_anchor = self._get_current_month_anchor(anchor_day, today_date)
+            is_future_anchor = current_month_anchor > today_date
+            is_future_join = join_date > today_date
+            is_past_or_today_join = join_date <= today_date
 
-            if join_date != today_date:
-                # For past/future join dates we schedule by join date rules (skips first partial period)
-                due_date = self._calculate_due_date_for_join_date(
-                    anchor_day=anchor_day,
-                    join_date=join_date,
-                    today=today_date,
-                )
-                # Respect the status selected by the user (Paid/Due)
+            # If join date OR anchor is in future, schedule for that future date
+            if is_future_join or is_future_anchor:
+                # Schedule for the future anchor date
+                if is_future_anchor:
+                    due_date = current_month_anchor
+                else:
+                    due_date = current_month_anchor + relativedelta(months=1)
                 initial_status = billing_config.status
             else:
-                due_date = self._calculate_initial_due_date(
-                    anchor_day=anchor_day,
-                    billing_status=billing_config.status,
-                    today=today_date,
-                )
-                initial_status = billing_status = billing_config.status
+                # Both join date and anchor are today or past - create payment immediately (today)
+                due_date = today_date
+                initial_status = billing_config.status
 
             payment = PaymentCreate(
                 tenantId=tenant_data["id"],
@@ -297,7 +327,7 @@ class TenantService:
                 amount=tenant_data["rent"],
                 status=initial_status,
                 dueDate=due_date,
-                method=billing_config.method or PaymentMethod.CASH.value
+                method=billing_config.method if initial_status == BillingStatus.PAID.value else None
             )
             await payment_service.create_payment(payment)
 
@@ -323,17 +353,20 @@ class TenantService:
         new_room_id = tenant_data.get("roomId", orig_room_id)
         new_status = tenant_data.get("tenantStatus", orig_status)
         
-        # Validate new bed is available (if different from current bed)
-        if new_bed_id and new_bed_id != orig_bed_id:
-            bed = await bed_service.get_bed(new_bed_id)
-            if bed and bed.status == BedStatus.OCCUPIED.value and bed.tenantId != tenant_id:
-                raise ValueError(f"Bed {new_bed_id} is already occupied by another tenant")
-        
         # Handle tenant status change to vacated
         if new_status == "vacated" and orig_status != "vacated":
-            # Free up current bed if assigned
-            if orig_bed_id:
-                await bed_service.update_bed(orig_bed_id, BedUpdate(status=BedStatus.AVAILABLE.value, tenantId=None))
+            # Use transaction to free up bed atomically
+            async with await client.start_session() as session:
+                async with session.start_transaction():
+                    if orig_bed_id:
+                        result = await self.collection.database["beds"].find_one_and_update(
+                            {"$or": [{"_id": ObjectId(orig_bed_id)}, {"id": orig_bed_id}], "isDeleted": {"$ne": True}},
+                            {"$set": {"status": BedStatus.AVAILABLE.value, "tenantId": None, "updatedAt": datetime.now(timezone.utc).isoformat()}},
+                            return_document=True,
+                            session=session
+                        )
+                        if not result:
+                            raise ValueError(f"Bed {orig_bed_id} not found")
             
             # Clear roomId and bedId
             tenant_data["roomId"] = None
@@ -352,8 +385,58 @@ class TenantService:
             if not new_bed_id or not new_room_id:
                 raise ValueError("Room and bed are mandatory when reactivating a vacated tenant")
             
-            # Occupy the new bed
-            await bed_service.update_bed(new_bed_id, BedUpdate(status=BedStatus.OCCUPIED.value, tenantId=tenant_id))
+            # Use transaction to atomically occupy the new bed
+            async with await client.start_session() as session:
+                async with session.start_transaction():
+                    result = await self.collection.database["beds"].find_one_and_update(
+                        {"$or": [{"_id": ObjectId(new_bed_id)}, {"id": new_bed_id}],
+                         "status": "available", "isDeleted": {"$ne": True}},
+                        {"$set": {"status": BedStatus.OCCUPIED.value, "tenantId": tenant_id, "updatedAt": datetime.now(timezone.utc).isoformat()}},
+                        return_document=True,
+                        session=session
+                    )
+                    if not result:
+                        raise ValueError("Bed is already occupied or not found")
+            
+            # Clear checkout date when reactivating
+            if "checkoutDate" not in tenant_data:
+                tenant_data["checkoutDate"] = None
+        
+        # Handle bed changes for active tenants
+        elif new_status == "active":
+            # Room and bed are mandatory for active tenants
+            if not new_bed_id or not new_room_id:
+                raise ValueError("Room and bed are mandatory for active tenants")
+            
+            bed_changed = orig_bed_id != new_bed_id
+            
+            if bed_changed:
+                # Use transaction to atomically free old bed and occupy new bed
+                async with await client.start_session() as session:
+                    async with session.start_transaction():
+                        # Free up old bed if it existed
+                        if orig_bed_id:
+                            result = await self.collection.database["beds"].find_one_and_update(
+                                {"$or": [{"_id": ObjectId(orig_bed_id)}, {"id": orig_bed_id}],
+                                 "isDeleted": {"$ne": True}},
+                                {"$set": {"status": BedStatus.AVAILABLE.value, "tenantId": None, "updatedAt": datetime.now(timezone.utc).isoformat()}},
+                                return_document=True,
+                                session=session
+                            )
+                            if not result:
+                                raise ValueError(f"Original bed {orig_bed_id} not found")
+                        
+                        # Occupy new bed if it's being assigned
+                        if new_bed_id:
+                            result = await self.collection.database["beds"].find_one_and_update(
+                                {"$or": [{"_id": ObjectId(new_bed_id)}, {"id": new_bed_id}],
+                                 "status": "available", "isDeleted": {"$ne": True}},
+                                {"$set": {"status": BedStatus.OCCUPIED.value, "tenantId": tenant_id, "updatedAt": datetime.now(timezone.utc).isoformat()}},
+                                return_document=True,
+                                session=session
+                            )
+                            if not result:
+                                raise ValueError("New bed is already occupied or not found")
             
             # Clear checkout date when reactivating
             if "checkoutDate" not in tenant_data:
@@ -435,22 +518,16 @@ class TenantService:
                 else:
                     new_billing_config = new_billing_config_data
                 
-                # Use consistent logic with create_tenant (skip first month if past join)
-                join_date_val = tenant_data.get("joinDate") or orig_doc.get("joinDate")
-                join_date = self._coerce_to_date(join_date_val) if join_date_val else today_date
+                # Calculate due date - create payment immediately if anchor is not in future
+                anchor_day = new_billing_config.anchorDay
+                current_month_anchor = self._get_current_month_anchor(anchor_day, today_date)
+                is_future_anchor = current_month_anchor > today_date
                 
-                if join_date != today_date:
-                    due_date = self._calculate_due_date_for_join_date(
-                        anchor_day=new_billing_config.anchorDay,
-                        join_date=join_date,
-                        today=today_date,
-                    )
+                if is_future_anchor:
+                    due_date = current_month_anchor
                 else:
-                    due_date = self._calculate_initial_due_date(
-                        anchor_day=new_billing_config.anchorDay,
-                        billing_status=new_billing_config.status,
-                        today=today_date,
-                    )
+                    # Create payment immediately (today) - same logic as create_tenant
+                    due_date = today_date
 
                 # Only create if no payment already exists for this month/due-date
                 existing = await payments_collection.find_one({
@@ -469,7 +546,7 @@ class TenantService:
                         amount=current_rent,
                         status=new_billing_config.status,
                         dueDate=due_date,
-                        method=new_billing_config.method or PaymentMethod.CASH.value,
+                        method=new_billing_config.method if new_billing_config.status == BillingStatus.PAID.value else None,
                     )
                     await payment_service.create_payment(initial_payment)
 

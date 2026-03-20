@@ -720,6 +720,10 @@ export const paymentService = {
     return await request<Payment>('PATCH', `/payments/${id}`, data, true) as ApiResponse<Payment>;
   },
 
+  async deletePayment(id: string): Promise<ApiResponse<{ success: boolean }>> {
+    return await request<{ success: boolean }>('DELETE', `/payments/${id}`, undefined, true) as ApiResponse<{ success: boolean }>;
+  },
+
   async getPaymentStats(): Promise<
     ApiResponse<{
       collected: string;

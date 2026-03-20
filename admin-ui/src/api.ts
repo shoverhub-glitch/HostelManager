@@ -28,7 +28,7 @@ function toQueryString(query: Record<string, string | number | boolean | undefin
 }
 
 async function request<T>(
-  method: 'GET' | 'POST' | 'PATCH',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
   requiresAuth: boolean = true
@@ -168,4 +168,46 @@ export async function updateCoupon(code: string, patch: Record<string, unknown>)
 
 export async function createCoupon(payload: Record<string, unknown>): Promise<void> {
   await request('POST', '/coupons/admin/create', payload);
+}
+
+export async function listBackups(params: { page: number; pageSize: number }): Promise<{ rows: any[]; meta: any }> {
+  const query = toQueryString({
+    page: params.page,
+    pageSize: params.pageSize,
+  });
+  return request('GET', `/admin/backups${query}`);
+}
+
+export async function triggerBackup(): Promise<void> {
+  await request('POST', '/admin/backups/trigger');
+}
+
+export async function deleteBackup(id: string): Promise<void> {
+  await request('DELETE', `/admin/backups/${id}`);
+}
+
+export async function downloadStoredBackup(id: string): Promise<Blob> {
+  const token = getAdminAccessToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const securityKey = getAdminSecurityKey();
+  if (securityKey) {
+    headers[ADMIN_SECURITY_HEADER] = securityKey;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/admin/backups/${id}/download`, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload?.detail || payload?.message || `Download failed (${response.status})`;
+    throw new Error(detail);
+  }
+
+  return response.blob();
 }

@@ -112,10 +112,10 @@ class RoomService:
         
         if new_bed_count < current_bed_count:
             # Reducing beds - handle affected tenants
-            # Get beds that will be removed (bed numbers > new_bed_count)
+            # Get beds that will be removed (bed numbers > new_bed_count, using numeric comparison)
             beds_to_remove = await beds_collection.find({
                 "roomId": room_id,
-                "bedNumber": {"$gt": str(new_bed_count)},
+                "$expr": {"$gt": [{"$toInt": "$bedNumber"}, new_bed_count]},
                 "isDeleted": {"$ne": True}
             }).to_list(None)
             
@@ -128,7 +128,7 @@ class RoomService:
                     available_bed = await beds_collection.find_one({
                         "roomId": room_id,
                         "status": "available",
-                        "bedNumber": {"$lte": str(new_bed_count)},
+                        "$expr": {"$lte": [{"$toInt": "$bedNumber"}, new_bed_count]},
                         "_id": {"$ne": bed["_id"]},
                         "isDeleted": {"$ne": True}
                     })
@@ -220,11 +220,11 @@ class RoomService:
         }
         
         if new_bed_count < current_bed_count:
-            # Count available beds in same room first
+            # Count available beds in same room first (using numeric comparison)
             available_beds_same_room = await beds_collection.count_documents({
                 "roomId": room_id,
                 "status": "available",
-                "bedNumber": {"$lte": str(new_bed_count)},
+                "$expr": {"$lte": [{"$toInt": "$bedNumber"}, new_bed_count]},
                 "isDeleted": {"$ne": True}
             })
             
@@ -239,10 +239,10 @@ class RoomService:
             result["availableBedsInSameRoom"] = available_beds_same_room
             result["availableBedsInProperty"] = available_beds_other_rooms
             
-            # Get beds that will be removed
+            # Get beds that will be removed (using numeric comparison)
             beds_to_remove = await beds_collection.find({
                 "roomId": room_id,
-                "bedNumber": {"$gt": str(new_bed_count)},
+                "$expr": {"$gt": [{"$toInt": "$bedNumber"}, new_bed_count]},
                 "isDeleted": {"$ne": True}
             }).to_list(None)
             

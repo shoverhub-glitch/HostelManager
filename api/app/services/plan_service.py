@@ -4,7 +4,7 @@ Manages subscription plan CRUD operations for admin.
 Plans are stored in MongoDB and used by all property owners.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from bson import ObjectId
 
@@ -36,8 +36,8 @@ class PlanService:
         
         # Convert to dict and add timestamps
         plan_dict = plan_data.model_dump()
-        plan_dict['created_at'] = datetime.utcnow()
-        plan_dict['updated_at'] = datetime.utcnow()
+        plan_dict['created_at'] = datetime.now(timezone.utc)
+        plan_dict['updated_at'] = datetime.now(timezone.utc)
         
         # Insert into database
         result = await db.plans.insert_one(plan_dict)
@@ -125,7 +125,7 @@ class PlanService:
         
         # Prepare update dict (exclude None values)
         update_dict = update_data.model_dump(exclude_none=True)
-        update_dict['updated_at'] = datetime.utcnow()
+        update_dict['updated_at'] = datetime.now(timezone.utc)
         
         # Update in database
         await db.plans.update_one(
@@ -183,7 +183,7 @@ class PlanService:
             {
                 "$set": {
                     "is_active": True,
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.now(timezone.utc)
                 }
             }
         )
@@ -212,7 +212,7 @@ class PlanService:
             {
                 "$set": {
                     "is_active": False,
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.now(timezone.utc)
                 }
             }
         )
@@ -296,8 +296,8 @@ class PlanService:
                 "periods": {"0": 0},  # Free forever
                 "is_active": True,
                 "sort_order": 0,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
             },
             {
                 "name": "pro",
@@ -314,8 +314,8 @@ class PlanService:
                 },
                 "is_active": True,
                 "sort_order": 1,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
             },
             {
                 "name": "premium",
@@ -332,8 +332,8 @@ class PlanService:
                 },
                 "is_active": True,
                 "sort_order": 2,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
             }
         ]
         

@@ -297,7 +297,7 @@ export default function PaymentsScreen() {
     finally { setIsRefreshing(false); }
   }, [selectedDate, currentPage, fetchPayments]);
 
-  const isLoadingState     = isRefreshing && payments.length === 0;
+  const isLoadingState = isRefreshing && payments.length === 0;
   const hasActiveFilters   = statusFilter !== 'all' || methodFilter !== 'all';
   const totalPages         = Math.max(1, Math.ceil(total / PAYMENTS_PAGE_SIZE));
   const clearFilters       = () => { setStatusFilter('all'); setMethodFilter('all'); };
@@ -471,10 +471,10 @@ export default function PaymentsScreen() {
                 : (isDark ? colors.warning[700] : colors.warning[200]);
 
               return (
-                <TouchableOpacity
-                  key={payment.id}
-                  activeOpacity={0.72}
-                  onPress={() => router.push(`/edit-payment?paymentId=${payment.id}`)}>
+                  <TouchableOpacity
+                    key={payment.id}
+                    activeOpacity={0.72}
+                    onPress={() => router.push(`/payment-detail?paymentId=${payment.id}`)}>
 
                   <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                     {/* Status strip on left */}
@@ -540,8 +540,8 @@ export default function PaymentsScreen() {
                             </Text>
                           </View>
                         )}
-                        <ArrowRight size={13} color={textTertiary} strokeWidth={1.5} style={styles.cardArrow} />
                       </View>
+
                     </View>
                   </View>
                 </TouchableOpacity>

@@ -8,12 +8,17 @@ import hashlib
 import json
 import logging
 from typing import Dict, Optional
+from datetime import datetime, timezone
 from app.config.settings import RAZORPAY_WEBHOOK_SECRET
 from app.services.razorpay_subscription_service import RazorpaySubscriptionService
 from app.services.subscription_service import SubscriptionService
 from app.services.razorpay_service import RazorpayService
+from app.database.mongodb import db
 
 logger = logging.getLogger(__name__)
+
+processed_events_collection = db["processed_webhook_events"]
+
 
 class RazorpayWebhookService:
     @staticmethod
@@ -33,7 +38,7 @@ class RazorpayWebhookService:
 
     @staticmethod
     async def process_webhook(event_data: Dict):
-        """Process different Razorpay events"""
+        """Process different Razorpay events with idempotency"""
         event = event_data.get("event")
         payload = event_data.get("payload", {})
         
@@ -55,6 +60,12 @@ class RazorpayWebhookService:
                 logger.warning(f"No order_id found for event {event}")
                 return {"status": "skipped", "message": "No order_id"}
 
+            # Idempotency check: skip if already processed
+            existing = await processed_events_collection.find_one({"orderId": order_id})
+            if existing:
+                logger.info(f"Order {order_id} already processed, skipping duplicate")
+                return {"status": "skipped", "message": "Already processed"}
+
             logger.info(f"Processing success for order {order_id}, payment {payment_id} via {event}")
 
             # 1. Handle Auto-renewal orders
@@ -74,6 +85,14 @@ class RazorpayWebhookService:
                     await SubscriptionService.update_subscription(owner_id, plan, period)
                 else:
                     logger.warning(f"Missing owner_id or plan in notes for order {order_id}: {notes}")
+
+            # Record processed event for idempotency
+            await processed_events_collection.insert_one({
+                "orderId": order_id,
+                "event": event,
+                "paymentId": payment_id,
+                "processedAt": datetime.now(timezone.utc).isoformat(),
+            })
 
         elif event == "payment.failed":
             payment_entity = payload.get("payment", {}).get("entity", {})

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 from app.database.mongodb import getCollection
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -20,14 +20,14 @@ async def get_dashboard_stats(request: Request, property_id: str):
     payments_col = getCollection("payments")
     staff_col = getCollection("staff")
     
-    # Get current month dates
-    today = datetime.now()
-    month_start_str = datetime(today.year, today.month, 1).date().isoformat()
+    # Get current month dates (UTC)
+    today = datetime.now(timezone.utc)
+    month_start_str = datetime(today.year, today.month, 1, tzinfo=timezone.utc).date().isoformat()
     # Get last day of month
     if today.month == 12:
-        month_end = datetime(today.year + 1, 1, 1).date() - timedelta(days=1)
+        month_end = datetime(today.year + 1, 1, 1, tzinfo=timezone.utc).date() - timedelta(days=1)
     else:
-        month_end = datetime(today.year, today.month + 1, 1).date() - timedelta(days=1)
+        month_end = datetime(today.year, today.month + 1, 1, tzinfo=timezone.utc).date() - timedelta(days=1)
     month_end_str = month_end.isoformat()
 
     # Today's range for check-ins

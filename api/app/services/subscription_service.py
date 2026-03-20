@@ -1,8 +1,8 @@
 from typing import Dict
 
 from app.models.subscription_schema import Subscription, Usage
-from app.database.mongodb import db
-from datetime import datetime, timedelta
+from app.database.mongodb import db, client
+from datetime import datetime, timedelta, timezone
 from app.utils.ownership import build_owner_query
 import logging
 
@@ -46,13 +46,13 @@ class SubscriptionService:
             # If one exists but isn't active, activate it or return it
             await db["subscriptions"].update_one(
                 {"_id": existing_any["_id"]},
-                {"$set": {"status": "active", "updatedAt": datetime.now().isoformat()}}
+                {"$set": {"status": "active", "updatedAt": datetime.now(timezone.utc).isoformat()}}
             )
             existing_any["status"] = "active"
             return Subscription(**existing_any)
 
         # If truly not found, create default free subscription
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         # Fetch free plan from database
         free_plan = await db.plans.find_one({"name": "free"})
@@ -72,7 +72,7 @@ class SubscriptionService:
             status='active',
             price=0,
             currentPeriodStart=now,
-            currentPeriodEnd=(datetime.now() + timedelta(days=365)).isoformat(),  # 1 year for free
+            currentPeriodEnd=(datetime.now(timezone.utc) + timedelta(days=365)).isoformat(),  # 1 year for free
             propertyLimit=free_limits['properties'],
             roomLimit=free_limits['rooms'],
             tenantLimit=free_limits['tenants'],
@@ -97,6 +97,7 @@ class SubscriptionService:
         """
         Update subscription plan with dynamic period support.
         Ensures only one subscription is active for the user.
+        Uses MongoDB transaction to ensure atomicity.
         
         Args:
             owner_id: User ID
@@ -104,7 +105,7 @@ class SubscriptionService:
             period: Billing period in months (1, 3, 12, etc.)
         """
         try:
-            now = datetime.now().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             plan = plan.lower()
             
             # Fetch plan details from database
@@ -131,15 +132,8 @@ class SubscriptionService:
                 raise ValueError(f"Period {period} not available for {plan} plan")
             
             price = periods_dict.get(period_str, 0) if plan != 'free' else 0
-            period_end = datetime.now() + timedelta(days=period * 30 if period > 0 else 365)
+            period_end = datetime.now(timezone.utc) + timedelta(days=period * 30 if period > 0 else 365)
             
-            # 1. Mark all other subscriptions for this owner as inactive
-            await db["subscriptions"].update_many(
-                {"ownerId": owner_id, "plan": {"$ne": plan}},
-                {"$set": {"status": "inactive", "updatedAt": now, "autoRenewal": False}}
-            )
-            
-            # 2. Upsert the target subscription to active
             sub_data = {
                 "plan": plan,
                 "status": "active",
@@ -155,22 +149,35 @@ class SubscriptionService:
                 "updatedAt": now
             }
             
-            result = await db["subscriptions"].find_one_and_update(
-                {"ownerId": owner_id, "plan": plan},
-                {"$set": sub_data},
-                upsert=True,
-                return_document=True
-            )
-            
-            if result:
-                # Ensure createdAt exists (if it was an upsert-insert)
-                if "createdAt" not in result:
-                    await db["subscriptions"].update_one(
-                        {"_id": result["_id"]},
-                        {"$set": {"createdAt": now}}
+            # Use transaction to ensure atomicity: mark old inactive, activate new
+            async with await client.start_session() as session:
+                async with session.start_transaction():
+                    # 1. Mark all other subscriptions for this owner as inactive
+                    await db["subscriptions"].update_many(
+                        {"ownerId": owner_id, "plan": {"$ne": plan}},
+                        {"$set": {"status": "inactive", "updatedAt": now, "autoRenewal": False}},
+                        session=session
                     )
-                    result["createdAt"] = now
-                return Subscription(**result)
+                    
+                    # 2. Upsert the target subscription to active
+                    result = await db["subscriptions"].find_one_and_update(
+                        {"ownerId": owner_id, "plan": plan},
+                        {"$set": sub_data},
+                        upsert=True,
+                        return_document=True,
+                        session=session
+                    )
+                    
+                    if result:
+                        # Ensure createdAt exists (if it was an upsert-insert)
+                        if "createdAt" not in result:
+                            await db["subscriptions"].update_one(
+                                {"_id": result["_id"]},
+                                {"$set": {"createdAt": now}},
+                                session=session
+                            )
+                            result["createdAt"] = now
+                        return Subscription(**result)
             
             raise ValueError("Failed to update or create subscription")
             
@@ -182,18 +189,25 @@ class SubscriptionService:
     async def get_usage(owner_id: str):
         """Get current resource usage for subscription quota checking"""
         try:
-            # Count properties using ownerIds/ownerId-compatible query
+            # Count active properties (exclude deleted and archived)
             owned_properties = await db["properties"].find(
-                {**build_owner_query(owner_id), "isDeleted": {"$ne": True}},
+                {**build_owner_query(owner_id), "isDeleted": {"$ne": True}, "active": {"$ne": False}},
                 {"_id": 1}
             ).to_list(length=None)
             property_ids = [str(doc["_id"]) for doc in owned_properties]
 
             properties = len(property_ids)
-            tenants = await db["tenants"].count_documents({"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}}) if property_ids else 0
-            rooms = await db["rooms"].count_documents({"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}}) if property_ids else 0
-            staff = await db["staff"].count_documents({"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}}) if property_ids else 0
-            now = datetime.now().isoformat()
+            # Count only active (non-archived, non-deleted) resources
+            tenants = await db["tenants"].count_documents(
+                {"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}, "archived": {"$ne": True}}
+            ) if property_ids else 0
+            rooms = await db["rooms"].count_documents(
+                {"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}, "active": {"$ne": False}}
+            ) if property_ids else 0
+            staff = await db["staff"].count_documents(
+                {"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}}
+            ) if property_ids else 0
+            now = datetime.now(timezone.utc).isoformat()
             return Usage(
                 ownerId=owner_id,
                 properties=properties,
@@ -205,7 +219,7 @@ class SubscriptionService:
         except Exception as e:
             logger.error(f"Error getting usage for {owner_id}: {str(e)}")
             # Return zero usage on error so user can still access the system
-            now = datetime.now().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             return Usage(
                 ownerId=owner_id,
                 properties=0,
@@ -334,7 +348,7 @@ class SubscriptionService:
             dict with created subscription details
         """
         try:
-            now = datetime.now().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             
             # Fetch free plan from database
             free_plan = await db.plans.find_one({"name": "free", "is_active": True})
@@ -347,7 +361,7 @@ class SubscriptionService:
                 }
             
             # Create single subscription document with free plan
-            period_end = (datetime.now() + timedelta(days=365)).isoformat()
+            period_end = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
             
             sub_doc = {
                 "ownerId": owner_id,
@@ -407,7 +421,7 @@ class SubscriptionService:
                 {"ownerId": owner_id, "status": "active"},
                 {"$set": {
                     "autoRenewal": True,
-                    "updatedAt": datetime.now().isoformat()
+                    "updatedAt": datetime.now(timezone.utc).isoformat()
                 }}
             )
             return result.modified_count > 0
@@ -431,7 +445,7 @@ class SubscriptionService:
                 {"ownerId": owner_id, "status": "active"},
                 {"$set": {
                     "autoRenewal": False,
-                    "updatedAt": datetime.now().isoformat()
+                    "updatedAt": datetime.now(timezone.utc).isoformat()
                 }}
             )
             return result.modified_count > 0
@@ -472,8 +486,8 @@ class SubscriptionService:
                     # Continue anyway to mark subscription as cancelled
             
             # Downgrade to free plan
-            now = datetime.now().isoformat()
-            period_end = (datetime.now() + timedelta(days=365)).isoformat()
+            now = datetime.now(timezone.utc).isoformat()
+            period_end = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
             
             free_plan = await db.plans.find_one({"name": "free"})
             if not free_plan:

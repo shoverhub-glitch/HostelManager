@@ -1,4 +1,5 @@
 import { Button, Card, Form, Input, Typography, message } from 'antd';
+import { brandColor, colorPalette, typography, spacing, radius, shadows, styles } from '../theme';
 
 interface LoginViewProps {
   loading: boolean;
@@ -17,13 +18,26 @@ export function LoginView({ loading, onSubmit }: LoginViewProps) {
   };
 
   return (
-    <div className="login-page">
+    <div style={styles.loginPage}>
       {contextHolder}
-      <Card className="login-card" bordered={false}>
-        <Typography.Title level={2} className="brand-title">
+      <Card
+        style={styles.loginCard}
+        styles={{ body: { padding: spacing.lg } }}
+      >
+        <Typography.Title 
+          level={2} 
+          style={{ 
+            textAlign: 'center', 
+            marginBottom: spacing.xs,
+            color: colorPalette.primary[700],
+          }}
+        >
           HostelManager Admin
         </Typography.Title>
-        <Typography.Paragraph type="secondary" className="brand-subtitle">
+        <Typography.Paragraph 
+          type="secondary" 
+          style={{ textAlign: 'center', marginBottom: spacing.lg }}
+        >
           Restricted control panel for platform administration.
         </Typography.Paragraph>
 

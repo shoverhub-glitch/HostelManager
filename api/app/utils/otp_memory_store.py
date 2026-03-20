@@ -1,16 +1,18 @@
-"""In-memory OTP storage with expiration and resend cooldown"""
-from datetime import datetime, timedelta, timezone
+"""MongoDB-based OTP storage with expiration and resend cooldown"""
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from app.config import settings
+from app.database.mongodb import db
 
-# In-memory storage structure: {email: {otp, created_at, expires_at, last_sent_at, resend_cooldown_expires_at}}
-otp_store: dict = {}
+OTP_COLLECTION = "email_otps"
+OTP_TTL_MINUTES = 5
+RESEND_COOLDOWN_SECONDS = 45
 
 
 async def generate_and_store_otp(email: str, otp_type: str = "registration") -> Tuple[str, bool]:
     """
-    Generate and store OTP in memory with resend cooldown
+    Generate and store OTP in MongoDB with resend cooldown
     
     Args:
         email: User email
@@ -22,28 +24,32 @@ async def generate_and_store_otp(email: str, otp_type: str = "registration") -> 
     normalized_email = email.strip().lower()
     now = datetime.now(timezone.utc)
     
-    # Check if there's an existing OTP and if we're within resend cooldown
-    if normalized_email in otp_store:
-        stored = otp_store[normalized_email]
-        stored_type = stored.get("otp_type", "registration")
-        last_sent = stored.get("last_sent_at")
-        resend_cooldown_expires = stored.get("resend_cooldown_expires_at")
-
-        # Apply cooldown only when requesting OTP for the same flow.
-        if stored_type == otp_type and resend_cooldown_expires and resend_cooldown_expires > now:
-            # User is still in resend cooldown period
-            remaining_seconds = int((resend_cooldown_expires - now).total_seconds())
-            return stored.get("otp", ""), False
+    # Check for existing OTP and resend cooldown
+    existing = await db[OTP_COLLECTION].find_one({"email": normalized_email})
     
-    # Generate cryptographically secure 6-digit OTP.
+    if existing:
+        # Check resend cooldown
+        resend_cooldown_expires = existing.get("resend_cooldown_expires_at")
+        if resend_cooldown_expires:
+            if isinstance(resend_cooldown_expires, str):
+                resend_cooldown_expires = datetime.fromisoformat(resend_cooldown_expires)
+            if resend_cooldown_expires > now:
+                # Still in cooldown
+                existing_type = existing.get("otp_type", "registration")
+                if existing_type == otp_type:
+                    return existing.get("otp", ""), False
+    
+    # Generate cryptographically secure 6-digit OTP
     if settings.DEMO_MODE:
         otp = settings.DEMO_OTP
     else:
         otp = f"{secrets.randbelow(900000) + 100000}"
-    expires_at = now + timedelta(minutes=5)
-    resend_cooldown_expires_at = now + timedelta(seconds=45)
     
-    otp_store[normalized_email] = {
+    expires_at = now + timedelta(minutes=OTP_TTL_MINUTES)
+    resend_cooldown_expires_at = now + timedelta(seconds=RESEND_COOLDOWN_SECONDS)
+    
+    otp_data = {
+        "email": normalized_email,
         "otp": otp,
         "otp_type": otp_type,
         "created_at": now,
@@ -51,27 +57,37 @@ async def generate_and_store_otp(email: str, otp_type: str = "registration") -> 
         "last_sent_at": now,
         "resend_cooldown_expires_at": resend_cooldown_expires_at,
         "verified": False,
-        "attempt_count": 0
+        "attempt_count": 0,
+        "locked_until": None
     }
+    
+    # Upsert OTP document
+    await db[OTP_COLLECTION].update_one(
+        {"email": normalized_email},
+        {"$set": otp_data},
+        upsert=True
+    )
     
     return otp, True
 
 
 async def get_otp(email: str) -> Optional[dict]:
-    """Get OTP record from memory"""
+    """Get OTP record from MongoDB"""
     normalized_email = email.strip().lower()
-    if normalized_email not in otp_store:
+    
+    doc = await db[OTP_COLLECTION].find_one({"email": normalized_email})
+    if not doc:
         return None
     
-    stored = otp_store[normalized_email]
     now = datetime.now(timezone.utc)
+    expires_at = doc.get("expires_at")
     
     # Check expiration
-    if stored["expires_at"] < now:
-        del otp_store[normalized_email]
+    if expires_at and expires_at < now:
+        await db[OTP_COLLECTION].delete_one({"email": normalized_email})
         return None
     
-    return stored
+    return doc
 
 
 async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tuple[bool, Optional[str]]:
@@ -89,6 +105,7 @@ async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tu
     normalized_email = email.strip().lower()
     if settings.DEMO_MODE and otp == settings.DEMO_OTP:
         return True, None
+    
     stored = await get_otp(normalized_email)
     
     if not stored:
@@ -102,28 +119,37 @@ async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tu
     now = datetime.now(timezone.utc)
     
     # Check expiration
-    if stored["expires_at"] < now:
-        del otp_store[normalized_email]
+    expires_at = stored.get("expires_at")
+    if expires_at and expires_at < now:
+        await db[OTP_COLLECTION].delete_one({"email": normalized_email})
         return False, "OTP expired. Please request a new OTP"
 
     # Enforce temporary lock before evaluating OTP match.
     locked_until = stored.get("locked_until")
-    if locked_until and locked_until > now:
-        remaining_seconds = int((locked_until - now).total_seconds())
-        minutes_remaining = (remaining_seconds + 59) // 60
-        return False, f"Too many failed attempts. Please try again in {minutes_remaining} minutes"
+    if locked_until:
+        if locked_until > now:
+            remaining_seconds = int((locked_until - now).total_seconds())
+            minutes_remaining = (remaining_seconds + 59) // 60
+            return False, f"Too many failed attempts. Please try again in {minutes_remaining} minutes"
     
     # Check if OTP matches
     if stored["otp"] != otp:
-        stored["attempt_count"] += 1
+        attempt_count = stored.get("attempt_count", 0) + 1
         
-        if stored["attempt_count"] >= 5:
+        if attempt_count >= 5:
             # Lock for 10 minutes after 5 failed attempts
             locked_until = now + timedelta(minutes=10)
-            stored["locked_until"] = locked_until
+            await db[OTP_COLLECTION].update_one(
+                {"email": normalized_email},
+                {"$set": {"attempt_count": attempt_count, "locked_until": locked_until}}
+            )
             return False, "Too many failed attempts. Please request a new OTP after 10 minutes"
         
-        remaining_attempts = 5 - stored["attempt_count"]
+        await db[OTP_COLLECTION].update_one(
+            {"email": normalized_email},
+            {"$set": {"attempt_count": attempt_count}}
+        )
+        remaining_attempts = 5 - attempt_count
         return False, f"Invalid OTP. {remaining_attempts} attempt(s) remaining"
     
     return True, None
@@ -132,21 +158,26 @@ async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tu
 async def mark_otp_verified(email: str) -> bool:
     """Mark OTP as verified"""
     normalized_email = email.strip().lower()
-    if normalized_email in otp_store:
-        otp_store[normalized_email]["verified"] = True
-        return True
-    return False
+    result = await db[OTP_COLLECTION].update_one(
+        {"email": normalized_email},
+        {"$set": {"verified": True}}
+    )
+    return result.modified_count > 0
 
 
 async def get_resend_cooldown_remaining(email: str) -> int:
     """Get remaining cooldown seconds before resend is allowed. Returns 0 if resend is allowed"""
     normalized_email = email.strip().lower()
-    if normalized_email not in otp_store:
+    
+    doc = await db[OTP_COLLECTION].find_one(
+        {"email": normalized_email},
+        {"resend_cooldown_expires_at": 1}
+    )
+    
+    if not doc:
         return 0
     
-    stored = otp_store[normalized_email]
-    resend_cooldown_expires = stored.get("resend_cooldown_expires_at")
-    
+    resend_cooldown_expires = doc.get("resend_cooldown_expires_at")
     if not resend_cooldown_expires:
         return 0
     
@@ -157,23 +188,16 @@ async def get_resend_cooldown_remaining(email: str) -> int:
 
 
 async def delete_otp(email: str) -> bool:
-    """Delete OTP from memory"""
+    """Delete OTP from MongoDB"""
     normalized_email = email.strip().lower()
-    if normalized_email in otp_store:
-        del otp_store[normalized_email]
-        return True
-    return False
+    result = await db[OTP_COLLECTION].delete_one({"email": normalized_email})
+    return result.deleted_count > 0
 
 
 async def cleanup_expired_otps() -> int:
-    """Remove expired OTPs from memory. Returns count of cleaned entries"""
+    """Remove expired OTPs from MongoDB. Returns count of cleaned entries"""
     now = datetime.now(timezone.utc)
-    expired_emails = [
-        email for email, data in otp_store.items()
-        if data.get("expires_at", now) < now
-    ]
-    
-    for email in expired_emails:
-        del otp_store[email]
-    
-    return len(expired_emails)
+    result = await db[OTP_COLLECTION].delete_many({
+        "expires_at": {"$lt": now}
+    })
+    return result.deleted_count

@@ -66,10 +66,11 @@ class SubscriptionEnforcement:
                 logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
-            # Count existing properties using string owner_id (exclude deleted)
+            # Count existing active properties (exclude deleted and archived)
             current = await db["properties"].count_documents({
                 **build_owner_query(owner_id),
-                "isDeleted": {"$ne": True}
+                "isDeleted": {"$ne": True},
+                "active": True
             })
 
             # Check quota
@@ -142,10 +143,11 @@ class SubscriptionEnforcement:
                 logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
-            # Count existing tenants in THIS property only (not across all properties, exclude deleted)
+            # Count existing active tenants in THIS property only (exclude deleted and archived)
             current = await db["tenants"].count_documents({
                 "propertyId": property_id,
-                "isDeleted": {"$ne": True}
+                "isDeleted": {"$ne": True},
+                "archived": {"$ne": True}
             })
 
             # Check quota (max tenants per property)
@@ -218,10 +220,11 @@ class SubscriptionEnforcement:
                 logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
-            # Count existing rooms in THIS property (exclude deleted)
+            # Count existing active rooms in THIS property (exclude deleted and archived)
             current = await db["rooms"].count_documents({
                 "propertyId": property_id,
-                "isDeleted": {"$ne": True}
+                "isDeleted": {"$ne": True},
+                "active": {"$ne": False}
             })
 
             # Check quota (30 rooms per property)
@@ -295,10 +298,9 @@ class SubscriptionEnforcement:
                 logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
-            # Count existing staff in THIS property (not archived, not deleted)
+            # Count existing active staff in THIS property (exclude deleted)
             current = await db["staff"].count_documents({
                 "propertyId": property_id, 
-                "archived": False,
                 "isDeleted": {"$ne": True}
             })
 
@@ -340,16 +342,17 @@ class SubscriptionEnforcement:
                 logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
-            # Get actual usage
+            # Get actual usage (only active resources)
             owned_properties = await db["properties"].find(
-                build_owner_query(owner_id),
+                {**build_owner_query(owner_id), "isDeleted": {"$ne": True}, "active": True},
                 {"_id": 1}
             ).to_list(length=None)
             property_ids = [str(doc["_id"]) for doc in owned_properties]
 
             properties = len(property_ids)
+            # Count only active (non-archived, non-deleted) tenants
             tenants = await db["tenants"].count_documents(
-                {"propertyId": {"$in": property_ids}}
+                {"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}, "archived": {"$ne": True}}
             ) if property_ids else 0
 
             warnings = []

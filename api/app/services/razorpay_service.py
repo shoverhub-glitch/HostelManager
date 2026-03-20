@@ -1,7 +1,7 @@
 from app.models.razorpay_order import RazorpayOrder
 from app.config import settings
 from app.database.mongodb import db
-from datetime import datetime
+from datetime import datetime, timezone
 import razorpay
 import hmac
 import hashlib
@@ -24,7 +24,7 @@ class RazorpayService:
             }
         }
         order = RazorpayService.client.order.create(order_data)
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         order_doc = RazorpayOrder(
             order_id=order["id"],
             user_id=user_id,
@@ -55,7 +55,7 @@ class RazorpayService:
             return False, "Invalid signature", None
         await db["razorpay_orders"].update_one(
             {"order_id": order_id},
-            {"$set": {"status": "paid", "payment_id": payment_id, "signature": signature, "updated_at": datetime.now().isoformat()}}
+            {"$set": {"status": "paid", "payment_id": payment_id, "signature": signature, "updated_at": datetime.now(timezone.utc).isoformat()}}
         )
         # Return tuple of (plan, period, coupon_code) so subscription can be updated with all data
         return True, {"plan": order["plan"], "period": order.get("period", 1)}, order.get("coupon_code")

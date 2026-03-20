@@ -194,9 +194,8 @@ export default function DashboardScreen() {
         monthlyRevenue: 0, monthlyRevenueFormatted: '₹0',
         pendingPayments: 0, duePaymentAmount: 0, duePaymentAmountFormatted: '₹0',
         paidThisMonth: 0,
-        checkInsToday: 0, upcomingCheckIns: 0,
+        checkInsToday: 0,
         totalStaff: 0, availableStaff: 0,
-        maintenanceAlerts: 0, urgentAlerts: 0,
       };
       const duePayments = dueRes.data || [];
       const data = { stats, duePayments };
@@ -272,10 +271,6 @@ export default function DashboardScreen() {
 
   const purpleLight       = isDark ? colors.purple[900]  : colors.purple[50];
   const purpleIconColor   = isDark ? colors.purple[300]  : colors.purple[500];
-
-  const dangerColor       = colors.danger[500];
-  const dangerLight       = isDark ? colors.danger[900]  : colors.danger[50];
-  const dangerIconColor   = isDark ? colors.danger[300]  : colors.danger[500];
 
   const pageBg        = colors.background.primary;
   const cardBg        = colors.background.secondary;
@@ -485,28 +480,7 @@ export default function DashboardScreen() {
                     <Text style={[styles.secondaryLabel, { color: textSecondary }]}>Staff{'\n'}Available</Text>
                   </View>
 
-                  <View style={[styles.secondaryCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                    <View style={[styles.secondaryIconWrap, { backgroundColor: brandLight }]}>
-                      <Clock size={15} color={brandIconColor} />
-                    </View>
-                    <Text style={[styles.secondaryValue, { color: textPrimary }]}>
-                      {dashboardData?.stats.upcomingCheckIns || 0}
-                    </Text>
-                    <Text style={[styles.secondaryLabel, { color: textSecondary }]}>Upcoming{'\n'}Check-ins</Text>
-                  </View>
 
-                  <View style={[styles.secondaryCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                    <View style={[styles.secondaryIconWrap, { backgroundColor: dangerLight }]}>
-                      <Wrench size={15} color={dangerIconColor} />
-                    </View>
-                    <Text style={[styles.secondaryValue, { color: textPrimary }]}>
-                      {dashboardData?.stats.maintenanceAlerts || 0}
-                    </Text>
-                    <Text style={[styles.secondaryLabel, { color: textSecondary }]}>Maintenance{'\n'}Alerts</Text>
-                    {(dashboardData?.stats.urgentAlerts || 0) > 0 && (
-                      <View style={[styles.urgentDot, { backgroundColor: dangerColor }]} />
-                    )}
-                  </View>
 
                 </View>
 
@@ -833,14 +807,6 @@ const styles = StyleSheet.create({
     textAlign:  'center',
     marginTop:  2,
     lineHeight: 13,
-  },
-  urgentDot: {
-    position:     'absolute',
-    top:          8,
-    right:        8,
-    width:        7,
-    height:       7,
-    borderRadius: radius.full,
   },
 
   // ── Section ───────────────────────────────────────────────────────────────

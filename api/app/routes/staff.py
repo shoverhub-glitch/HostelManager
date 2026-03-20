@@ -143,15 +143,15 @@ async def delete_staff(request: Request, staff_id: str):
 
 
 @router.get("/archived/list")
-async def get_archived_staff(
+async def get_deleted_staff(
     request: Request, property_id: str = None, page: int = 1, page_size: int = 50
 ):
-    """Get archived staff members"""
+    """Get deleted staff members"""
     page = max(1, page)
     page_size = min(100, max(1, page_size))
     skip = (page - 1) * page_size
 
-    staff_list, total = await staff_service.get_archived_staff(
+    staff_list, total = await staff_service.get_deleted_staff(
         property_id=property_id, skip=skip, limit=page_size
     )
 
@@ -186,7 +186,7 @@ async def restore_staff(request: Request, staff_id: str):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
         if not orig.archived:
-            raise HTTPException(status_code=400, detail="Staff is not archived")
+            raise HTTPException(status_code=400, detail="Staff is not deleted")
 
         restored = await staff_service.restore_staff(staff_id)
         return {"data": restored.model_dump()} if restored else {"data": {}}

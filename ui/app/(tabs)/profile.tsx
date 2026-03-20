@@ -7,6 +7,7 @@ import {
   Switch,
 } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
+import Constants from 'expo-constants';
 import ScreenContainer from '@/components/ScreenContainer';
 import Card from '@/components/Card';
 import {
@@ -15,7 +16,6 @@ import {
   Phone,
   Building2,
   MapPin,
-  Bell,
   Shield,
   HelpCircle,
   LogOut,
@@ -34,7 +34,8 @@ export default function ProfileScreen() {
   const { logout, user }                = useAuth();
   const router                          = useRouter();
 
-  const handleLogout = async () => { await logout(); };
+  const handleLogout = () => logout();
+  const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 
   // ── Color aliases ─────────────────────────────────────────────────────────
   const brandColor    = colors.primary[500];
@@ -82,13 +83,7 @@ export default function ProfileScreen() {
       accentBg:    isDark ? colors.warning[900] : colors.warning[50],
       route:       '/subscription' as Href,
     },
-    {
-      icon:        Bell,
-      title:       'Notifications',
-      description: 'Manage notification preferences',
-      accentColor: isDark ? colors.purple[300] : colors.purple[500],
-      accentBg:    isDark ? colors.purple[900] : colors.purple[50],
-    },
+
     {
       icon:        Shield,
       title:       'Privacy & Security',
@@ -103,6 +98,7 @@ export default function ProfileScreen() {
       description: 'Get help and contact support',
       accentColor: isDark ? colors.danger[300] : colors.danger[600],
       accentBg:    isDark ? colors.danger[900] : colors.danger[50],
+      route:       '/help-support' as Href,
     },
   ];
 
@@ -132,33 +128,7 @@ export default function ProfileScreen() {
               Hostel Manager
             </Text>
           </View>
-        </Card>
-
-        {/* ── Personal Info ── */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
-            Personal information
-          </Text>
-
-          <Card style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <View style={[styles.infoIconWrap, {
-                backgroundColor: isDark ? colors.primary[900] : colors.primary[50],
-              }]}>
-                <Mail size={18} color={colors.primary[500]} strokeWidth={1.5} />
-              </View>
-              <View style={styles.heroInfo}>
-                <Text style={[styles.heroName, { color: textPrimary }]} numberOfLines={1}>
-                  {user?.name || 'Property Owner'}
-                </Text>
-                <View style={[styles.rolePill, { backgroundColor: brandLight, borderColor: isDark ? colors.primary[700] : colors.primary[200] }]}>
-                  <Text style={[styles.roleText, { color: brandText }]}>Hostel Manager</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Contact chips */}
-            <View style={[styles.contactRow, { borderTopColor: colors.border.light }]}>
+                      <View style={[styles.contactRow, { borderTopColor: colors.border.light }]}>
               <View style={[styles.contactChip, { backgroundColor: pageBg, borderColor: cardBorder }]}>
                 <Mail size={12} color={textTertiary} strokeWidth={2} />
                 <Text style={[styles.contactText, { color: textSecondary }]} numberOfLines={1}>
@@ -172,9 +142,7 @@ export default function ProfileScreen() {
                 </Text>
               </View>
             </View>
-          </Card>
-        </View>
-
+        </Card>
         {/* ── Appearance ─────────────────────────────────────────────────── */}
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: textTertiary }]}>APPEARANCE</Text>
@@ -261,7 +229,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         {/* App version hint */}
-        <Text style={[styles.versionText, { color: textTertiary }]}>Hostel Manager · v1.0</Text>
+        <Text style={[styles.versionText, { color: textTertiary }]}>Hostel Manager · v{appVersion}</Text>
 
       </ScrollView>
     </ScreenContainer>

@@ -159,7 +159,7 @@ async def register_user_service(user: UserCreate):
     result = await users_collection.insert_one(user_doc)
     user_id = str(result.inserted_id)
     
-    # Create 3 default subscriptions for the user (free, pro, premium)
+    # Create single free subscription document (upgraded in place when user selects a plan)
     from app.services.subscription_service import SubscriptionService
     await SubscriptionService.create_default_subscriptions(user_id)
     
@@ -510,7 +510,12 @@ async def forgot_password_service(email: str):
     )
     
     if not email_sent:
+        await delete_otp(normalized_email)
         logger.error("Failed to send password reset OTP email")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to send password reset OTP right now. Please try again shortly."
+        )
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,

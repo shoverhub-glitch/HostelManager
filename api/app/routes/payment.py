@@ -298,10 +298,16 @@ async def list_payments(
     
     payments_cursor = await payment_service.collection.aggregate(pipeline).to_list(page_size)
     
-    # Convert to Payment objects
+    # Convert to Payment objects with formatted amounts
     payments = []
     for p in payments_cursor:
         p["id"] = str(p["_id"])
+        # Format amount from paise to display string
+        if "amountPaise" in p:
+            p["amount"] = f"₹{p['amountPaise'] / 100:,.0f}"
+            p.pop("amountPaise")
+        elif isinstance(p.get("amount"), int):
+            p["amount"] = f"₹{p['amount'] / 100:,.0f}"
         payments.append(Payment(**p))
     
     return {

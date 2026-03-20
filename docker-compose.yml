@@ -14,6 +14,8 @@ services:
       - ./api/.env
     environment:
       FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - ./mongodb_backups:/app/backups
     depends_on:
       - mongodb
     networks:
@@ -33,7 +35,7 @@ services:
     expose:
       - "27017"
     volumes:
-      - mongo-data:/data/db
+      - ./mongodb_data:/data/db
     env_file:
       - ./api/.env
     environment:
@@ -49,29 +51,6 @@ services:
       retries: 5
 
 
-  mongo-express:
-    image: mongo-express
-    container_name: mongo-express
-    restart: always
-    profiles:
-      - debug
-    expose:
-      - "8081"
-    env_file:
-      - ./api/.env
-    environment:
-      ME_CONFIG_MONGODB_SERVER: mongodb
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-      ME_CONFIG_MONGODB_AUTH_DATABASE: admin
-      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME}
-      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
-      ME_CONFIG_SITE_BASEURL: /rakesh_0406/
-    depends_on:
-      - mongodb
-    networks:
-      - backend-network
-
   nginx:
     image: nginx:alpine
     container_name: api-nginx
@@ -85,7 +64,6 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
-      - mongo-express
     networks:
       - backend-network
 
@@ -93,7 +71,3 @@ services:
 networks:
   backend-network:
     driver: bridge
-
-
-volumes:
-  mongo-data:

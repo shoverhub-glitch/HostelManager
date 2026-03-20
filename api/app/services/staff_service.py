@@ -17,7 +17,7 @@ class StaffService:
         limit: int = 50,
     ):
         """Get list of staff with optional filtering"""
-        query = {}
+        query = {"isDeleted": {"$ne": True}}
         
         if property_id:
             query["propertyId"] = property_id
@@ -31,9 +31,6 @@ class StaffService:
         
         if role:
             query["role"] = role
-
-        # Filter out archived by default
-        query["archived"] = False
 
         total = await self.collection.count_documents(query)
 
@@ -57,7 +54,7 @@ class StaffService:
         """Create new staff member"""
         staff_data["createdAt"] = datetime.now(timezone.utc).isoformat()
         staff_data["updatedAt"] = datetime.now(timezone.utc).isoformat()
-        staff_data["archived"] = False
+        staff_data["isDeleted"] = False
 
         result = await self.collection.insert_one(staff_data)
         created_staff = await self.collection.find_one({"_id": result.inserted_id})
@@ -78,11 +75,11 @@ class StaffService:
             return None
 
     async def delete_staff(self, staff_id: str) -> bool:
-        """Delete staff member (soft delete by archiving)"""
+        """Delete staff member (soft delete)"""
         try:
             update_data = {
-                "archived": True,
-                "archivedAt": datetime.now(timezone.utc).isoformat(),
+                "isDeleted": True,
+                "deletedAt": datetime.now(timezone.utc).isoformat(),
                 "updatedAt": datetime.now(timezone.utc).isoformat(),
             }
             result = await self.collection.update_one(
@@ -93,12 +90,11 @@ class StaffService:
             return False
 
     async def restore_staff(self, staff_id: str) -> StaffOut:
-        """Restore archived staff member"""
+        """Restore deleted staff member"""
         try:
             update_data = {
-                "archived": False,
-                "archivedReason": None,
-                "archivedAt": None,
+                "isDeleted": False,
+                "deletedAt": None,
                 "updatedAt": datetime.now(timezone.utc).isoformat(),
             }
             result = await self.collection.find_one_and_update(
@@ -108,17 +104,17 @@ class StaffService:
         except Exception:
             return None
 
-    async def get_archived_staff(
+    async def get_deleted_staff(
         self, property_id: str = None, skip: int = 0, limit: int = 50
     ):
-        """Get archived staff"""
-        query = {"archived": True}
+        """Get deleted staff"""
+        query = {"isDeleted": True}
         if property_id:
             query["propertyId"] = property_id
 
         total = await self.collection.count_documents(query)
         staff_list = await self.collection.find(query).skip(skip).limit(limit).sort(
-            "archivedAt", -1
+            "deletedAt", -1
         ).to_list(length=limit)
 
         return [
@@ -145,7 +141,7 @@ class StaffService:
             notes=staff_doc.get("notes"),
             createdAt=staff_doc.get("createdAt"),
             updatedAt=staff_doc.get("updatedAt"),
-            archived=staff_doc.get("archived", False),
+            archived=staff_doc.get("isDeleted", False),
             archivedReason=staff_doc.get("archivedReason"),
-            archivedAt=staff_doc.get("archivedAt"),
+            archivedAt=staff_doc.get("deletedAt"),
         )

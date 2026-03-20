@@ -25,28 +25,30 @@ class UserContextMiddleware(BaseHTTPMiddleware):
 
         # Read public endpoints from environment variable PUBLIC_PATHS (comma-separated)
         public_paths = {p.strip() for p in settings.PUBLIC_PATHS.split(",") if p.strip()}
+        v_prefix = f"/api/{settings.API_VERSION}"
+        
         public_paths.update({
             "/",
-            "/api/v1/health",
-            "/api/v1/auth/login",
-            "/api/v1/auth/register",
-            "/api/v1/auth/email/send-otp",
-            "/api/v1/auth/email/verify-otp",
-            "/api/v1/auth/email/resend-otp",
-            "/api/v1/auth/forgot-password",
-            "/api/v1/auth/verify-reset-otp",
-            "/api/v1/auth/reset-password",
-            "/api/v1/auth/refresh",
-            "/api/v1/auth/logout",  # Logout only needs refresh token, not access token
-            "/api/v1/subscription/limits/free",  # Plan limits are public
-            "/api/v1/subscription/limits/pro",
-            "/api/v1/subscription/limits/premium",
-            "/api/v1/subscription/plans",  # Get all available plans
+            f"{v_prefix}/health",
+            f"{v_prefix}/auth/login",
+            f"{v_prefix}/auth/register",
+            f"{v_prefix}/auth/email/send-otp",
+            f"{v_prefix}/auth/email/verify-otp",
+            f"{v_prefix}/auth/email/resend-otp",
+            f"{v_prefix}/auth/forgot-password",
+            f"{v_prefix}/auth/verify-reset-otp",
+            f"{v_prefix}/auth/reset-password",
+            f"{v_prefix}/auth/refresh",
+            f"{v_prefix}/auth/logout",  # Logout only needs refresh token, not access token
+            f"{v_prefix}/subscription/limits/free",  # Plan limits are public
+            f"{v_prefix}/subscription/limits/pro",
+            f"{v_prefix}/subscription/limits/premium",
+            f"{v_prefix}/subscription/plans",  # Get all available plans
         })
         
         # Public path prefixes (for paths with dynamic segments)
         public_prefixes = [
-            "/api/v1/coupons/validate/",  # Coupon validation is public
+            f"{v_prefix}/coupons/validate/",  # Coupon validation is public
         ]
         
         # Check exact path match or prefix match
@@ -55,7 +57,7 @@ class UserContextMiddleware(BaseHTTPMiddleware):
         )
 
         # Safety guard: admin namespaces must never be public even if env is misconfigured.
-        if request.url.path.startswith("/api/v1/admin") or request.url.path.startswith("/api/v1/coupons/admin"):
+        if request.url.path.startswith(f"{v_prefix}/admin") or request.url.path.startswith(f"{v_prefix}/coupons/admin"):
             is_public = False
         
         if is_public:

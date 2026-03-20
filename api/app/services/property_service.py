@@ -17,6 +17,7 @@ class PropertyService:
         doc["ownerIds"] = [owner_id]
         doc["ownerId"] = owner_id
         doc["isDeleted"] = False
+        doc["active"] = True
         doc["createdAt"] = now
         doc["updatedAt"] = now
         result = await self.db["properties"].insert_one(doc)

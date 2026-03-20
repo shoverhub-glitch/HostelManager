@@ -2,6 +2,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
+from bson.errors import InvalidId
 from app.database.mongodb import db
 from app.models.bed_schema import BedCreate, BedUpdate, BedOut
 
@@ -26,7 +27,7 @@ class BedService:
             if doc:
                 doc["id"] = str(doc["_id"])
                 return BedOut(**doc)
-        except:
+        except InvalidId:
             # If ObjectId conversion fails, try looking by id field
             doc = await self.db["beds"].find_one({"id": bed_id, "isDeleted": {"$ne": True}})
             if doc:
@@ -52,7 +53,7 @@ class BedService:
             if result:
                 result["id"] = str(result["_id"])
                 return BedOut(**result)
-        except:
+        except InvalidId:
             # If ObjectId conversion fails, try by id field
             result = await self.db["beds"].find_one_and_update(
                 {"id": bed_id, "isDeleted": {"$ne": True}},
@@ -72,7 +73,7 @@ class BedService:
                 {"$set": {"isDeleted": True, "updatedAt": now}}
             )
             return result.modified_count == 1
-        except:
+        except InvalidId:
             # If ObjectId conversion fails, try by id field
             result = await self.db["beds"].update_one(
                 {"id": bed_id, "isDeleted": {"$ne": True}},
@@ -104,7 +105,7 @@ class BedService:
         for room_id in room_ids:
             try:
                 object_ids.append(ObjectId(room_id))
-            except:
+            except InvalidId:
                 # If conversion fails, skip this room ID
                 pass
         
@@ -178,7 +179,7 @@ class BedService:
         for room_id in room_ids:
             try:
                 object_ids.append(ObjectId(room_id))
-            except:
+            except InvalidId:
                 # If conversion fails, skip this room ID
                 pass
         

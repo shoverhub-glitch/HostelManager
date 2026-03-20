@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 from app.models.coupon_schema import Coupon, CouponValidationResponse
 from app.database.mongodb import db
@@ -25,7 +25,7 @@ class CouponService:
             if discount_type == 'fixed' and discount_value <= 0:
                 raise ValueError("Fixed discount must be greater than 0")
             
-            now = datetime.now().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             
             coupon = Coupon(
                 code=code.upper(),
@@ -80,7 +80,7 @@ class CouponService:
             
             # Check expiration
             if coupon.expiresAt:
-                if datetime.fromisoformat(coupon.expiresAt) < datetime.now():
+                if datetime.fromisoformat(coupon.expiresAt) < datetime.now(timezone.utc):
                     return False, "Coupon has expired", amount, amount
             
             # Check usage limit
@@ -146,7 +146,7 @@ class CouponService:
         try:
             result = await db["coupons"].update_one(
                 {"code": code.upper()},
-                {"$inc": {"usageCount": 1}, "$set": {"updatedAt": datetime.now().isoformat()}}
+                {"$inc": {"usageCount": 1}, "$set": {"updatedAt": datetime.now(timezone.utc).isoformat()}}
             )
             return result.modified_count > 0
         except Exception as e:
@@ -161,7 +161,7 @@ class CouponService:
             if 'code' in kwargs:
                 del kwargs['code']
             
-            kwargs['updatedAt'] = datetime.now().isoformat()
+            kwargs['updatedAt'] = datetime.now(timezone.utc).isoformat()
             
             result = await db["coupons"].find_one_and_update(
                 {"code": code.upper()},

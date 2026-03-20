@@ -4,12 +4,13 @@ Handles recurring/automatic billing for subscriptions
 """
 
 import razorpay
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 import logging
 
-from app.config.settings import RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET
+from app.config.settings import RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, APP_NAME
 from app.database.mongodb import db
+from app.utils.email_service import send_renewal_reminder_email
 
 logger = logging.getLogger(__name__)
 
@@ -155,10 +156,59 @@ class RazorpaySubscriptionService:
             raise
 
     @staticmethod
+    async def create_payment_link(owner_email: str, owner_name: str, order_id: str, amount: int, plan_name: str, expiry_date: str) -> Optional[str]:
+        """
+        Create a Razorpay payment link for subscription renewal
+        
+        Args:
+            owner_email: Customer email
+            owner_name: Customer name
+            order_id: Razorpay order ID
+            amount: Amount in paise
+            plan_name: Plan name for description
+            expiry_date: Subscription expiry date
+            
+        Returns:
+            Payment link URL if created successfully, None otherwise
+        """
+        try:
+            amount_rupees = amount / 100
+            payment_link = razorpay_client.payment_link.create({
+                'amount': amount,
+                'currency': 'INR',
+                'description': f'{plan_name.title()} Plan Renewal - Expires {expiry_date}',
+                'customer': {
+                    'email': owner_email,
+                    'name': owner_name
+                },
+                'notify': {
+                    'sms': True,
+                    'email': True
+                },
+                'reminder_enable': True,
+                'notes': {
+                    'order_id': order_id,
+                    'plan': plan_name,
+                    'renewal': 'true'
+                },
+                'callback_url': f'{APP_NAME}/subscription/verify?order_id={order_id}',
+                'callback_method': 'get'
+            })
+            
+            logger.info(f"✓ Payment link created: {payment_link.get('short_url')}")
+            return payment_link.get('short_url') or payment_link.get('long_url')
+            
+        except Exception as e:
+            logger.error(f"✗ Failed to create payment link: {str(e)}")
+            return None
+
+    @staticmethod
     async def check_and_renew_subscriptions() -> Dict:
         """
         Check for subscriptions expiring within 7 days and attempt renewal
         This is called by a scheduled job
+        
+        Creates payment links and sends email notifications to users.
         
         Returns:
             Dict with renewal statistics
@@ -166,13 +216,14 @@ class RazorpaySubscriptionService:
         stats = {
             'checked': 0,
             'renewed': 0,
+            'notified': 0,
             'failed': 0,
             'errors': []
         }
         
         try:
             # Find all active subscriptions expiring within 7 days
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             renewal_window_start = now.isoformat()
             renewal_window_end = (now + timedelta(days=7)).isoformat()
             
@@ -190,11 +241,19 @@ class RazorpaySubscriptionService:
             
             for sub in expiring_subs:
                 try:
-                    # Get user and payment method info
+                    # Get user info
                     user = await db.users.find_one({'_id': sub['ownerId']})
-                    if not user or not user.get('razorpayCustomerId'):
+                    if not user:
                         stats['failed'] += 1
-                        stats['errors'].append(f"User {sub['ownerId']} missing Razorpay customer ID")
+                        stats['errors'].append(f"User {sub['ownerId']} not found")
+                        continue
+                    
+                    owner_email = user.get('email')
+                    owner_name = user.get('name', user.get('email', 'Customer'))
+                    
+                    if not owner_email:
+                        stats['failed'] += 1
+                        stats['errors'].append(f"User {sub['ownerId']} missing email")
                         continue
                     
                     # Create renewal order via Razorpay API
@@ -212,14 +271,22 @@ class RazorpaySubscriptionService:
                         stats['errors'].append(f"Invalid price for {sub['plan']} {period_str}m")
                         continue
                     
-                    # Create renewal via Razorpay subscription or order
-                    # For now, we'll create an order and track it
+                    # Check for existing pending renewal order to avoid duplicates
+                    existing_renewal = await db.renewal_orders.find_one({
+                        'subscriptionId': sub['_id'],
+                        'status': 'pending'
+                    })
+                    if existing_renewal:
+                        logger.info(f"Skipping renewal for subscription {sub['_id']} - pending order already exists")
+                        continue
+                    
+                    # Create renewal order
                     order = razorpay_client.order.create({
                         'amount': price,
                         'currency': 'INR',
-                        'receipt': f"renew_{sub['ownerId'][:10]}_{datetime.now().strftime('%Y%m%d')}",
+                        'receipt': f"renew_{str(sub['ownerId'])[:10]}_{datetime.now(timezone.utc).strftime('%Y%m%d')}",
                         'notes': {
-                            'owner_id': sub['ownerId'],
+                            'owner_id': str(sub['ownerId']),
                             'plan': sub['plan'],
                             'period': str(sub['period']),
                             'renewal': 'true',
@@ -227,20 +294,54 @@ class RazorpaySubscriptionService:
                         }
                     })
                     
+                    # Create payment link
+                    expiry_date = sub['currentPeriodEnd'][:10] if sub.get('currentPeriodEnd') else 'N/A'
+                    payment_link_url = await RazorpaySubscriptionService.create_payment_link(
+                        owner_email=owner_email,
+                        owner_name=owner_name,
+                        order_id=order['id'],
+                        amount=price,
+                        plan_name=sub['plan'],
+                        expiry_date=expiry_date
+                    )
+                    
                     # Store renewal order for payment verification
-                    # Extension will happen in handle_subscription_payment_success when this order is paid
                     await db.renewal_orders.insert_one({
-                        'ownerId': sub['ownerId'],
+                        'ownerId': str(sub['ownerId']),
                         'subscriptionId': sub['_id'],
                         'orderId': order['id'],
                         'plan': sub['plan'],
                         'period': sub['period'],
                         'amount': price,
-                        'createdAt': datetime.now().isoformat(),
-                        'status': 'pending'
+                        'paymentLinkUrl': payment_link_url,
+                        'createdAt': datetime.now(timezone.utc).isoformat(),
+                        'status': 'pending',
+                        'notifiedAt': datetime.now(timezone.utc).isoformat() if payment_link_url else None
                     })
                     
                     stats['renewed'] += 1
+                    
+                    # Send email notification with payment link
+                    if payment_link_url:
+                        amount_str = f"₹{price / 100:,.0f}"
+                        email_sent = await send_renewal_reminder_email(
+                            email=owner_email,
+                            name=owner_name,
+                            plan_name=sub['plan'],
+                            amount_str=amount_str,
+                            expiry_date=expiry_date,
+                            payment_link=payment_link_url,
+                            app_name=APP_NAME or "Hostel Manager"
+                        )
+                        
+                        if email_sent:
+                            stats['notified'] += 1
+                            logger.info(f"✓ Renewal notification sent to {owner_email} for order {order['id']}")
+                        else:
+                            logger.warning(f"✗ Failed to send renewal email to {owner_email}")
+                    else:
+                        logger.warning(f"✗ No payment link created for order {order['id']}")
+                    
                     logger.info(f"✓ Auto-renewal order created for user {sub['ownerId']}: order {order['id']}")
                     
                 except Exception as e:
@@ -255,12 +356,12 @@ class RazorpaySubscriptionService:
                         {
                             '$set': {
                                 'renewalError': error_msg,
-                                'updatedAt': datetime.now().isoformat()
+                                'updatedAt': datetime.now(timezone.utc).isoformat()
                             }
                         }
                     )
             
-            logger.info(f"Auto-renewal job completed: {stats['renewed']}/{stats['checked']} renewed, {stats['failed']} failed")
+            logger.info(f"Auto-renewal job completed: {stats['renewed']}/{stats['checked']} renewed, {stats['notified']} notified, {stats['failed']} failed")
             return stats
             
         except Exception as e:
@@ -294,7 +395,7 @@ class RazorpaySubscriptionService:
                     '$set': {
                         'paymentId': payment_id,
                         'status': 'completed',
-                        'completedAt': datetime.now().isoformat()
+                        'completedAt': datetime.now(timezone.utc).isoformat()
                     }
                 }
             )
@@ -306,7 +407,7 @@ class RazorpaySubscriptionService:
                 # If current period end is in the past (late renewal), start from now
                 # If current period end is in the future (early renewal), extend it
                 current_end = datetime.fromisoformat(sub['currentPeriodEnd'])
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 
                 base_date = max(current_end, now)
                 new_end = base_date + timedelta(days=renewal['period'] * 30)
@@ -318,7 +419,7 @@ class RazorpaySubscriptionService:
                             'currentPeriodStart': base_date.isoformat(),
                             'currentPeriodEnd': new_end.isoformat(),
                             'renewalError': None,
-                            'updatedAt': datetime.now().isoformat()
+                            'updatedAt': datetime.now(timezone.utc).isoformat()
                         }
                     }
                 )
@@ -357,7 +458,7 @@ class RazorpaySubscriptionService:
                     '$set': {
                         'status': 'failed',
                         'error': error_msg,
-                        'failedAt': datetime.now().isoformat()
+                        'failedAt': datetime.now(timezone.utc).isoformat()
                     }
                 }
             )
@@ -368,7 +469,7 @@ class RazorpaySubscriptionService:
                 {
                     '$set': {
                         'renewalError': f'Payment failed: {error_msg}',
-                        'updatedAt': datetime.now().isoformat()
+                        'updatedAt': datetime.now(timezone.utc).isoformat()
                     }
                 }
             )

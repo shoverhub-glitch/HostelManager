@@ -1,7 +1,7 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import datetime, timezone
 from bson import ObjectId
-from ..models.payment_schema import Payment, PaymentCreate, PaymentStatus
+from ..models.payment_schema import Payment, PaymentCreate, PaymentStatus, format_amount_paise, parse_amount_to_paise
 from app.database.mongodb import getCollection
 
 class PaymentService:
@@ -21,6 +21,9 @@ class PaymentService:
         now = datetime.now(timezone.utc)
         payment_dict = payment_data.model_dump()
         
+        # Convert amount to integer paise for storage
+        payment_dict["amountPaise"] = parse_amount_to_paise(payment_dict.get("amount", 0))
+        
         # Convert date object to ISO string for MongoDB storage
         if payment_dict.get("dueDate") and hasattr(payment_dict["dueDate"], 'isoformat'):
             payment_dict["dueDate"] = payment_dict["dueDate"].isoformat()
@@ -33,9 +36,15 @@ class PaymentService:
         payment_dict["createdAt"] = now
         payment_dict["updatedAt"] = now
         
+        # Remove the string amount - we store paise only
+        payment_dict.pop("amount", None)
+        
         try:
             result = await self.collection.insert_one(payment_dict)
             payment_dict["id"] = str(result.inserted_id)
+            # Format amount for response
+            payment_dict["amount"] = format_amount_paise(payment_dict["amountPaise"])
+            payment_dict.pop("amountPaise", None)
             return Payment(**payment_dict)
         except DuplicateKeyError:
             # Payment already exists for this tenant on this due date
@@ -47,6 +56,9 @@ class PaymentService:
             })
             if existing:
                 existing["id"] = str(existing["_id"])
+                # Format amount for response
+                existing["amount"] = format_amount_paise(existing.get("amountPaise", existing.get("amount", 0)))
+                existing.pop("amountPaise", None)
                 return Payment(**existing)
             raise
 
@@ -61,30 +73,27 @@ class PaymentService:
                 }
             query["propertyId"] = {"$in": property_ids}
 
-        payments = await self.collection.find(query, {"status": 1, "amount": 1, "_id": 0}).to_list(length=None)
+        # Fetch payments and aggregate in Python for backward compatibility
+        payments = await self.collection.find(query, {"status": 1, "amount": 1, "amountPaise": 1, "_id": 0}).to_list(length=None)
         
-        def parse_amount(amount_str):
-            """Parse amount string that may contain currency symbols and commas"""
-            if not amount_str:
-                return 0.0
-            try:
-                # Remove currency symbols and commas, then convert to float
-                cleaned = str(amount_str).replace('₹', '').replace(',', '').strip()
-                return float(cleaned) if cleaned else 0.0
-            except (ValueError, TypeError):
-                return 0.0
+        collected = 0
+        pending = 0
+        for p in payments:
+            # Handle new format (amountPaise) and legacy format (amount as string)
+            amount_paise = p.get("amountPaise")
+            if amount_paise is None:
+                # Legacy: parse string amount to paise
+                amount_str = p.get("amount", "0")
+                amount_paise = parse_amount_to_paise(amount_str)
+            
+            if p["status"] == PaymentStatus.PAID.value:
+                collected += amount_paise
+            elif p["status"] == PaymentStatus.DUE.value:
+                pending += amount_paise
         
-        collected = sum(
-            parse_amount(p["amount"])
-            for p in payments if p["status"] == PaymentStatus.PAID.value
-        )
-        pending = sum(
-            parse_amount(p["amount"])
-            for p in payments if p["status"] == PaymentStatus.DUE.value
-        )
         return {
-            'collected': f'₹{collected:,.0f}',
-            'pending': f'₹{pending:,.0f}',
+            'collected': format_amount_paise(collected),
+            'pending': format_amount_paise(pending),
         }
 
     async def update_payment(self, payment_id: str, payment_update) -> Optional[Payment]:
@@ -94,6 +103,11 @@ class PaymentService:
         if not payment:
             return None
         update_data = payment_update.model_dump(exclude_unset=True)
+        
+        # Convert amount to integer paise for storage
+        if "amount" in update_data:
+            update_data["amountPaise"] = parse_amount_to_paise(update_data["amount"])
+            update_data.pop("amount")
         
         # Auto-set paidDate when status changes to "paid" and paidDate is not provided
         # This handles the case where user changes status to paid but hasn't edited the date
@@ -118,6 +132,9 @@ class PaymentService:
         await self.collection.update_one({"_id": ObjectId(payment_id)}, {"$set": update_data})
         payment.update(update_data)
         payment["id"] = str(payment["_id"])
+        # Format amount for response
+        payment["amount"] = format_amount_paise(payment.get("amountPaise", payment.get("amount", 0)))
+        payment.pop("amountPaise", None)
         return Payment(**payment)
 
     async def delete_payment(self, payment_id: str) -> bool:
@@ -127,7 +144,7 @@ class PaymentService:
             {"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}},
             {"$set": {"isDeleted": True, "updatedAt": now}}
         )
-        return result.modified_count > 0
+        return result.modified_count == 1
 
     async def delete_payments_by_tenant(self, tenant_id: str) -> int:
         """Delete all payments for a specific tenant. Returns count of deleted payments."""

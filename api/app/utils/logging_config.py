@@ -64,6 +64,37 @@ class ExactLevelFilter(logging.Filter):
         return record.levelno == self.level
 
 
+def _create_rotating_handler(
+    log_path: str,
+    formatter: logging.Formatter,
+    max_bytes: int,
+    backup_count: int,
+    level: int,
+    exact_level: int | None = None,
+) -> logging.Handler | None:
+    """Create a rotating file handler without crashing app startup on permission issues."""
+    try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        file_handler = RotatingFileHandler(
+            log_path,
+            maxBytes=max(1, max_bytes),
+            backupCount=max(1, backup_count),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(
+            f"logging_file_handler_init_failed path={log_path} error={exc}",
+            file=sys.stderr,
+        )
+        return None
+
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(level)
+    if exact_level is not None:
+        file_handler.addFilter(ExactLevelFilter(exact_level))
+    return file_handler
+
+
 def setup_logging() -> None:
     """Configure root logging from centralized settings."""
     # Import here to avoid circular imports
@@ -88,32 +119,35 @@ def setup_logging() -> None:
 
     # File output
     if LOG_TO_FILE:
-        log_dir = LOG_DIR
-        os.makedirs(log_dir, exist_ok=True)
+        app_log_path = os.path.join(LOG_DIR, "warning.log")
+        error_log_path = os.path.join(LOG_DIR, "error.log")
 
-        app_log_path = os.path.join(log_dir, "warning.log")
-        error_log_path = os.path.join(log_dir, "error.log")
-
-        app_file_handler = RotatingFileHandler(
-            app_log_path,
-            maxBytes=max(1, LOG_FILE_MAX_BYTES),
-            backupCount=max(1, LOG_FILE_BACKUP_COUNT),
-            encoding="utf-8",
+        app_file_handler = _create_rotating_handler(
+            log_path=app_log_path,
+            formatter=formatter,
+            max_bytes=LOG_FILE_MAX_BYTES,
+            backup_count=LOG_FILE_BACKUP_COUNT,
+            level=logging.WARNING,
+            exact_level=logging.WARNING,
         )
-        app_file_handler.setFormatter(formatter)
-        app_file_handler.setLevel(logging.WARNING)
-        app_file_handler.addFilter(ExactLevelFilter(logging.WARNING))
-        handlers.append(app_file_handler)
+        if app_file_handler is not None:
+            handlers.append(app_file_handler)
 
-        error_file_handler = RotatingFileHandler(
-            error_log_path,
-            maxBytes=max(1, LOG_FILE_MAX_BYTES),
-            backupCount=max(1, LOG_FILE_BACKUP_COUNT),
-            encoding="utf-8",
+        error_file_handler = _create_rotating_handler(
+            log_path=error_log_path,
+            formatter=formatter,
+            max_bytes=LOG_FILE_MAX_BYTES,
+            backup_count=LOG_FILE_BACKUP_COUNT,
+            level=logging.ERROR,
         )
-        error_file_handler.setFormatter(formatter)
-        error_file_handler.setLevel(logging.ERROR)
-        handlers.append(error_file_handler)
+        if error_file_handler is not None:
+            handlers.append(error_file_handler)
+
+    # Never allow startup to proceed with zero handlers.
+    if not handlers:
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(formatter)
+        handlers.append(stream_handler)
 
     root_logger = logging.getLogger()
     root_logger.handlers = handlers

@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 MONGO_URL = os.environ.get("MONGO_URL")
 MONGO_DB_NAME = os.environ.get("MONGO_DB_NAME","project")
+MONGO_RETRY_WRITES = os.environ.get("MONGO_RETRY_WRITES", "false").lower() == "true"
 JWT_SECRET = os.environ.get("JWT_SECRET")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 15))

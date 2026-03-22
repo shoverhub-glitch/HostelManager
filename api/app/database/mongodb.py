@@ -8,6 +8,7 @@ db_name = settings.MONGO_DB_NAME
 # Optimized connection pool settings for production performance
 client = AsyncIOMotorClient(
     mongo_url,
+    retryWrites=settings.MONGO_RETRY_WRITES,
     maxPoolSize=50,              # Maximum number of connections (default: 100)
     minPoolSize=10,              # Minimum connections to maintain (default: 0)
     maxIdleTimeMS=45000,         # Close idle connections after 45s

@@ -142,6 +142,11 @@ async def ensure_indexes():
     await create_index_safe("subscriptions", "ownerId")
     await create_index_safe("subscriptions", "status")
     await create_index_safe("subscriptions", [("ownerId", 1), ("status", 1)])
+
+    # ============ PENDING SUBSCRIPTIONS COLLECTION ============
+    await create_index_safe("pending_subscriptions", [("owner_id", 1), ("razorpay_subscription_id", 1)], unique=True)
+    await create_index_safe("pending_subscriptions", "status")
+    await create_index_safe("pending_subscriptions", "created_at_dt", expireAfterSeconds=7 * 24 * 60 * 60)
     
     await create_index_safe("beds", [("roomId", 1), ("status", 1)])
     

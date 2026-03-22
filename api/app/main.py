@@ -19,16 +19,17 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from app.utils.exception_handlers import add_global_exception_handlers
 from app.middleware.user_context import UserContextMiddleware
-from app.middleware.timing_middleware import TimingMiddleware
+from app.middleware.request_logging import RequestLoggingMiddleware
 from app.database.init_db import ensure_mongodb_connection, ensure_indexes
 from app.utils.scheduler import setup_scheduler
+from app.utils.logging_config import setup_logging
 from app.config import settings
 
 # Initialize environment variables
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # Ensure 'static' directory exists
@@ -70,7 +71,7 @@ app = FastAPI(title="Hostel API", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Performance and Context Middlewares
-app.add_middleware(TimingMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(UserContextMiddleware)
 
 # Security Middlewares

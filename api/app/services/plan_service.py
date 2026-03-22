@@ -7,9 +7,13 @@ Plans are stored in MongoDB and used by all property owners.
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from bson import ObjectId
+import logging
 
 from app.database.mongodb import db
 from app.models.plan_schema import Plan, PlanCreate, PlanUpdate
+
+
+logger = logging.getLogger(__name__)
 
 
 class PlanService:
@@ -32,6 +36,7 @@ class PlanService:
         # Check if plan with same name exists
         existing = await db.plans.find_one({"name": plan_data.name})
         if existing:
+            logger.warning("plan_create_duplicate", extra={"event": "plan_create_duplicate", "plan_name": plan_data.name})
             raise ValueError(f"Plan with name '{plan_data.name}' already exists")
         
         # Convert to dict and add timestamps
@@ -45,6 +50,16 @@ class PlanService:
         # Fetch and return created plan
         created_plan = await db.plans.find_one({"_id": result.inserted_id})
         created_plan['id'] = str(created_plan['_id'])
+
+        logger.info(
+            "plan_created",
+            extra={
+                "event": "plan_created",
+                "plan_name": created_plan.get("name"),
+                "is_active": created_plan.get("is_active"),
+                "sort_order": created_plan.get("sort_order"),
+            },
+        )
         
         return Plan(**created_plan)
 
@@ -81,8 +96,8 @@ class PlanService:
             if plan:
                 plan['id'] = str(plan['_id'])
                 return Plan(**plan)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("plan_get_by_id_invalid", extra={"event": "plan_get_by_id_invalid", "plan_id": plan_id, "error": str(e)})
         return None
 
     @staticmethod
@@ -103,6 +118,8 @@ class PlanService:
         async for plan in cursor:
             plan['id'] = str(plan['_id'])
             plans.append(Plan(**plan))
+
+        logger.info("plan_list_success", extra={"event": "plan_list_success", "active_only": active_only, "count": len(plans)})
         
         return plans
 
@@ -121,6 +138,7 @@ class PlanService:
         # Get existing plan
         existing = await db.plans.find_one({"name": plan_name.lower()})
         if not existing:
+            logger.warning("plan_update_not_found", extra={"event": "plan_update_not_found", "plan_name": plan_name.lower()})
             return None
         
         # Prepare update dict (exclude None values)
@@ -136,6 +154,15 @@ class PlanService:
         # Fetch and return updated plan
         updated_plan = await db.plans.find_one({"name": plan_name.lower()})
         updated_plan['id'] = str(updated_plan['_id'])
+
+        logger.info(
+            "plan_updated",
+            extra={
+                "event": "plan_updated",
+                "plan_name": plan_name.lower(),
+                "updated_fields": list(update_dict.keys()),
+            },
+        )
         
         return Plan(**updated_plan)
 
@@ -158,6 +185,14 @@ class PlanService:
         })
         
         if active_count > 0:
+            logger.warning(
+                "plan_delete_blocked_active_subscriptions",
+                extra={
+                    "event": "plan_delete_blocked_active_subscriptions",
+                    "plan_name": plan_name.lower(),
+                    "active_subscriptions": active_count,
+                },
+            )
             raise ValueError(
                 f"Cannot delete plan '{plan_name}'. "
                 f"{active_count} active subscription(s) are using this plan. "
@@ -165,6 +200,8 @@ class PlanService:
             )
         
         result = await db.plans.delete_one({"name": plan_name.lower()})
+        if result.deleted_count > 0:
+            logger.info("plan_deleted", extra={"event": "plan_deleted", "plan_name": plan_name.lower()})
         return result.deleted_count > 0
 
     @staticmethod
@@ -189,7 +226,9 @@ class PlanService:
         )
         
         if result.modified_count > 0 or result.matched_count > 0:
+            logger.info("plan_activated", extra={"event": "plan_activated", "plan_name": plan_name.lower()})
             return await PlanService.get_plan_by_name(plan_name)
+        logger.warning("plan_activate_not_found", extra={"event": "plan_activate_not_found", "plan_name": plan_name.lower()})
         return None
 
     @staticmethod
@@ -205,6 +244,7 @@ class PlanService:
         """
         # Don't allow deactivating free plan
         if plan_name.lower() == 'free':
+            logger.warning("plan_deactivate_free_blocked", extra={"event": "plan_deactivate_free_blocked", "plan_name": plan_name.lower()})
             raise ValueError("Cannot deactivate the 'free' plan")
         
         result = await db.plans.update_one(
@@ -218,7 +258,9 @@ class PlanService:
         )
         
         if result.modified_count > 0 or result.matched_count > 0:
+            logger.info("plan_deactivated", extra={"event": "plan_deactivated", "plan_name": plan_name.lower()})
             return await PlanService.get_plan_by_name(plan_name)
+        logger.warning("plan_deactivate_not_found", extra={"event": "plan_deactivate_not_found", "plan_name": plan_name.lower()})
         return None
 
     @staticmethod
@@ -238,10 +280,15 @@ class PlanService:
         """
         plan = await PlanService.get_plan_by_name(plan_name)
         if not plan:
+            logger.warning("plan_price_not_found", extra={"event": "plan_price_not_found", "plan_name": plan_name.lower(), "period": period})
             raise ValueError(f"Plan '{plan_name}' not found")
         
         if period not in plan.periods:
             available = list(plan.periods.keys())
+            logger.warning(
+                "plan_price_period_invalid",
+                extra={"event": "plan_price_period_invalid", "plan_name": plan_name.lower(), "period": period, "available_periods": available},
+            )
             raise ValueError(
                 f"Period {period} not available for plan '{plan_name}'. "
                 f"Available periods: {available}"
@@ -338,6 +385,7 @@ class PlanService:
         ]
         
         result = await db.plans.insert_many(default_plans)
+        logger.info("plan_defaults_created", extra={"event": "plan_defaults_created", "created_count": len(result.inserted_ids)})
         return len(result.inserted_ids)
 
     @staticmethod
@@ -367,10 +415,15 @@ class PlanService:
         plan_usage = {}
         async for doc in db.subscriptions.aggregate(pipeline):
             plan_usage[doc['_id']] = doc['count']
-        
-        return {
+
+        stats = {
             "total_plans": total,
             "active_plans": active,
             "inactive_plans": total - active,
             "usage_by_plan": plan_usage
         }
+        logger.info(
+            "plan_stats_computed",
+            extra={"event": "plan_stats_computed", "total_plans": total, "active_plans": active, "used_plan_count": len(plan_usage)},
+        )
+        return stats

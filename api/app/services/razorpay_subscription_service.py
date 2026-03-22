@@ -28,97 +28,182 @@ class RazorpaySubscriptionService:
         owner_id: str,
         plan_name: str,
         period_months: int,
-        price_paise: int,
-        customer_id: str,
-        customer_email: str,
-        customer_name: str,
-        payment_method_id: Optional[str] = None
+        razorpay_plan_id: str,
     ) -> Dict:
         """
-        Create a Razorpay subscription for recurring billing
-        
+        Create a Razorpay recurring subscription.
+
         Args:
             owner_id: User ID
             plan_name: Plan name (pro, premium)
             period_months: Billing period in months
-            price_paise: Price in paise
-            customer_id: Razorpay customer ID
-            customer_email: Customer email
-            customer_name: Customer name
-            payment_method_id: Optional saved payment method ID
-            
+            razorpay_plan_id: Pre-created Razorpay Plan ID (stored in plans collection)
+
         Returns:
-            Dict with subscription details from Razorpay
+            Razorpay subscription dict — use subscription["id"] as the subscription_id
         """
         try:
-            # Calculate interval and period count
-            if period_months == 1:
-                interval = 'monthly'
-                period_count = 1
-            elif period_months == 3:
-                interval = 'monthly'
-                period_count = 3
-            elif period_months == 12:
-                interval = 'yearly'
-                period_count = 1
-            else:
-                interval = 'monthly'
-                period_count = period_months
-            
+            # total_count: 0 = infinite (falls back to a large number for safety)
+            # period_months 1→120 charges, 3→40, 6→20, 12→10 (each ~10 years)
+            total_counts = {1: 120, 3: 40, 6: 20, 12: 10}
+            total_count = total_counts.get(period_months, max(1, 120 // period_months))
+
             subscription_data = {
-                'plan_id': f'{plan_name}_{period_months}m',
-                'customer_id': customer_id,
+                'plan_id': razorpay_plan_id,
+                'total_count': total_count,
                 'quantity': 1,
-                'total_count': 0,  # 0 means infinite renewals
-                'interval': interval,
-                'period': period_count,
-                'description': f'{plan_name.title()} Plan - Auto Renewal',
+                'customer_notify': 1,
                 'notes': {
                     'owner_id': owner_id,
                     'plan': plan_name,
-                    'period': str(period_months)
+                    'period': str(period_months),
                 }
             }
-            
-            # If payment method is available, associate it
-            if payment_method_id:
-                subscription_data['token'] = payment_method_id
-            
-            # Create Razorpay subscription
+
             loop = asyncio.get_event_loop()
             subscription = await loop.run_in_executor(
                 None, functools.partial(razorpay_client.subscription.create, subscription_data)
             )
-            
-            logger.info(f"✓ Razorpay subscription created: {subscription['id']} for user {owner_id}")
+
+            logger.info(
+                "razorpay_subscription_created",
+                extra={
+                    "event": "razorpay_subscription_created",
+                    "razorpay_subscription_id": subscription.get("id"),
+                    "owner_id": owner_id,
+                    "plan": plan_name,
+                    "period_months": period_months,
+                },
+            )
             return subscription
-            
+
         except Exception as e:
-            logger.error(f"✗ Failed to create Razorpay subscription: {str(e)}")
+            logger.exception("razorpay_subscription_create_failed", extra={"event": "razorpay_subscription_create_failed", "owner_id": owner_id, "plan": plan_name, "period_months": period_months, "error": str(e)})
             raise
 
     @staticmethod
-    async def cancel_recurring_subscription(razorpay_subscription_id: str) -> Dict:
+    async def cancel_recurring_subscription(razorpay_subscription_id: str, cancel_at_cycle_end: bool = True) -> Dict:
         """
-        Cancel a Razorpay subscription
-        
+        Cancel a Razorpay subscription.
+
         Args:
             razorpay_subscription_id: Razorpay subscription ID
-            
+            cancel_at_cycle_end: If True, cancel at end of current billing cycle (user keeps access).
+                                 If False, cancel immediately.
+
         Returns:
             Dict with cancellation details
         """
         try:
             loop = asyncio.get_event_loop()
-            subscription = await loop.run_in_executor(
-                None, functools.partial(razorpay_client.subscription.cancel, razorpay_subscription_id)
+            if cancel_at_cycle_end:
+                subscription = await loop.run_in_executor(
+                    None, functools.partial(
+                        razorpay_client.subscription.cancel,
+                        razorpay_subscription_id,
+                        {"cancel_at_cycle_end": 1}
+                    )
+                )
+            else:
+                subscription = await loop.run_in_executor(
+                    None, functools.partial(razorpay_client.subscription.cancel, razorpay_subscription_id)
+                )
+            logger.info(
+                "razorpay_subscription_cancelled",
+                extra={"event": "razorpay_subscription_cancelled", "razorpay_subscription_id": razorpay_subscription_id, "cancel_at_cycle_end": cancel_at_cycle_end}
             )
-            logger.info(f"✓ Razorpay subscription cancelled: {razorpay_subscription_id}")
             return subscription
-            
+
         except Exception as e:
-            logger.error(f"✗ Failed to cancel Razorpay subscription: {str(e)}")
+            logger.exception("razorpay_subscription_cancel_failed", extra={"event": "razorpay_subscription_cancel_failed", "razorpay_subscription_id": razorpay_subscription_id, "error": str(e)})
             raise
+
+    @staticmethod
+    async def seed_razorpay_plans() -> Dict:
+        """
+        Create Razorpay Plans for all active paid plan+period combinations and
+        store the resulting Plan IDs back into MongoDB.
+
+        Safe to call multiple times — skips combinations that already have a plan ID.
+
+        Returns:
+            {created: [...], skipped: [...], errors: [...]}
+        """
+        created = []
+        skipped = []
+        errors = []
+
+        plans = await db.plans.find({"is_active": True, "name": {"$ne": "free"}}).to_list(None)
+
+        for plan_doc in plans:
+            plan_name = plan_doc["name"]
+            periods = plan_doc.get("periods", {})
+            existing_ids: Dict = plan_doc.get("razorpay_plan_ids", {}) or {}
+
+            for period_str, price in periods.items():
+                period_months = int(period_str)
+
+                if existing_ids.get(period_str):
+                    skipped.append(f"{plan_name}_{period_months}m (already exists: {existing_ids[period_str]})")
+                    continue
+
+                try:
+                    # Map period_months → Razorpay period/interval
+                    if period_months <= 6:
+                        rzp_period = "monthly"
+                        rzp_interval = period_months
+                    else:
+                        rzp_period = "yearly"
+                        rzp_interval = max(1, period_months // 12)
+
+                    plan_data = {
+                        "period": rzp_period,
+                        "interval": rzp_interval,
+                        "item": {
+                            "name": f"{plan_name.title()} {period_months}M",
+                            "amount": price,
+                            "unit": "subscription",
+                            "currency": "INR",
+                        },
+                        "notes": {
+                            "plan": plan_name,
+                            "period_months": str(period_months),
+                        }
+                    }
+
+                    loop = asyncio.get_event_loop()
+                    rzp_plan = await loop.run_in_executor(
+                        None, functools.partial(razorpay_client.plan.create, plan_data)
+                    )
+
+                    rzp_plan_id = rzp_plan["id"]
+
+                    # Store the Razorpay Plan ID in MongoDB using dot-notation key
+                    await db.plans.update_one(
+                        {"name": plan_name},
+                        {"$set": {f"razorpay_plan_ids.{period_str}": rzp_plan_id}}
+                    )
+
+                    created.append({
+                        "plan": plan_name,
+                        "period_months": period_months,
+                        "razorpay_plan_id": rzp_plan_id,
+                        "price_paise": price,
+                    })
+                    logger.info(
+                        "razorpay_plan_seeded",
+                        extra={"event": "razorpay_plan_seeded", "plan": plan_name, "period_months": period_months, "razorpay_plan_id": rzp_plan_id}
+                    )
+
+                except Exception as e:
+                    error_msg = str(e)
+                    errors.append({"plan": plan_name, "period_months": period_months, "error": error_msg})
+                    logger.exception(
+                        "razorpay_plan_seed_failed",
+                        extra={"event": "razorpay_plan_seed_failed", "plan": plan_name, "period_months": period_months, "error": error_msg}
+                    )
+
+        return {"created": created, "skipped": skipped, "errors": errors}
 
     @staticmethod
     async def pause_recurring_subscription(razorpay_subscription_id: str, pause_months: int = 1) -> Dict:
@@ -141,11 +226,11 @@ class RazorpaySubscriptionService:
                     {'pause_at': 'now', 'resume_after': pause_months}
                 )
             )
-            logger.info(f"✓ Razorpay subscription paused: {razorpay_subscription_id}")
+            logger.info("razorpay_subscription_paused", extra={"event": "razorpay_subscription_paused", "razorpay_subscription_id": razorpay_subscription_id, "pause_months": pause_months})
             return subscription
             
         except Exception as e:
-            logger.error(f"✗ Failed to pause Razorpay subscription: {str(e)}")
+            logger.exception("razorpay_subscription_pause_failed", extra={"event": "razorpay_subscription_pause_failed", "razorpay_subscription_id": razorpay_subscription_id, "error": str(e)})
             raise
 
     @staticmethod
@@ -167,7 +252,7 @@ class RazorpaySubscriptionService:
             return subscription
             
         except Exception as e:
-            logger.error(f"✗ Failed to fetch Razorpay subscription status: {str(e)}")
+            logger.exception("razorpay_subscription_status_fetch_failed", extra={"event": "razorpay_subscription_status_fetch_failed", "razorpay_subscription_id": razorpay_subscription_id, "error": str(e)})
             raise
 
     @staticmethod
@@ -214,11 +299,11 @@ class RazorpaySubscriptionService:
                 None, functools.partial(razorpay_client.payment_link.create, link_payload)
             )
             
-            logger.info(f"✓ Payment link created: {payment_link.get('short_url')}")
+            logger.info("razorpay_payment_link_created", extra={"event": "razorpay_payment_link_created", "order_id": order_id, "plan": plan_name, "has_short_url": bool(payment_link.get("short_url"))})
             return payment_link.get('short_url') or payment_link.get('long_url')
             
         except Exception as e:
-            logger.error(f"✗ Failed to create payment link: {str(e)}")
+            logger.exception("razorpay_payment_link_create_failed", extra={"event": "razorpay_payment_link_create_failed", "order_id": order_id, "plan": plan_name, "error": str(e)})
             return None
 
     @staticmethod
@@ -296,7 +381,7 @@ class RazorpaySubscriptionService:
                         'status': 'pending'
                     })
                     if existing_renewal:
-                        logger.info(f"Skipping renewal for subscription {sub['_id']} - pending order already exists")
+                        logger.info("razorpay_renewal_skipped_pending_exists", extra={"event": "razorpay_renewal_skipped_pending_exists", "subscription_id": str(sub.get("_id"))})
                         continue
                     
                     # Create renewal order
@@ -359,19 +444,19 @@ class RazorpaySubscriptionService:
                         
                         if email_sent:
                             stats['notified'] += 1
-                            logger.info(f"✓ Renewal notification sent to {owner_email} for order {order['id']}")
+                            logger.info("razorpay_renewal_notification_sent", extra={"event": "razorpay_renewal_notification_sent", "order_id": order.get("id"), "owner_id": str(sub.get("ownerId"))})
                         else:
-                            logger.warning(f"✗ Failed to send renewal email to {owner_email}")
+                            logger.warning("razorpay_renewal_notification_failed", extra={"event": "razorpay_renewal_notification_failed", "order_id": order.get("id"), "owner_id": str(sub.get("ownerId"))})
                     else:
-                        logger.warning(f"✗ No payment link created for order {order['id']}")
+                        logger.warning("razorpay_renewal_payment_link_missing", extra={"event": "razorpay_renewal_payment_link_missing", "order_id": order.get("id"), "owner_id": str(sub.get("ownerId"))})
                     
-                    logger.info(f"✓ Auto-renewal order created for user {sub['ownerId']}: order {order['id']}")
+                    logger.info("razorpay_renewal_order_created", extra={"event": "razorpay_renewal_order_created", "order_id": order.get("id"), "owner_id": str(sub.get("ownerId")), "plan": sub.get("plan"), "period": sub.get("period")})
                     
                 except Exception as e:
                     stats['failed'] += 1
                     error_msg = str(e)
                     stats['errors'].append(error_msg)
-                    logger.error(f"✗ Renewal failed for subscription {sub.get('_id')}: {error_msg}")
+                    logger.exception("razorpay_renewal_failed", extra={"event": "razorpay_renewal_failed", "subscription_id": str(sub.get("_id")), "owner_id": str(sub.get("ownerId")), "error": error_msg})
                     
                     # Update subscription with error
                     await db.subscriptions.update_one(
@@ -384,11 +469,20 @@ class RazorpaySubscriptionService:
                         }
                     )
             
-            logger.info(f"Auto-renewal job completed: {stats['renewed']}/{stats['checked']} renewed, {stats['notified']} notified, {stats['failed']} failed")
+            logger.info(
+                "razorpay_renewal_job_completed",
+                extra={
+                    "event": "razorpay_renewal_job_completed",
+                    "checked": stats["checked"],
+                    "renewed": stats["renewed"],
+                    "notified": stats["notified"],
+                    "failed": stats["failed"],
+                },
+            )
             return stats
             
         except Exception as e:
-            logger.error(f"✗ Auto-renewal job failed: {str(e)}")
+            logger.exception("razorpay_renewal_job_failed", extra={"event": "razorpay_renewal_job_failed", "error": str(e)})
             stats['errors'].append(str(e))
             return stats
 
@@ -408,7 +502,7 @@ class RazorpaySubscriptionService:
             # Find renewal order
             renewal = await db.renewal_orders.find_one({'orderId': order_id})
             if not renewal:
-                logger.warning(f"Renewal order not found: {order_id}")
+                logger.warning("razorpay_renewal_order_not_found", extra={"event": "razorpay_renewal_order_not_found", "order_id": order_id})
                 return False
             
             # Update renewal order status
@@ -446,13 +540,13 @@ class RazorpaySubscriptionService:
                         }
                     }
                 )
-                logger.info(f"✓ Subscription extended for user {renewal['ownerId']} until {new_end.isoformat()}")
+                logger.info("razorpay_renewal_subscription_extended", extra={"event": "razorpay_renewal_subscription_extended", "owner_id": str(renewal.get("ownerId")), "order_id": order_id, "new_period_end": new_end.isoformat()})
             
-            logger.info(f"✓ Auto-renewal payment successful: {order_id}")
+            logger.info("razorpay_renewal_payment_success", extra={"event": "razorpay_renewal_payment_success", "order_id": order_id, "payment_id": payment_id})
             return True
             
         except Exception as e:
-            logger.error(f"✗ Failed to handle renewal payment: {str(e)}")
+            logger.exception("razorpay_renewal_payment_success_handle_failed", extra={"event": "razorpay_renewal_payment_success_handle_failed", "order_id": order_id, "payment_id": payment_id, "error": str(e)})
             return False
 
     @staticmethod
@@ -471,7 +565,7 @@ class RazorpaySubscriptionService:
             # Find renewal order
             renewal = await db.renewal_orders.find_one({'orderId': order_id})
             if not renewal:
-                logger.warning(f"Renewal order not found: {order_id}")
+                logger.warning("razorpay_renewal_order_not_found", extra={"event": "razorpay_renewal_order_not_found", "order_id": order_id})
                 return False
             
             # Update renewal order status
@@ -497,9 +591,9 @@ class RazorpaySubscriptionService:
                 }
             )
             
-            logger.warning(f"✗ Auto-renewal payment failed for order {order_id}: {error_msg}")
+            logger.warning("razorpay_renewal_payment_failed", extra={"event": "razorpay_renewal_payment_failed", "order_id": order_id, "error": error_msg})
             return True
             
         except Exception as e:
-            logger.error(f"✗ Failed to handle renewal payment failure: {str(e)}")
+            logger.exception("razorpay_renewal_payment_failure_handle_failed", extra={"event": "razorpay_renewal_payment_failure_handle_failed", "order_id": order_id, "error": str(e)})
             return False

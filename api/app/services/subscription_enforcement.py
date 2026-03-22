@@ -63,7 +63,7 @@ class SubscriptionEnforcement:
             
             # If plan not found in database, use fallback limits
             if not limits:
-                logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
+                logger.warning("subscription_plan_limits_missing", extra={"event": "subscription_plan_limits_missing", "plan": sub.plan, "context": "property"})
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
             # Count existing active properties (exclude deleted and archived)
@@ -82,12 +82,13 @@ class SubscriptionEnforcement:
                 )
 
             logger.info(
-                f"Property creation allowed for {owner_id} ({sub.plan} plan, {current}/{limits['properties']} used)"
+                "subscription_property_create_allowed",
+                extra={"event": "subscription_property_create_allowed", "owner_id": owner_id, "plan": sub.plan, "current": current, "limit": limits["properties"]},
             )
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error checking property quota: {str(e)}")
+            logger.exception("subscription_property_quota_check_failed", extra={"event": "subscription_property_quota_check_failed", "owner_id": owner_id, "error": str(e)})
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error checking subscription quota. Please try again."
@@ -140,7 +141,7 @@ class SubscriptionEnforcement:
             
             # If plan not found in database, use fallback limits
             if not limits:
-                logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
+                logger.warning("subscription_plan_limits_missing", extra={"event": "subscription_plan_limits_missing", "plan": sub.plan, "context": "tenant"})
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
             # Count existing active tenants in THIS property only (exclude deleted and archived)
@@ -159,12 +160,13 @@ class SubscriptionEnforcement:
                 )
 
             logger.info(
-                f"Tenant creation allowed for {owner_id} ({sub.plan} plan, {current}/{limits['tenants']} tenants in this property)"
+                "subscription_tenant_create_allowed",
+                extra={"event": "subscription_tenant_create_allowed", "owner_id": owner_id, "plan": sub.plan, "property_id": property_id, "current": current, "limit": limits["tenants"]},
             )
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error checking tenant quota: {str(e)}")
+            logger.exception("subscription_tenant_quota_check_failed", extra={"event": "subscription_tenant_quota_check_failed", "owner_id": owner_id, "property_id": property_id, "error": str(e)})
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error checking subscription quota. Please try again."
@@ -217,7 +219,7 @@ class SubscriptionEnforcement:
             
             # If plan not found in database, use fallback limits
             if not limits:
-                logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
+                logger.warning("subscription_plan_limits_missing", extra={"event": "subscription_plan_limits_missing", "plan": sub.plan, "context": "room"})
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
             # Count existing active rooms in THIS property (exclude deleted and archived)
@@ -237,12 +239,13 @@ class SubscriptionEnforcement:
                 )
 
             logger.info(
-                f"Room creation allowed for {owner_id} ({sub.plan} plan, {current}/{room_limit} rooms in property)"
+                "subscription_room_create_allowed",
+                extra={"event": "subscription_room_create_allowed", "owner_id": owner_id, "plan": sub.plan, "property_id": property_id, "current": current, "limit": room_limit},
             )
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error checking room quota: {str(e)}")
+            logger.exception("subscription_room_quota_check_failed", extra={"event": "subscription_room_quota_check_failed", "owner_id": owner_id, "property_id": property_id, "error": str(e)})
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error checking subscription quota. Please try again."
@@ -295,7 +298,7 @@ class SubscriptionEnforcement:
             
             # If plan not found in database, use fallback limits
             if not limits:
-                logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
+                logger.warning("subscription_plan_limits_missing", extra={"event": "subscription_plan_limits_missing", "plan": sub.plan, "context": "staff"})
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
             # Count existing active staff in THIS property (exclude deleted)
@@ -314,12 +317,13 @@ class SubscriptionEnforcement:
                 )
 
             logger.info(
-                f"Staff creation allowed for {owner_id} ({sub.plan} plan, {current}/{staff_limit} staff in property)"
+                "subscription_staff_create_allowed",
+                extra={"event": "subscription_staff_create_allowed", "owner_id": owner_id, "plan": sub.plan, "property_id": property_id, "current": current, "limit": staff_limit},
             )
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error checking staff quota: {str(e)}")
+            logger.exception("subscription_staff_quota_check_failed", extra={"event": "subscription_staff_quota_check_failed", "owner_id": owner_id, "property_id": property_id, "error": str(e)})
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error checking subscription quota. Please try again."
@@ -339,7 +343,7 @@ class SubscriptionEnforcement:
             
             # If plan not found in database, use fallback limits
             if not limits:
-                logger.warning(f"Plan {sub.plan} not found in database, using fallback limits")
+                logger.warning("subscription_plan_limits_missing", extra={"event": "subscription_plan_limits_missing", "plan": sub.plan, "context": "usage_warning"})
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
             # Get actual usage (only active resources)
@@ -388,7 +392,7 @@ class SubscriptionEnforcement:
 
             return None
         except Exception as e:
-            logger.error(f"Error getting usage warnings: {str(e)}")
+            logger.exception("subscription_usage_warning_failed", extra={"event": "subscription_usage_warning_failed", "owner_id": owner_id, "error": str(e)})
             return None
 
     @staticmethod
@@ -415,7 +419,7 @@ class SubscriptionEnforcement:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error checking property archive status: {str(e)}")
+            logger.exception("subscription_property_archive_check_failed", extra={"event": "subscription_property_archive_check_failed", "property_id": property_id, "error": str(e)})
 
     @staticmethod
     async def ensure_room_not_archived(room_id: str) -> None:
@@ -441,7 +445,7 @@ class SubscriptionEnforcement:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error checking room archive status: {str(e)}")
+            logger.exception("subscription_room_archive_check_failed", extra={"event": "subscription_room_archive_check_failed", "room_id": room_id, "error": str(e)})
 
     @staticmethod
     async def ensure_tenant_not_archived(tenant_id: str) -> None:
@@ -467,5 +471,5 @@ class SubscriptionEnforcement:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error checking tenant archive status: {str(e)}")
+            logger.exception("subscription_tenant_archive_check_failed", extra={"event": "subscription_tenant_archive_check_failed", "tenant_id": tenant_id, "error": str(e)})
 

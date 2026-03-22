@@ -11,6 +11,9 @@ from jose import JWTError, ExpiredSignatureError
 from starlette.responses import JSONResponse
 from app.database.token_blacklist import is_token_blacklisted
 
+
+logger = logging.getLogger(__name__)
+
 class UserContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         SECRET_KEY = settings.JWT_SECRET
@@ -21,7 +24,7 @@ class UserContextMiddleware(BaseHTTPMiddleware):
         property_ids = []
         subscription = None
         auth_header = request.headers.get("Authorization")
-        logger = logging.getLogger("uvicorn.error")
+        request_id = getattr(request.state, "request_id", None)
 
         # Read public endpoints from environment variable PUBLIC_PATHS (comma-separated)
         public_paths = {p.strip() for p in settings.PUBLIC_PATHS.split(",") if p.strip()}
@@ -69,22 +72,34 @@ class UserContextMiddleware(BaseHTTPMiddleware):
             token = auth_header.split(" ", 1)[1]
             try:
                 if await is_token_blacklisted(token):
-                    logger.info("Rejected blacklisted token")
+                    logger.info(
+                        "auth_blacklisted_token",
+                        extra={"event": "auth_blacklisted_token", "path": request.url.path, "request_id": request_id},
+                    )
                     return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Token has been revoked"})
 
                 payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
                 if payload.get("type") != "access":
-                    logger.warning("Rejected non-access token on protected endpoint")
+                    logger.warning(
+                        "auth_invalid_token_type",
+                        extra={"event": "auth_invalid_token_type", "path": request.url.path, "request_id": request_id},
+                    )
                     return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid token type"})
 
                 user_id = payload.get("sub")
                 if user_id is None:
-                    logger.warning("JWT missing 'sub' claim.")
+                    logger.warning(
+                        "auth_jwt_missing_sub",
+                        extra={"event": "auth_jwt_missing_sub", "path": request.url.path, "request_id": request_id},
+                    )
                     return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid authentication credentials"})
                 user = await db["users"].find_one({"_id": ObjectId(user_id)})
                 if user:
                     if user.get("isDeleted") or user.get("isDisabled"):
-                        logger.warning("Rejected token for deleted/disabled user")
+                        logger.warning(
+                            "auth_inactive_account",
+                            extra={"event": "auth_inactive_account", "path": request.url.path, "request_id": request_id, "user_id": user_id},
+                        )
                         return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"detail": "Account is not active"})
 
                     role = user.get("role")
@@ -96,16 +111,28 @@ class UserContextMiddleware(BaseHTTPMiddleware):
                     # Sanitize user object (remove sensitive fields)
                     user = {k: v for k, v in user.items() if k not in ["password", "hashed_password"]}
             except ExpiredSignatureError:
-                logger.info(f"Expired JWT for user_id: {user_id}")
+                logger.info(
+                    "auth_token_expired",
+                    extra={"event": "auth_token_expired", "path": request.url.path, "request_id": request_id, "user_id": user_id},
+                )
                 return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Your session has expired. Please log in again or refresh your token."})
             except JWTError as e:
-                logger.warning(f"JWT error: {str(e)}")
+                logger.warning(
+                    "auth_jwt_error",
+                    extra={"event": "auth_jwt_error", "path": request.url.path, "request_id": request_id, "error": str(e)},
+                )
                 return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid authentication credentials"})
             except Exception as e:
-                logger.error(f"Unexpected error in UserContextMiddleware: {str(e)}")
+                logger.exception(
+                    "auth_middleware_unexpected_error",
+                    extra={"event": "auth_middleware_unexpected_error", "path": request.url.path, "request_id": request_id, "error": str(e)},
+                )
                 return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Internal server error"})
         else:
-            logger.warning("Missing or invalid Authorization header.")
+            logger.warning(
+                "auth_missing_header",
+                extra={"event": "auth_missing_header", "path": request.url.path, "request_id": request_id},
+            )
             return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Missing or invalid Authorization header"})
         
         # Load subscription info
@@ -114,7 +141,10 @@ class UserContextMiddleware(BaseHTTPMiddleware):
             try:
                 subscription = await SubscriptionService.get_subscription(user_id)
             except Exception as e:
-                logger.warning(f"Failed to load subscription for {user_id}: {e}")
+                logger.warning(
+                    "subscription_load_failed",
+                    extra={"event": "subscription_load_failed", "request_id": request_id, "user_id": user_id, "error": str(e)},
+                )
                 subscription = None
         
         # Attach metadata to request.state

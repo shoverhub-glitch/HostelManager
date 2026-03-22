@@ -11,11 +11,15 @@ from app.models.payment_schema import PaymentCreate
 from app.services.payment_service import PaymentService
 from app.models.tenant_schema import BillingConfig
 from typing import Optional, List
+import logging
 
 
 
 bed_service = BedService()
 payment_service = PaymentService()
+logger = logging.getLogger(__name__)
+
+
 class TenantService:
 
     def __init__(self):
@@ -213,6 +217,21 @@ class TenantService:
         async for doc in cursor:
             doc["id"] = str(doc["_id"])
             tenants.append(TenantOut(**doc))
+
+        logger.info(
+            "tenant_list_success",
+            extra={
+                "event": "tenant_list_success",
+                "property_id": property_id,
+                "property_ids_count": len(property_ids) if property_ids is not None else None,
+                "search": bool(search),
+                "status": status,
+                "returned_count": len(tenants),
+                "total": total,
+                "skip": skip,
+                "limit": limit,
+            },
+        )
         
         return tenants, total
 
@@ -221,6 +240,7 @@ class TenantService:
         if doc:
             doc["id"] = str(doc["_id"])
             return Tenant(**doc)
+        logger.warning("tenant_get_not_found", extra={"event": "tenant_get_not_found", "tenant_id": tenant_id})
         return None
 
     async def create_tenant(self, tenant_data: dict):
@@ -262,15 +282,21 @@ class TenantService:
                 bed_id = tenant_data.get("bedId")
                 if bed_id:
                     # Check and reserve bed atomically within transaction
-                    # Use find_one_and_update with condition to ensure bed is available
+                    # Use find_one_and_update with condition to ensure bed is available.
+                    # Accept both Mongo ObjectId and app-level string ids.
+                    try:
+                        bed_filter = {"_id": ObjectId(bed_id), "status": "available", "isDeleted": {"$ne": True}}
+                    except InvalidId:
+                        bed_filter = {"id": bed_id, "status": "available", "isDeleted": {"$ne": True}}
+
                     result = await self.collection.database["beds"].find_one_and_update(
-                        {"_id": ObjectId(bed_id), "status": "available", "isDeleted": {"$ne": True}},
+                        bed_filter,
                         {"$set": {"status": BedStatus.OCCUPIED.value, "updatedAt": now}},
                         return_document=True,
                         session=session
                     )
                     if not result:
-                        # Try with string id if ObjectId fails
+                        # Retry via app-level id in case bed id was stored as a string.
                         result = await self.collection.database["beds"].find_one_and_update(
                             {"id": bed_id, "status": "available", "isDeleted": {"$ne": True}},
                             {"$set": {"status": BedStatus.OCCUPIED.value, "updatedAt": now}},
@@ -278,7 +304,7 @@ class TenantService:
                             session=session
                         )
                     if not result:
-                        raise ValueError("Bed is already occupied")
+                        raise ValueError("Bed not found or already occupied")
                 
                 # Insert tenant
                 result = await self.collection.insert_one(tenant_data, session=session)
@@ -331,6 +357,18 @@ class TenantService:
             )
             await payment_service.create_payment(payment)
 
+        logger.info(
+            "tenant_create_success",
+            extra={
+                "event": "tenant_create_success",
+                "tenant_id": tenant_data.get("id"),
+                "property_id": tenant_data.get("propertyId"),
+                "room_id": tenant_data.get("roomId"),
+                "bed_id": tenant_data.get("bedId"),
+                "auto_generate_payments": bool(auto_generate),
+            },
+        )
+
         return Tenant(**tenant_data)
 
     async def update_tenant(self, tenant_id: str, tenant_data: dict):
@@ -341,6 +379,7 @@ class TenantService:
         # Get original tenant data
         orig_doc = await self.collection.find_one({"_id": ObjectId(tenant_id), "isDeleted": {"$ne": True}})
         if not orig_doc:
+            logger.warning("tenant_update_not_found", extra={"event": "tenant_update_not_found", "tenant_id": tenant_id})
             return None
             
         orig_bed_id = orig_doc.get("bedId")
@@ -378,6 +417,7 @@ class TenantService:
             
             # Clear billingConfig for vacated tenant
             tenant_data["billingConfig"] = None
+            logger.info("tenant_status_vacated", extra={"event": "tenant_status_vacated", "tenant_id": tenant_id, "old_status": orig_status})
         
         # Handle tenant reactivation (vacated -> active)
         elif new_status == "active" and orig_status == "vacated":
@@ -401,6 +441,7 @@ class TenantService:
             # Clear checkout date when reactivating
             if "checkoutDate" not in tenant_data:
                 tenant_data["checkoutDate"] = None
+            logger.info("tenant_status_reactivated", extra={"event": "tenant_status_reactivated", "tenant_id": tenant_id, "room_id": new_room_id, "bed_id": new_bed_id})
         
         # Handle bed changes for active tenants
         elif new_status == "active":
@@ -557,13 +598,24 @@ class TenantService:
         doc = await self.collection.find_one({"_id": ObjectId(tenant_id)})
         if doc:
             doc["id"] = str(doc["_id"])
+            logger.info(
+                "tenant_update_success",
+                extra={
+                    "event": "tenant_update_success",
+                    "tenant_id": tenant_id,
+                    "property_id": doc.get("propertyId"),
+                    "tenant_status": doc.get("tenantStatus"),
+                },
+            )
             return Tenant(**doc)
+        logger.warning("tenant_update_postfetch_not_found", extra={"event": "tenant_update_postfetch_not_found", "tenant_id": tenant_id})
         return None
 
     async def delete_tenant(self, tenant_id: str):
         # Find the tenant to get the bedId
         doc = await self.collection.find_one({"_id": ObjectId(tenant_id), "isDeleted": {"$ne": True}})
         if not doc:
+            logger.warning("tenant_delete_not_found", extra={"event": "tenant_delete_not_found", "tenant_id": tenant_id})
             return {"success": False, "message": "Tenant not found or already deleted."}
 
         bed_id = doc.get("bedId")
@@ -595,6 +647,7 @@ class TenantService:
                 }
             }
         )
+        logger.info("tenant_delete_success", extra={"event": "tenant_delete_success", "tenant_id": tenant_id, "property_id": doc.get("propertyId")})
         return {
             "success": True, 
             "tenantId": tenant_id,
@@ -607,10 +660,8 @@ class TenantService:
         Ensures no payments are missed due to downtime, but limits backfilling to 60 days.
         """
         import time
-        import logging
         from datetime import date
-        
-        logger = logging.getLogger(__name__)
+
         start_time = time.time()
         
         try:
@@ -621,7 +672,7 @@ class TenantService:
             # Guardrail: Never look back more than 60 days
             min_allowed_start = today - relativedelta(days=60)
             
-            logger.info(f"[CRON] Starting payment generation at {today.isoformat()}")
+            logger.info("tenant_payment_cron_started", extra={"event": "tenant_payment_cron_started", "date": today.isoformat()})
             
             # 1. Fetch all tenants eligible for auto-billing
             tenant_cursor = self.collection.find({
@@ -685,11 +736,8 @@ class TenantService:
 
                     # 6. Generate all missing payments in the gap
                     while current_due_date <= target_due_date:
-
-                        if monthly_exists:
-                            result["skipped"] += 1
-                            current_due_date = current_due_date + relativedelta(months=1, day=anchor_day)
-                            continue
+                        if checkout_limit and current_due_date > checkout_limit:
+                            break
                             
                         # Build payment data
                         payment_data = {
@@ -721,7 +769,14 @@ class TenantService:
                         current_due_date = current_due_date + relativedelta(months=1, day=anchor_day)
 
                 except Exception as tenant_error:
-                    logger.error(f"[CRON] Error for tenant {tenant_doc.get('_id')}: {str(tenant_error)}")
+                    logger.exception(
+                        "tenant_payment_cron_tenant_failed",
+                        extra={
+                            "event": "tenant_payment_cron_tenant_failed",
+                            "tenant_id": str(tenant_doc.get("_id", "unknown")),
+                            "error": str(tenant_error),
+                        },
+                    )
                     result["errors"].append({
                         "tenantId": str(tenant_doc.get("_id", "unknown")),
                         "error": str(tenant_error)
@@ -729,12 +784,21 @@ class TenantService:
             
             duration_ms = int((time.time() - start_time) * 1000)
             result["duration_ms"] = duration_ms
-            logger.info(f"[CRON] Completed: created={result['created']}, skipped={result['skipped']}, errors={len(result['errors'])}, duration={duration_ms}ms")
+            logger.info(
+                "tenant_payment_cron_completed",
+                extra={
+                    "event": "tenant_payment_cron_completed",
+                    "created": result["created"],
+                    "skipped": result["skipped"],
+                    "errors": len(result["errors"]),
+                    "duration_ms": duration_ms,
+                },
+            )
             return result
             
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
-            logger.error(f"[CRON] Job failed: {str(e)}")
+            logger.exception("tenant_payment_cron_failed", extra={"event": "tenant_payment_cron_failed", "error": str(e), "duration_ms": duration_ms})
             return {
                 "created": 0, "skipped": 0, "duration_ms": duration_ms,
                 "errors": [{"job": "generate_monthly_payments", "error": str(e)}]

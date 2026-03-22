@@ -4,9 +4,13 @@ from datetime import datetime,timezone
 from bson import ObjectId
 from app.services.bed_service import BedService
 from app.models.bed_schema import BedCreate
+import logging
 
 
 bed_service = BedService()
+logger = logging.getLogger(__name__)
+
+
 class RoomService:
 
     def __init__(self):
@@ -21,10 +25,17 @@ class RoomService:
         async for doc in cursor:
             doc["id"] = str(doc["_id"])
             rooms.append(Room(**doc))
+        logger.info("room_list_success", extra={"event": "room_list_success", "property_id": property_id, "count": len(rooms)})
         return rooms
 
     async def get_room(self, room_id: str):
-        doc = await self.collection.find_one({"_id": ObjectId(room_id), "isDeleted": {"$ne": True}})
+        try:
+            object_id = ObjectId(room_id)
+        except Exception as e:
+            logger.warning("room_get_invalid_id", extra={"event": "room_get_invalid_id", "room_id": room_id, "error": str(e)})
+            return None
+
+        doc = await self.collection.find_one({"_id": object_id, "isDeleted": {"$ne": True}})
         if doc:
             doc["id"] = str(doc["_id"])
             return Room(**doc)
@@ -49,6 +60,10 @@ class RoomService:
             "isDeleted": {"$ne": True}
         })
         if existing:
+            logger.warning(
+                "room_create_duplicate_number",
+                extra={"event": "room_create_duplicate_number", "property_id": room_data.get("propertyId"), "room_number": room_data.get("roomNumber")},
+            )
             raise ValueError(f"Room number '{room_data['roomNumber']}' already exists for this property")
         
         result = await self.collection.insert_one(room_data)
@@ -66,33 +81,63 @@ class RoomService:
                 ownerId=room_data.get("ownerId")
             )
             await bed_service.create_bed(bed)
+        logger.info(
+            "room_created",
+            extra={
+                "event": "room_created",
+                "room_id": room_data.get("id"),
+                "property_id": room_data.get("propertyId"),
+                "room_number": room_data.get("roomNumber"),
+                "number_of_beds": number_of_beds,
+            },
+        )
         return Room(**room_data)
 
     async def update_room(self, room_id: str, room_data: dict):
         from bson import ObjectId
+        try:
+            object_id = ObjectId(room_id)
+        except Exception as e:
+            logger.warning("room_update_invalid_id", extra={"event": "room_update_invalid_id", "room_id": room_id, "error": str(e)})
+            return None
+
+        current_room = await self.collection.find_one({"_id": object_id, "isDeleted": {"$ne": True}})
+        if not current_room:
+            logger.warning("room_update_not_found", extra={"event": "room_update_not_found", "room_id": room_id})
+            return None
+
         room_data["updatedAt"] = datetime.now(timezone.utc).isoformat()
         for protected_key in ["isDeleted"]:
             room_data.pop(protected_key, None)
 
         # If roomNumber is being updated, check for duplicates
         if "roomNumber" in room_data:
+            property_id = room_data.get("propertyId") or current_room.get("propertyId")
             existing = await self.collection.find_one({
-                "propertyId": room_data["propertyId"],
+                "propertyId": property_id,
                 "roomNumber": room_data["roomNumber"],
-                "_id": {"$ne": ObjectId(room_id)},
+                "_id": {"$ne": object_id},
                 "isDeleted": {"$ne": True}
             })
             if existing:
+                logger.warning(
+                    "room_update_duplicate_number",
+                    extra={"event": "room_update_duplicate_number", "room_id": room_id, "property_id": room_data.get("propertyId"), "room_number": room_data.get("roomNumber")},
+                )
                 raise ValueError(f"Room number '{room_data['roomNumber']}' already exists for this property")
         
         # Handle bed count changes
         if "numberOfBeds" in room_data:
             await self._handle_bed_count_change(room_id, room_data)
         
-        await self.collection.update_one({"_id": ObjectId(room_id)}, {"$set": room_data})
-        doc = await self.collection.find_one({"_id": ObjectId(room_id)})
+        await self.collection.update_one({"_id": object_id}, {"$set": room_data})
+        doc = await self.collection.find_one({"_id": object_id})
         if doc:
             doc["id"] = str(doc["_id"])
+            logger.info(
+                "room_updated",
+                extra={"event": "room_updated", "room_id": room_id, "property_id": doc.get("propertyId"), "updated_fields": list(room_data.keys())},
+            )
             return Room(**doc)
         return None
     
@@ -167,6 +212,15 @@ class RoomService:
                             {"_id": ObjectId(tenant_id)},
                             {"$set": update_data}
                         )
+                        logger.info(
+                            "room_bed_reduction_tenant_relocated",
+                            extra={
+                                "event": "room_bed_reduction_tenant_relocated",
+                                "room_id": room_id,
+                                "tenant_id": tenant_id,
+                                "new_bed_id": str(available_bed.get("_id")),
+                            },
+                        )
                     else:
                         # No available bed - mark tenant as vacated
                         await tenants_collection.update_one(
@@ -179,6 +233,10 @@ class RoomService:
                                     "updatedAt": now
                                 }
                             }
+                        )
+                        logger.warning(
+                            "room_bed_reduction_tenant_vacated",
+                            extra={"event": "room_bed_reduction_tenant_vacated", "room_id": room_id, "tenant_id": tenant_id},
                         )
                 
                 # Soft delete the bed
@@ -199,6 +257,17 @@ class RoomService:
                     ownerId=owner_id
                 )
                 await bed_service.create_bed(bed)
+
+        logger.info(
+            "room_bed_count_changed",
+            extra={
+                "event": "room_bed_count_changed",
+                "room_id": room_id,
+                "property_id": property_id,
+                "old_bed_count": current_bed_count,
+                "new_bed_count": new_bed_count,
+            },
+        )
     
     async def preview_bed_count_change(self, room_id: str, new_bed_count: int):
         """Preview what will happen if bed count is changed"""
@@ -278,9 +347,25 @@ class RoomService:
                             "location": location
                         })
         
+        logger.info(
+            "room_bed_change_preview_generated",
+            extra={
+                "event": "room_bed_change_preview_generated",
+                "room_id": room_id,
+                "current_bed_count": current_bed_count,
+                "new_bed_count": new_bed_count,
+                "affected_tenants": len(result.get("affectedTenants", [])),
+            },
+        )
         return result
 
     async def delete_room(self, room_id: str):
+        try:
+            object_id = ObjectId(room_id)
+        except Exception as e:
+            logger.warning("room_delete_invalid_id", extra={"event": "room_delete_invalid_id", "room_id": room_id, "error": str(e)})
+            return {"success": False, "roomId": room_id}
+
         # Find all beds in this room
         beds_collection = getCollection("beds")
         tenants_collection = getCollection("tenants")
@@ -308,6 +393,10 @@ class RoomService:
                         }
                     }
                 )
+                logger.warning(
+                    "room_delete_tenant_vacated",
+                    extra={"event": "room_delete_tenant_vacated", "room_id": room_id, "tenant_id": tenant_id},
+                )
             
             # Soft delete the bed instead of just making it available
             await beds_collection.update_one(
@@ -324,7 +413,8 @@ class RoomService:
         
         # Soft delete the room
         await self.collection.update_one(
-            {"_id": ObjectId(room_id)}, 
+            {"_id": object_id}, 
             {"$set": {"isDeleted": True, "updatedAt": now}}
         )
+        logger.info("room_deleted", extra={"event": "room_deleted", "room_id": room_id, "beds_deleted": len(beds)})
         return {"success": True, "roomId": room_id}

@@ -18,7 +18,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import useResponsiveLayout from '@/hooks/useResponsiveLayout';
 import { subscriptionService, couponService } from '@/services/apiClient';
-import { openRazorpayCheckout, RazorpaySuccessResponse, RazorpayErrorResponse } from '@/services/razorpayService';
+import { openRazorpayCheckout, openRazorpaySubscription, RazorpaySuccessResponse, RazorpaySubscriptionSuccessResponse, RazorpayErrorResponse } from '@/services/razorpayService';
 import { clearScreenCache } from '@/services/screenCache';
 import type { Subscription, PlanMetadata } from '@/services/apiTypes';
 
@@ -192,16 +192,18 @@ export default function UpgradeModal({
   };
 
   // ── Payment ───────────────────────────────────────────────────────────────
-  const handlePaymentError = (paymentError: RazorpayErrorResponse) => {
-    if (paymentError.code === 0 && paymentError.description === 'Payment Cancelled') {
+  const handlePaymentError = (paymentError: any) => {
+    if (paymentError?.code === 0 && paymentError?.description === 'Payment Cancelled') {
       setProcessing(false); return;
     }
-    setError(paymentError.description || 'Payment could not be completed. Please try again.');
+    const message = paymentError?.description || paymentError?.reason || paymentError?.message || 'Payment could not be completed. Please try again.';
+    setError(message);
     setProcessing(false);
   };
 
   const handlePaymentSuccess = async (response: RazorpaySuccessResponse) => {
     try {
+      if (!response.razorpay_order_id) throw new Error('Missing order reference from payment gateway');
       const verifyResponse = await subscriptionService.verifyPayment({
         payment_id: response.razorpay_payment_id,
         order_id:   response.razorpay_order_id,
@@ -216,6 +218,27 @@ export default function UpgradeModal({
     } catch (err: any) {
       onClose();
       Alert.alert('Payment Successful', 'Your plan will be active automatically in a few minutes.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleSubscriptionSuccess = async (response: RazorpaySubscriptionSuccessResponse) => {
+    try {
+      const verifyResponse = await subscriptionService.verifySubscription({
+        payment_id:      response.razorpay_payment_id,
+        subscription_id: response.razorpay_subscription_id,
+        signature:       response.razorpay_signature,
+      });
+      if (!verifyResponse.data.success) throw new Error('Payment verification incomplete');
+      clearScreenCache('subscription:'); clearScreenCache('dashboard:');
+      const confirmedPlan = verifyResponse.data.subscription;
+      onSelectPlan(confirmedPlan || selectedPlan);
+      onClose();
+      Alert.alert('Subscription Activated', 'Your subscription is now active and will auto-renew each billing cycle.');
+    } catch (err: any) {
+      onClose();
+      Alert.alert('Payment Successful', 'Your subscription will be activated automatically in a few minutes.');
     } finally {
       setProcessing(false);
     }
@@ -240,16 +263,51 @@ export default function UpgradeModal({
     if (!user) { setError('User information not available'); return; }
     try {
       setProcessing(true); setError(null);
+      const selectedPeriodNumber = Number(selectedPeriodData.period);
+      const planLabel = `${selectedPlanData.name} (${getPeriodLabel(selectedPeriodNumber)})`;
+      const normalizedCoupon = couponCode.trim().toUpperCase();
+      const shouldTryRecurring = !normalizedCoupon;
+
+      if (shouldTryRecurring) {
+        try {
+          const recurringResponse = await subscriptionService.createSubscription(
+            selectedPlanData.name,
+            selectedPeriodNumber
+          );
+
+          openRazorpaySubscription(
+            recurringResponse.data.subscriptionId,
+            recurringResponse.data.keyId,
+            user.name,
+            user.email,
+            `${planLabel} Subscription`,
+            async (r: RazorpaySubscriptionSuccessResponse) => { await handleSubscriptionSuccess(r); },
+            (e: RazorpayErrorResponse) => { handlePaymentError(e); }
+          );
+          return;
+        } catch (recurringError: any) {
+          const recurringMessage = String(
+            recurringError?.message || recurringError?.details?.detail || ''
+          );
+          const canFallbackToOneTime = /recurring subscription not configured|seed-razorpay-plans/i.test(recurringMessage);
+          if (!canFallbackToOneTime) {
+            throw recurringError;
+          }
+        }
+      }
+
       const sessionResponse = await subscriptionService.createCheckoutSession(
         selectedPlanData.name,
-        Number(selectedPeriodData.period),
-        couponCode.trim() ? couponCode.trim().toUpperCase() : undefined
+        selectedPeriodNumber,
+        normalizedCoupon || undefined
       );
       openRazorpayCheckout(
-        sessionResponse.data, user.name, user.email,
-        `${selectedPlanData.name} (${getPeriodLabel(Number(selectedPeriodData.period))})`,
-        async (r: RazorpaySuccessResponse)   => { await handlePaymentSuccess(r); },
-        (e: RazorpayErrorResponse)           => { handlePaymentError(e); }
+        sessionResponse.data,
+        user.name,
+        user.email,
+        planLabel,
+        async (r: RazorpaySuccessResponse) => { await handlePaymentSuccess(r); },
+        (e: RazorpayErrorResponse) => { handlePaymentError(e); }
       );
     } catch (err: any) {
       setError(err?.message || 'Failed to initiate checkout');

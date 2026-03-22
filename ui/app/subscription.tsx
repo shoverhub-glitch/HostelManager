@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -64,9 +64,9 @@ function ProgressBar({ used, limit, fillColor, trackColor }: {
 }) {
   const pct = limit === 999 ? 12 : Math.min((used / limit) * 100, 100);
   const anim = useRef(new Animated.Value(0)).current;
-  useRef(() => {
+  useEffect(() => {
     Animated.timing(anim, { toValue: pct, duration: 800, delay: 200, useNativeDriver: false }).start();
-  }).current?.();
+  }, [pct]);
 
   return (
     <View style={[pbStyles.track, { backgroundColor: trackColor }]}>

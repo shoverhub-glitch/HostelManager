@@ -2,12 +2,14 @@ from fastapi import APIRouter, HTTPException, Body, Request, Query
 from typing import List
 from datetime import datetime, date
 from bson import ObjectId
+import logging
 from ..models.payment_schema import Payment, PaymentCreate, PaymentUpdate, PaymentMethod
 from ..services.payment_service import PaymentService
 from app.database.mongodb import getCollection
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 payment_service = PaymentService()
+logger = logging.getLogger(__name__)
 
 def validate_payment_method(method: str) -> bool:
     """Validate that payment method is one of the allowed values"""
@@ -18,10 +20,18 @@ async def create_payment(request: Request, payment_create: PaymentCreate = Body(
     property_ids = getattr(request.state, "property_ids", [])
 
     if payment_create.propertyId not in property_ids:
+        logger.warning(
+            "payment_create_forbidden",
+            extra={"event": "payment_create_forbidden", "property_id": payment_create.propertyId, "path": request.url.path},
+        )
         raise HTTPException(status_code=403, detail="Forbidden")
 
     # Validate payment method
     if payment_create.method and not validate_payment_method(payment_create.method):
+        logger.warning(
+            "payment_create_invalid_method",
+            extra={"event": "payment_create_invalid_method", "method": payment_create.method, "path": request.url.path},
+        )
         raise HTTPException(status_code=400, detail=f"Invalid payment method. Allowed: {[m.value for m in PaymentMethod]}")
 
     try:
@@ -30,34 +40,61 @@ async def create_payment(request: Request, payment_create: PaymentCreate = Body(
             "isDeleted": {"$ne": True}
         })
     except Exception:
+        logger.warning("payment_create_invalid_tenant_id", extra={"event": "payment_create_invalid_tenant_id", "tenant_id": payment_create.tenantId})
         raise HTTPException(status_code=400, detail="Invalid tenantId")
 
     if not tenant_doc:
+        logger.warning("payment_create_tenant_not_found", extra={"event": "payment_create_tenant_not_found", "tenant_id": payment_create.tenantId})
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     tenant_property_id = str(tenant_doc.get("propertyId", ""))
     if tenant_property_id != payment_create.propertyId:
+        logger.warning(
+            "payment_create_tenant_property_mismatch",
+            extra={
+                "event": "payment_create_tenant_property_mismatch",
+                "tenant_id": payment_create.tenantId,
+                "tenant_property_id": tenant_property_id,
+                "property_id": payment_create.propertyId,
+            },
+        )
         raise HTTPException(status_code=400, detail="Tenant does not belong to the selected property")
 
     if tenant_doc.get("autoGeneratePayments", True):
+        logger.warning(
+            "payment_create_auto_generate_enabled",
+            extra={"event": "payment_create_auto_generate_enabled", "tenant_id": payment_create.tenantId},
+        )
         raise HTTPException(
             status_code=400,
             detail="Manual payment is only allowed for tenants with auto-generate disabled"
         )
 
     if tenant_doc.get("tenantStatus") == "vacated":
+        logger.warning(
+            "payment_create_vacated_tenant",
+            extra={"event": "payment_create_vacated_tenant", "tenant_id": payment_create.tenantId},
+        )
         raise HTTPException(
             status_code=400,
             detail="Manual payment is not allowed for vacated tenants"
         )
 
     created_payment = await payment_service.create_payment(payment_create)
+    logger.info(
+        "payment_create_route_success",
+        extra={"event": "payment_create_route_success", "payment_id": created_payment.id, "property_id": created_payment.propertyId},
+    )
     return created_payment
 
 @router.patch("/{payment_id}", response_model=Payment)
 async def update_payment(request: Request, payment_id: str, payment_update: PaymentUpdate = Body(...)):
     # Validate payment method if provided
     if payment_update.method and not validate_payment_method(payment_update.method):
+        logger.warning(
+            "payment_update_invalid_method",
+            extra={"event": "payment_update_invalid_method", "payment_id": payment_id, "method": payment_update.method},
+        )
         raise HTTPException(status_code=400, detail=f"Invalid payment method. Allowed: {[m.value for m in PaymentMethod]}")
 
     property_ids = getattr(request.state, "property_ids", [])
@@ -65,11 +102,21 @@ async def update_payment(request: Request, payment_id: str, payment_update: Paym
     # Authorize access before mutating the payment record
     existing_payment = await payment_service.get_payment_by_id(payment_id)
     if not existing_payment or existing_payment.propertyId not in property_ids:
+        logger.warning(
+            "payment_update_not_found_or_forbidden",
+            extra={"event": "payment_update_not_found_or_forbidden", "payment_id": payment_id, "path": request.url.path},
+        )
         raise HTTPException(status_code=404, detail="Payment not found or forbidden")
 
     updated_payment = await payment_service.update_payment(payment_id, payment_update)
     if not updated_payment:
+        logger.warning("payment_update_not_found", extra={"event": "payment_update_not_found", "payment_id": payment_id})
         raise HTTPException(status_code=404, detail="Payment not found")
+
+    logger.info(
+        "payment_update_route_success",
+        extra={"event": "payment_update_route_success", "payment_id": updated_payment.id, "property_id": updated_payment.propertyId},
+    )
 
     return updated_payment
 
@@ -79,12 +126,22 @@ async def delete_payment(request: Request, payment_id: str):
     payment = await payment_service.get_payment_by_id(payment_id)
     property_ids = getattr(request.state, "property_ids", [])
     if not payment or payment.propertyId not in property_ids:
+        logger.warning(
+            "payment_delete_not_found_or_forbidden",
+            extra={"event": "payment_delete_not_found_or_forbidden", "payment_id": payment_id, "path": request.url.path},
+        )
         raise HTTPException(status_code=404, detail="Payment not found or forbidden")
     
     # Delete the payment
     success = await payment_service.delete_payment(payment_id)
     if not success:
+        logger.warning("payment_delete_failed", extra={"event": "payment_delete_failed", "payment_id": payment_id})
         raise HTTPException(status_code=404, detail="Payment not found")
+
+    logger.info(
+        "payment_delete_route_success",
+        extra={"event": "payment_delete_route_success", "payment_id": payment_id, "property_id": payment.propertyId},
+    )
     
     return {"success": True, "paymentId": payment_id}
 
@@ -142,6 +199,7 @@ async def list_payments(
         if propertyId in property_ids:
             match_stage["propertyId"] = propertyId
         else:
+            logger.warning("payment_list_forbidden_property", extra={"event": "payment_list_forbidden_property", "property_id": propertyId})
             raise HTTPException(status_code=403, detail="Forbidden")
 
     if tenantId:
@@ -272,7 +330,7 @@ async def list_payments(
                 "tenantId": 1,
                 "propertyId": 1,
                 "bed": 1,
-                "amount": 1,
+                "amount": {"$ifNull": ["$amount", "$amountPaise"]},
                 "status": 1,
                 "dueDate": 1,
                 "paidDate": 1,
@@ -303,10 +361,13 @@ async def list_payments(
     for p in payments_cursor:
         p["id"] = str(p["_id"])
         # Format amount from paise to display string
-        if "amountPaise" in p:
-            p["amount"] = f"₹{p['amountPaise'] / 100:,.0f}"
-            p.pop("amountPaise")
-        elif isinstance(p.get("amount"), int):
+        if p.get("amount") is None:
+            logger.warning(
+                "payment_list_missing_amount",
+                extra={"event": "payment_list_missing_amount", "payment_id": p.get("id")},
+            )
+            p["amount"] = "₹0"
+        elif isinstance(p.get("amount"), (int, float)):
             p["amount"] = f"₹{p['amount'] / 100:,.0f}"
         payments.append(Payment(**p))
     
@@ -325,6 +386,10 @@ async def get_payment(request: Request, payment_id: str):
     payment = await payment_service.get_payment_by_id(payment_id)
     property_ids = getattr(request.state, "property_ids", [])
     if not payment or payment.propertyId not in property_ids:
+        logger.warning(
+            "payment_get_not_found_or_forbidden",
+            extra={"event": "payment_get_not_found_or_forbidden", "payment_id": payment_id, "path": request.url.path},
+        )
         raise HTTPException(status_code=404, detail="Payment not found or forbidden")
     
     payment_dict = payment.model_dump()
@@ -386,16 +451,27 @@ async def generate_monthly_payments_manual(request: Request):
     """
     user_role = getattr(request.state, "role", None)
     if user_role != "owner":
+        logger.warning("payment_generate_monthly_forbidden", extra={"event": "payment_generate_monthly_forbidden", "role": user_role})
         raise HTTPException(status_code=403, detail="Forbidden: owner access required")
     from app.services.tenant_service import TenantService
     tenant_service = TenantService()
     
     try:
         result = await tenant_service.generate_monthly_payments()
+        logger.info(
+            "payment_generate_monthly_success",
+            extra={
+                "event": "payment_generate_monthly_success",
+                "created": result.get("created"),
+                "skipped": result.get("skipped"),
+                "errors": len(result.get("errors", [])),
+            },
+        )
         return {
             "status": "success",
             "message": f"Generated {result['created']} payments, skipped {result['skipped']}",
             "details": result
         }
     except Exception as e:
+        logger.exception("payment_generate_monthly_failed", extra={"event": "payment_generate_monthly_failed", "error": str(e)})
         raise HTTPException(status_code=500, detail=f"Error generating payments: {str(e)}")

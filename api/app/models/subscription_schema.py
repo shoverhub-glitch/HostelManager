@@ -6,7 +6,7 @@ class Subscription(BaseModel):
     ownerId: str
     plan: str  # Plan name (e.g., 'free', 'pro', 'premium') - now dynamic
     period: int = 1  # Billing period in months (1, 3, 6, 12, etc.)
-    status: Literal['active', 'inactive', 'cancelled'] = 'active'
+    status: Literal['active', 'inactive', 'cancelled', 'past_due'] = 'active'
     price: int  # Price in paise for this period (e.g., 7900 for ₹79)
     currentPeriodStart: str
     currentPeriodEnd: str
@@ -20,6 +20,7 @@ class Subscription(BaseModel):
     autoRenewal: bool = True  # Enable auto-renewal by default
     razorpaySubscriptionId: Optional[str] = None  # Razorpay subscription ID for recurring payments
     renewalError: Optional[str] = None  # Last renewal error message if any
+    cancelAtPeriodEnd: bool = False  # True when user cancels but retains access until period end
 
 class Usage(BaseModel):
     ownerId: str

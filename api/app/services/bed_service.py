@@ -1,10 +1,14 @@
 
 import uuid
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 from bson.errors import InvalidId
 from app.database.mongodb import db
 from app.models.bed_schema import BedCreate, BedUpdate, BedOut
+
+
+logger = logging.getLogger(__name__)
 
 class BedService:
     def __init__(self):
@@ -18,6 +22,16 @@ class BedService:
         doc["id"] = str(uuid.uuid4())
         doc["isDeleted"] = False
         await self.db["beds"].insert_one(doc)
+        logger.info(
+            "bed_created",
+            extra={
+                "event": "bed_created",
+                "bed_id": doc["id"],
+                "property_id": doc.get("propertyId"),
+                "room_id": doc.get("roomId"),
+                "status": doc.get("status"),
+            },
+        )
         return BedOut(**doc)
 
     async def get_bed(self, bed_id: str) -> Optional[BedOut]:
@@ -29,6 +43,7 @@ class BedService:
                 return BedOut(**doc)
         except InvalidId:
             # If ObjectId conversion fails, try looking by id field
+            logger.warning("bed_lookup_invalid_object_id", extra={"event": "bed_lookup_invalid_object_id", "bed_id": bed_id})
             doc = await self.db["beds"].find_one({"id": bed_id, "isDeleted": {"$ne": True}})
             if doc:
                 return BedOut(**doc)
@@ -55,13 +70,33 @@ class BedService:
                 return BedOut(**result)
         except InvalidId:
             # If ObjectId conversion fails, try by id field
+            logger.warning("bed_update_invalid_object_id", extra={"event": "bed_update_invalid_object_id", "bed_id": bed_id})
             result = await self.db["beds"].find_one_and_update(
                 {"id": bed_id, "isDeleted": {"$ne": True}},
                 {"$set": update_data},
                 return_document=True
             )
             if result:
+                logger.info(
+                    "bed_updated",
+                    extra={
+                        "event": "bed_updated",
+                        "bed_id": bed_id,
+                        "property_id": result.get("propertyId"),
+                        "updated_fields": list(update_data.keys()),
+                    },
+                )
                 return BedOut(**result)
+        if result:
+            logger.info(
+                "bed_updated",
+                extra={
+                    "event": "bed_updated",
+                    "bed_id": str(result.get("_id", bed_id)),
+                    "property_id": result.get("propertyId"),
+                    "updated_fields": list(update_data.keys()),
+                },
+            )
         return None
 
     async def delete_bed(self, bed_id: str) -> bool:
@@ -75,11 +110,15 @@ class BedService:
             return result.modified_count == 1
         except InvalidId:
             # If ObjectId conversion fails, try by id field
+            logger.warning("bed_delete_invalid_object_id", extra={"event": "bed_delete_invalid_object_id", "bed_id": bed_id})
             result = await self.db["beds"].update_one(
                 {"id": bed_id, "isDeleted": {"$ne": True}},
                 {"$set": {"isDeleted": True, "updatedAt": now}}
             )
-            return result.modified_count == 1
+            deleted = result.modified_count == 1
+            if deleted:
+                logger.info("bed_deleted", extra={"event": "bed_deleted", "bed_id": bed_id})
+            return deleted
 
     async def get_available_beds_with_rooms(self, property_id: str) -> List[dict]:
         """Get all available beds for a property, grouped by rooms with room information"""
@@ -107,7 +146,10 @@ class BedService:
                 object_ids.append(ObjectId(room_id))
             except InvalidId:
                 # If conversion fails, skip this room ID
-                pass
+                logger.warning(
+                    "bed_grouping_skipped_invalid_room_id",
+                    extra={"event": "bed_grouping_skipped_invalid_room_id", "property_id": property_id, "room_id": room_id},
+                )
         
         if not object_ids:
             return []
@@ -154,6 +196,10 @@ class BedService:
         
         # Sort by room number
         result.sort(key=lambda x: x["room"]["roomNumber"])
+        logger.info(
+            "beds_available_grouped",
+            extra={"event": "beds_available_grouped", "property_id": property_id, "rooms_count": len(result)},
+        )
         return result
 
     async def get_all_beds_with_rooms(self, property_id: str) -> List[dict]:
@@ -181,7 +227,10 @@ class BedService:
                 object_ids.append(ObjectId(room_id))
             except InvalidId:
                 # If conversion fails, skip this room ID
-                pass
+                logger.warning(
+                    "bed_grouping_skipped_invalid_room_id",
+                    extra={"event": "bed_grouping_skipped_invalid_room_id", "property_id": property_id, "room_id": room_id},
+                )
         
         if not object_ids:
             return []
@@ -229,4 +278,8 @@ class BedService:
         
         # Sort by room number
         result.sort(key=lambda x: x["room"]["roomNumber"])
+        logger.info(
+            "beds_all_grouped",
+            extra={"event": "beds_all_grouped", "property_id": property_id, "rooms_count": len(result)},
+        )
         return result

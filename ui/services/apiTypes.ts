@@ -110,6 +110,7 @@ export interface Subscription {
   autoRenewal?: boolean; // Auto-renewal enabled flag
   razorpaySubscriptionId?: string; // Razorpay recurring subscription ID
   renewalError?: string; // Last renewal error if any
+  cancelAtPeriodEnd?: boolean; // If true, subscription cancels at end of current period
 }
 
 export interface Usage {
@@ -368,6 +369,27 @@ export interface VerifyPaymentResponse {
   period?: number; // Billing period
   couponApplied?: boolean;
   couponCode?: string | null;
+}
+
+export interface RazorpayCreateSubscriptionResponse {
+  subscriptionId: string;
+  keyId: string;
+  plan: string;
+  period: number;
+  status: string;
+}
+
+export interface VerifySubscriptionRequest {
+  payment_id: string;
+  subscription_id: string;
+  signature: string;
+}
+
+export interface VerifySubscriptionResponse {
+  success: boolean;
+  subscription?: string;
+  period?: number;
+  error?: string;
 }
 
 export interface QuotaWarning {

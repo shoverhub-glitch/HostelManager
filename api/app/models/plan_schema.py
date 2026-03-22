@@ -24,6 +24,10 @@ class PlanBase(BaseModel):
     )
     is_active: bool = Field(True, description="Whether this plan is available for selection")
     sort_order: int = Field(0, description="Display order (lower = shown first)")
+    razorpay_plan_ids: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Razorpay Plan IDs keyed by period in months e.g. {'1': 'plan_xxx', '3': 'plan_yyy'}"
+    )
     
     @field_validator('name')
     @classmethod

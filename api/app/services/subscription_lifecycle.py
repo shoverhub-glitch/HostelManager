@@ -48,7 +48,7 @@ class SubscriptionLifecycle:
             
             # Count current resources
             owned_properties = await db["properties"].find(
-                {**build_owner_query(owner_id), "active": True},
+                {**build_owner_query(owner_id), "active": True, "isDeleted": {"$ne": True}},
                 {"_id": 1}
             ).to_list(length=None)
             property_ids = [str(doc["_id"]) for doc in owned_properties]
@@ -84,8 +84,15 @@ class SubscriptionLifecycle:
                     if result.modified_count > 0:
                         archived_properties.append(str(prop["_id"]))
                         
+                        # Find room IDs before archiving so we can report them
+                        rooms_to_archive = await db["rooms"].find(
+                            {"propertyId": str(prop["_id"]), "active": True},
+                            {"_id": 1}
+                        ).to_list(length=None)
+                        room_ids_to_archive = [r["_id"] for r in rooms_to_archive]
+
                         # Archive all rooms in this property
-                        archived_room_result = await db["rooms"].update_many(
+                        await db["rooms"].update_many(
                             {"propertyId": str(prop["_id"]), "active": True},
                             {
                                 "$set": {
@@ -96,16 +103,13 @@ class SubscriptionLifecycle:
                                 }
                             }
                         )
+                        archived_rooms.extend([str(rid) for rid in room_ids_to_archive])
                         
                         # Archive all tenants in archived rooms of this property
-                        archived_room_ids = await db["rooms"].find(
-                            {"propertyId": str(prop["_id"])}
-                        ).distinct("_id")
-                        
-                        archived_tenant_result = await db["tenants"].update_many(
+                        await db["tenants"].update_many(
                             {
                                 "propertyId": str(prop["_id"]),
-                                "roomId": {"$in": [str(rid) for rid in archived_room_ids]},
+                                "roomId": {"$in": [str(rid) for rid in room_ids_to_archive]},
                                 "archived": False
                             },
                             {
@@ -141,8 +145,16 @@ class SubscriptionLifecycle:
                         archived_tenants.append(str(tenant["_id"]))
 
             logger.info(
-                f"Downgrade for {owner_id}: archived {len(archived_properties)} properties, "
-                f"{len(archived_rooms)} rooms, {len(archived_tenants)} tenants"
+                "subscription_downgrade_processed",
+                extra={
+                    "event": "subscription_downgrade_processed",
+                    "owner_id": owner_id,
+                    "from_plan": from_plan,
+                    "to_plan": to_plan,
+                    "archived_properties": len(archived_properties),
+                    "archived_rooms": len(archived_rooms),
+                    "archived_tenants": len(archived_tenants),
+                },
             )
 
             return {
@@ -155,7 +167,7 @@ class SubscriptionLifecycle:
                           f"{len(archived_tenants)} tenants archived. You have until {grace_period_until} to upgrade and recover them."
             }
         except Exception as e:
-            logger.error(f"Error handling downgrade for {owner_id}: {str(e)}")
+            logger.exception("subscription_downgrade_failed", extra={"event": "subscription_downgrade_failed", "owner_id": owner_id, "from_plan": from_plan, "to_plan": to_plan, "error": str(e)})
             return {
                 "success": False,
                 "error": "Error processing downgrade. Please contact support."
@@ -164,72 +176,102 @@ class SubscriptionLifecycle:
     @staticmethod
     async def handle_upgrade(owner_id: str, new_plan: str) -> dict:
         """
-        Handle subscription upgrade by restoring archived resources.
+        Handle subscription upgrade by restoring archived resources up to plan limits.
         
         Returns dict with restored resource counts and messages.
         """
         try:
             now = datetime.now(timezone.utc).isoformat()
             
-            # Restore archived properties
-            restore_prop = await db["properties"].update_many(
-                {**build_owner_query(owner_id), "active": False, "archivedReason": {"$exists": True}},
-                {
-                    "$set": {
-                        "active": True,
-                        "archivedAt": None,
-                        "updatedAt": now
-                    },
-                    "$unset": {"archivedReason": ""}
-                }
-            )
-            
-            owned_property_docs = await db["properties"].find(
-                build_owner_query(owner_id),
-                {"_id": 1}
-            ).to_list(length=None)
-            property_ids = [str(doc["_id"]) for doc in owned_property_docs]
+            # Get plan limits to avoid over-restoring
+            plan_limits = await SubscriptionService.get_plan_limits(new_plan)
+            prop_limit  = plan_limits.get("properties", 999)
+            tenant_limit = plan_limits.get("tenants", 999)
 
-            # Restore archived rooms
-            restore_rooms = await db["rooms"].update_many(
-                {"propertyId": {"$in": property_ids}, "active": False, "archivedReason": {"$exists": True}},
-                {
-                    "$set": {
-                        "active": True,
-                        "archivedAt": None,
-                        "updatedAt": now
-                    },
-                    "$unset": {"archivedReason": ""}
-                }
+            # Count currently active properties before restore
+            active_prop_count = await db["properties"].count_documents(
+                {**build_owner_query(owner_id), "active": True, "isDeleted": {"$ne": True}}
             )
-            
-            # Restore archived tenants
-            restore_tenants = await db["tenants"].update_many(
-                {"propertyId": {"$in": property_ids}, "archived": True, "archivedReason": {"$exists": True}},
-                {
-                    "$set": {
-                        "archived": False,
-                        "archivedAt": None,
-                        "updatedAt": now
-                    },
-                    "$unset": {"archivedReason": ""}
-                }
+            can_restore_props = max(0, prop_limit - active_prop_count)
+
+            # Restore archived properties up to plan limit (oldest archived first = most recently downgraded)
+            archived_props = await db["properties"].find(
+                {**build_owner_query(owner_id), "active": False, "archivedReason": {"$exists": True}, "isDeleted": {"$ne": True}}
+            ).sort("archivedAt", -1).limit(can_restore_props).to_list(length=can_restore_props)
+
+            restored_prop_ids = []
+            for prop in archived_props:
+                result = await db["properties"].update_one(
+                    {"_id": prop["_id"]},
+                    {
+                        "$set": {"active": True, "archivedAt": None, "updatedAt": now},
+                        "$unset": {"archivedReason": ""}
+                    }
+                )
+                if result.modified_count > 0:
+                    restored_prop_ids.append(str(prop["_id"]))
+
+            # Restore rooms for restored properties
+            restored_rooms_count = 0
+            if restored_prop_ids:
+                restore_rooms = await db["rooms"].update_many(
+                    {"propertyId": {"$in": restored_prop_ids}, "active": False, "archivedReason": {"$exists": True}},
+                    {
+                        "$set": {"active": True, "archivedAt": None, "updatedAt": now},
+                        "$unset": {"archivedReason": ""}
+                    }
+                )
+                restored_rooms_count = restore_rooms.modified_count
+
+            # Restore tenants up to plan limit
+            active_tenants_count = await db["tenants"].count_documents(
+                {"propertyId": {"$in": restored_prop_ids + [
+                    str(doc["_id"]) for doc in await db["properties"].find(
+                        {**build_owner_query(owner_id), "active": True, "isDeleted": {"$ne": True}},
+                        {"_id": 1}
+                    ).to_list(length=None)
+                ]}, "archived": False}
             )
+            can_restore_tenants = max(0, tenant_limit - active_tenants_count)
+
+            restored_tenants_count = 0
+            if can_restore_tenants > 0 and restored_prop_ids:
+                archived_tenants = await db["tenants"].find(
+                    {"propertyId": {"$in": restored_prop_ids}, "archived": True, "archivedReason": {"$exists": True}}
+                ).sort("archivedAt", -1).limit(can_restore_tenants).to_list(length=can_restore_tenants)
+
+                for tenant in archived_tenants:
+                    t_result = await db["tenants"].update_one(
+                        {"_id": tenant["_id"]},
+                        {
+                            "$set": {"archived": False, "archivedAt": None, "updatedAt": now},
+                            "$unset": {"archivedReason": ""}
+                        }
+                    )
+                    if t_result.modified_count > 0:
+                        restored_tenants_count += 1
             
             logger.info(
-                f"Upgrade for {owner_id}: restored {restore_prop.modified_count} properties, "
-                f"{restore_rooms.modified_count} rooms, {restore_tenants.modified_count} tenants"
+                "subscription_upgrade_processed",
+                extra={
+                    "event": "subscription_upgrade_processed",
+                    "owner_id": owner_id,
+                    "new_plan": new_plan,
+                    "restored_properties": len(restored_prop_ids),
+                    "restored_rooms": restored_rooms_count,
+                    "restored_tenants": restored_tenants_count,
+                },
             )
             
             return {
                 "success": True,
-                "restored_properties": restore_prop.modified_count,
-                "restored_rooms": restore_rooms.modified_count,
-                "restored_tenants": restore_tenants.modified_count,
+                "restored_properties": len(restored_prop_ids),
+                "restored_rooms": restored_rooms_count,
+                "restored_tenants": restored_tenants_count,
                 "message": f"Welcome to {new_plan.title()} plan! Your archived resources have been restored."
             }
         except Exception as e:
-            logger.error(f"Error handling upgrade for {owner_id}: {str(e)}")
+            logger.exception("subscription_upgrade_failed", extra={"event": "subscription_upgrade_failed", "owner_id": owner_id, "new_plan": new_plan, "error": str(e)})
             return {
                 "success": False,
                 "error": "Error restoring resources. Please contact support."
@@ -299,7 +341,7 @@ class SubscriptionLifecycle:
                 "grace_period_days": ARCHIVAL_GRACE_PERIOD_DAYS
             }
         except Exception as e:
-            logger.error(f"Error getting archived resources for {owner_id}: {str(e)}")
+            logger.exception("subscription_archived_resources_get_failed", extra={"event": "subscription_archived_resources_get_failed", "owner_id": owner_id, "error": str(e)})
             return {"error": "Could not retrieve archived resources"}
 
     @staticmethod
@@ -388,9 +430,8 @@ class SubscriptionLifecycle:
                 
                 # Audit log
                 logger.warning(
-                    f"AUDIT: Scheduled property {prop['_id']} (owner: {owner_id}) for deletion. "
-                    f"Reason: Subscription grace period expired. "
-                    f"Will be permanently deleted after warning period."
+                    "subscription_archive_deletion_scheduled_property",
+                    extra={"event": "subscription_archive_deletion_scheduled_property", "property_id": str(prop.get("_id")), "owner_id": owner_id},
                 )
             
             # Handle orphaned archived rooms/tenants (not tied to scheduled properties)
@@ -415,7 +456,8 @@ class SubscriptionLifecycle:
                 scheduled_rooms.append(str(room["_id"]))
                 
                 logger.warning(
-                    f"AUDIT: Scheduled room {room['_id']} for deletion."
+                    "subscription_archive_deletion_scheduled_room",
+                    extra={"event": "subscription_archive_deletion_scheduled_room", "room_id": str(room.get("_id"))},
                 )
             
             orphaned_tenants = await db["tenants"].find({
@@ -439,12 +481,18 @@ class SubscriptionLifecycle:
                 scheduled_tenants.append(str(tenant["_id"]))
                 
                 logger.warning(
-                    f"AUDIT: Scheduled tenant {tenant['_id']} for deletion."
+                    "subscription_archive_deletion_scheduled_tenant",
+                    extra={"event": "subscription_archive_deletion_scheduled_tenant", "tenant_id": str(tenant.get("_id"))},
                 )
             
             logger.info(
-                f"Scheduled for deletion: {len(scheduled_properties)} properties, "
-                f"{len(scheduled_rooms)} rooms, {len(scheduled_tenants)} tenants"
+                "subscription_archive_deletion_scheduled_summary",
+                extra={
+                    "event": "subscription_archive_deletion_scheduled_summary",
+                    "scheduled_properties": len(scheduled_properties),
+                    "scheduled_rooms": len(scheduled_rooms),
+                    "scheduled_tenants": len(scheduled_tenants),
+                },
             )
             
             return {
@@ -453,7 +501,7 @@ class SubscriptionLifecycle:
                 "scheduled_tenants": len(scheduled_tenants)
             }
         except Exception as e:
-            logger.error(f"Error scheduling deletions: {str(e)}")
+            logger.exception("subscription_archive_schedule_failed", extra={"event": "subscription_archive_schedule_failed", "error": str(e)})
             return {"error": "Failed to schedule deletions"}
 
     @staticmethod
@@ -478,9 +526,8 @@ class SubscriptionLifecycle:
                 if owner_id:
                     # Log warning (actual email sending would be integrated here)
                     logger.warning(
-                        f"DELETION WARNING: Property {prop.get('name')} (ID: {prop['_id']}) "
-                        f"scheduled for permanent deletion for user {owner_id}. "
-                        f"Resources will be deleted in 7 days if not recovered."
+                        "subscription_archive_deletion_warning",
+                        extra={"event": "subscription_archive_deletion_warning", "property_id": str(prop.get("_id")), "owner_id": owner_id, "property_name": prop.get("name")},
                     )
                     
                     # Mark warning as sent
@@ -496,10 +543,10 @@ class SubscriptionLifecycle:
                     )
                     warned_count += 1
             
-            logger.info(f"Sent {warned_count} deletion warnings")
+            logger.info("subscription_archive_deletion_warnings_sent", extra={"event": "subscription_archive_deletion_warnings_sent", "warned_count": warned_count})
             return {"warned_count": warned_count}
         except Exception as e:
-            logger.error(f"Error sending deletion warnings: {str(e)}")
+            logger.exception("subscription_archive_warning_send_failed", extra={"event": "subscription_archive_warning_send_failed", "error": str(e)})
             return {"error": "Failed to send warnings"}
 
     @staticmethod
@@ -533,25 +580,25 @@ class SubscriptionLifecycle:
             for prop in pending_properties:
                 owner_id = prop.get("ownerId") or prop.get("createdBy")
                 logger.critical(
-                    f"AUDIT CRITICAL: PERMANENTLY DELETING property {prop.get('name')} "
-                    f"(ID: {prop['_id']}, owner: {owner_id}). "
-                    f"Archived at: {prop.get('archivedAt')}, "
-                    f"Scheduled at: {prop.get('scheduledForDeletionAt')}. "
-                    f"This action is IRREVERSIBLE."
+                    "subscription_archive_permanent_delete_property",
+                    extra={
+                        "event": "subscription_archive_permanent_delete_property",
+                        "property_id": str(prop.get("_id")),
+                        "owner_id": owner_id,
+                        "property_name": prop.get("name"),
+                    },
                 )
             
             for room in pending_rooms:
                 logger.critical(
-                    f"AUDIT CRITICAL: PERMANENTLY DELETING room {room.get('roomNumber')} "
-                    f"(ID: {room['_id']}, property: {room.get('propertyId')}). "
-                    f"This action is IRREVERSIBLE."
+                    "subscription_archive_permanent_delete_room",
+                    extra={"event": "subscription_archive_permanent_delete_room", "room_id": str(room.get("_id")), "property_id": room.get("propertyId"), "room_number": room.get("roomNumber")},
                 )
             
             for tenant in pending_tenants:
                 logger.critical(
-                    f"AUDIT CRITICAL: PERMANENTLY DELETING tenant {tenant.get('name')} "
-                    f"(ID: {tenant['_id']}, property: {tenant.get('propertyId')}). "
-                    f"This action is IRREVERSIBLE."
+                    "subscription_archive_permanent_delete_tenant",
+                    extra={"event": "subscription_archive_permanent_delete_tenant", "tenant_id": str(tenant.get("_id")), "property_id": tenant.get("propertyId"), "tenant_name": tenant.get("name")},
                 )
             
             # Now perform the deletions
@@ -571,8 +618,13 @@ class SubscriptionLifecycle:
             })
             
             logger.info(
-                f"PERMANENT DELETION completed: deleted {props.deleted_count} properties, "
-                f"{rooms.deleted_count} rooms, {tenants.deleted_count} tenants"
+                "subscription_archive_permanent_delete_completed",
+                extra={
+                    "event": "subscription_archive_permanent_delete_completed",
+                    "deleted_properties": props.deleted_count,
+                    "deleted_rooms": rooms.deleted_count,
+                    "deleted_tenants": tenants.deleted_count,
+                },
             )
             
             return {
@@ -581,5 +633,5 @@ class SubscriptionLifecycle:
                 "deleted_tenants": tenants.deleted_count
             }
         except Exception as e:
-            logger.error(f"Error during permanent deletion cleanup: {str(e)}")
+            logger.exception("subscription_archive_cleanup_failed", extra={"event": "subscription_archive_cleanup_failed", "error": str(e)})
             return {"error": "Cleanup failed"}

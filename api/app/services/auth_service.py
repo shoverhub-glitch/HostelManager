@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 import time
 import logging
+import hashlib
 
 from app.database.mongodb import db
 from app.database.token_blacklist import blacklist_token, is_token_blacklisted
@@ -45,6 +46,13 @@ password_reset_otp_collection = db["password_reset_otps"]
 logger = logging.getLogger(__name__)
 
 PASSWORD_MIN_LENGTH = 8
+
+
+def _email_log_meta(email: str) -> dict:
+    normalized = (email or "").strip().lower()
+    domain = normalized.split("@", 1)[1] if "@" in normalized else "unknown"
+    email_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12] if normalized else "unknown"
+    return {"email_domain": domain, "email_hash": email_hash}
 
 
 def validate_password_strength(password: str) -> str | None:
@@ -112,7 +120,10 @@ async def register_user_service(user: UserCreate):
     otp_doc = await email_otp_collection.find_one({"email": normalized_email, "verified": True})
     if not otp_doc:
         # Log security event for audit trail
-        logger.warning("Registration attempted without email verification")
+        logger.warning(
+            "registration_without_email_verification",
+            extra={"event": "registration_without_email_verification", **_email_log_meta(normalized_email)},
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail="Email verification required. Please complete OTP verification first."
@@ -122,7 +133,10 @@ async def register_user_service(user: UserCreate):
     now = datetime.now(timezone.utc)
     verification_time = otp_doc.get("verifiedAt") or otp_doc.get("updatedAt") or otp_doc.get("createdAt")
     if not verification_time:
-        logger.warning("Missing verification timestamp during registration")
+        logger.warning(
+            "registration_missing_verification_timestamp",
+            extra={"event": "registration_missing_verification_timestamp", **_email_log_meta(normalized_email)},
+        )
         await email_otp_collection.delete_one({"email": normalized_email})
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -135,7 +149,10 @@ async def register_user_service(user: UserCreate):
     age_minutes = (now - verification_time).total_seconds() / 60
     # OTP expires in 5 minutes, so require verification within 6 minutes to be safe
     if age_minutes > 6:
-        logger.warning("Registration verification window expired")
+        logger.warning(
+            "registration_verification_window_expired",
+            extra={"event": "registration_verification_window_expired", **_email_log_meta(normalized_email)},
+        )
         await email_otp_collection.delete_one({"email": normalized_email})
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -168,7 +185,7 @@ async def register_user_service(user: UserCreate):
     await email_otp_collection.delete_one({"email": normalized_email})
     await delete_otp_attempts(normalized_email)
     
-    logger.info("User registration successful", extra={"user_id": user_id})
+    logger.info("user_registration_success", extra={"event": "user_registration_success", "user_id": user_id, **_email_log_meta(normalized_email)})
     response = _build_auth_payload(user_doc, user_id)
     return JSONResponse(status_code=status.HTTP_201_CREATED, content={"data": response})
 
@@ -180,7 +197,10 @@ async def login_user_service(data: UserLogin):
     # SECURITY: Check if account is locked due to failed attempts
     is_locked, minutes_remaining = await check_login_attempts(normalized_email)
     if is_locked:
-        logger.warning("Login blocked due to temporary lockout")
+        logger.warning(
+            "login_temporarily_locked",
+            extra={"event": "login_temporarily_locked", "minutes_remaining": minutes_remaining, **_email_log_meta(normalized_email)},
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many failed login attempts. Please try again in {minutes_remaining} minutes."
@@ -197,9 +217,15 @@ async def login_user_service(data: UserLogin):
         
         # Log failed attempt
         if user:
-            logger.warning("Failed login attempt (password mismatch)")
+            logger.warning(
+                "login_failed_password_mismatch",
+                extra={"event": "login_failed_password_mismatch", "remaining_attempts": remaining_attempts, **_email_log_meta(normalized_email)},
+            )
         else:
-            logger.warning("Failed login attempt (unknown email)")
+            logger.warning(
+                "login_failed_unknown_email",
+                extra={"event": "login_failed_unknown_email", "remaining_attempts": remaining_attempts, **_email_log_meta(normalized_email)},
+            )
         
         if failed_count >= 5:
             raise HTTPException(
@@ -215,16 +241,16 @@ async def login_user_service(data: UserLogin):
 
     # SECURITY: Additional user validation checks
     if user.get("isDeleted"):
-        logger.warning("Login attempt on deleted account")
+        logger.warning("login_deleted_account", extra={"event": "login_deleted_account", **_email_log_meta(normalized_email)})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is no longer available")
 
     if user.get("isDisabled"):
-        logger.warning("Login attempt on disabled account")
+        logger.warning("login_disabled_account", extra={"event": "login_disabled_account", **_email_log_meta(normalized_email)})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled. Contact support.")
 
     # Check if account requires email verification (optional for some users)
     if user.get("requiresEmailVerification") and not user.get("isEmailVerified"):
-        logger.warning("Login attempt on unverified account")
+        logger.warning("login_unverified_account", extra={"event": "login_unverified_account", **_email_log_meta(normalized_email)})
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
             detail="Please verify your email before logging in. Check your inbox for verification link."
@@ -243,7 +269,7 @@ async def login_user_service(data: UserLogin):
     user_id = str(user["_id"])
     
     # Log successful login
-    logger.info("User login successful", extra={"user_id": user_id})
+    logger.info("user_login_success", extra={"event": "user_login_success", "user_id": user_id, **_email_log_meta(normalized_email)})
     
     response = _build_auth_payload(user, user_id)
     return JSONResponse(status_code=status.HTTP_200_OK, content={"data": response})
@@ -261,7 +287,10 @@ async def send_email_otp_service(email: str):
     if existing_user:
         # Email already has an account - prevent duplicate registration
         auth_provider = existing_user.get("authProvider", "email")
-        logger.warning("Re-registration attempt blocked for existing email", extra={"auth_provider": auth_provider})
+        logger.warning(
+            "registration_blocked_existing_email",
+            extra={"event": "registration_blocked_existing_email", "auth_provider": auth_provider, **_email_log_meta(normalized_email)},
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered. Please login with your existing account instead."
@@ -270,6 +299,10 @@ async def send_email_otp_service(email: str):
     # Check resend cooldown (for existing OTP requests, not for first request)
     cooldown_remaining = await get_resend_cooldown_remaining(normalized_email)
     if cooldown_remaining > 0:
+        logger.warning(
+            "registration_otp_cooldown_active",
+            extra={"event": "registration_otp_cooldown_active", "cooldown_seconds": cooldown_remaining, **_email_log_meta(normalized_email)},
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Please wait {cooldown_remaining} seconds before requesting another OTP"
@@ -285,9 +318,13 @@ async def send_email_otp_service(email: str):
     
     # Generate OTP and store in memory
     otp, is_new = await generate_and_store_otp(normalized_email, "registration")
+    logger.info(
+        "registration_otp_generated",
+        extra={"event": "registration_otp_generated", "is_new": bool(is_new), **_email_log_meta(normalized_email)},
+    )
 
     if settings.DEMO_MODE:
-        logger.info("DEMO MODE: OTP not sent via email", extra={"otp": otp})
+        logger.info("registration_otp_demo_mode", extra={"event": "registration_otp_demo_mode", **_email_log_meta(normalized_email)})
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -304,12 +341,13 @@ async def send_email_otp_service(email: str):
     
     if not email_sent:
         await delete_otp(normalized_email)
-        logger.error("Failed to send registration OTP email")
+        logger.error("registration_otp_email_send_failed", extra={"event": "registration_otp_email_send_failed", **_email_log_meta(normalized_email)})
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to send OTP right now. Please try again shortly."
         )
 
+    logger.info("registration_otp_email_sent", extra={"event": "registration_otp_email_sent", **_email_log_meta(normalized_email)})
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
@@ -329,6 +367,10 @@ async def verify_email_otp_service(email: str, otp: str, otp_type: str = "regist
 
     is_locked, minutes_remaining = await check_otp_attempts(normalized_email)
     if is_locked:
+        logger.warning(
+            "otp_verification_temporarily_locked",
+            extra={"event": "otp_verification_temporarily_locked", "otp_type": otp_type, "minutes_remaining": minutes_remaining, **_email_log_meta(normalized_email)},
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many failed OTP attempts. Please try again in {minutes_remaining} minutes."
@@ -338,6 +380,10 @@ async def verify_email_otp_service(email: str, otp: str, otp_type: str = "regist
     is_valid, error_message = await verify_otp(normalized_email, otp, otp_type=otp_type)
     if not is_valid:
         failed_count = await increment_otp_attempts(normalized_email)
+        logger.warning(
+            "otp_verification_failed",
+            extra={"event": "otp_verification_failed", "otp_type": otp_type, "failed_count": failed_count, **_email_log_meta(normalized_email)},
+        )
         if failed_count >= 5:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -346,6 +392,7 @@ async def verify_email_otp_service(email: str, otp: str, otp_type: str = "regist
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_message)
 
     await reset_otp_attempts(normalized_email)
+    logger.info("otp_verification_success", extra={"event": "otp_verification_success", "otp_type": otp_type, **_email_log_meta(normalized_email)})
 
     if otp_type == "registration":
         # Mark OTP as verified in registration flow
@@ -469,6 +516,10 @@ async def forgot_password_service(email: str):
     # Check resend cooldown
     cooldown_remaining = await get_resend_cooldown_remaining(normalized_email)
     if cooldown_remaining > 0:
+        logger.warning(
+            "password_reset_otp_cooldown_active",
+            extra={"event": "password_reset_otp_cooldown_active", "cooldown_seconds": cooldown_remaining, **_email_log_meta(normalized_email)},
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Please wait {cooldown_remaining} seconds before requesting another OTP"
@@ -477,6 +528,7 @@ async def forgot_password_service(email: str):
     # Verify user exists (but don't reveal this for security)
     user = await users_collection.find_one({"email": normalized_email})
     if not user:
+        logger.info("password_reset_requested_unknown_email", extra={"event": "password_reset_requested_unknown_email", **_email_log_meta(normalized_email)})
         # For security, return generic message even if email not found
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -490,8 +542,12 @@ async def forgot_password_service(email: str):
     # Generate OTP and store in memory with type password_reset
     otp, is_new = await generate_and_store_otp(normalized_email, "password_reset")
     await delete_otp_attempts(normalized_email)
+    logger.info(
+        "password_reset_otp_generated",
+        extra={"event": "password_reset_otp_generated", "is_new": bool(is_new), **_email_log_meta(normalized_email)},
+    )
     if settings.DEMO_MODE:
-        logger.info("DEMO MODE: Password reset OTP bypassed")
+        logger.info("password_reset_otp_demo_mode", extra={"event": "password_reset_otp_demo_mode", **_email_log_meta(normalized_email)})
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -511,12 +567,13 @@ async def forgot_password_service(email: str):
     
     if not email_sent:
         await delete_otp(normalized_email)
-        logger.error("Failed to send password reset OTP email")
+        logger.error("password_reset_otp_email_send_failed", extra={"event": "password_reset_otp_email_send_failed", **_email_log_meta(normalized_email)})
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to send password reset OTP right now. Please try again shortly."
         )
 
+    logger.info("password_reset_otp_email_sent", extra={"event": "password_reset_otp_email_sent", **_email_log_meta(normalized_email)})
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
@@ -576,6 +633,7 @@ async def reset_password_service(email: str, otp: str, new_password: str):
     # Delete the OTP from memory after successful reset
     await delete_otp(normalized_email)
     await delete_otp_attempts(normalized_email)
+    logger.info("password_reset_success", extra={"event": "password_reset_success", "user_id": str(user.get("_id")), **_email_log_meta(normalized_email)})
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
@@ -634,6 +692,8 @@ async def change_password_service(request: Request, old_password: str, new_passw
             }
         },
     )
+
+    logger.info("password_change_success", extra={"event": "password_change_success", "user_id": str(user_id)})
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,

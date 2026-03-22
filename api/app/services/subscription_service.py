@@ -24,7 +24,7 @@ def format_price_text(price_paise: int) -> str:
 class SubscriptionService:
     @staticmethod
     async def get_subscription(owner_id: str):
-        """Get active subscription for owner, creating default if not exists"""
+        """Get active subscription for owner, creating default free if none is active."""
         try:
             # Plan order for sorting: premium > pro > free
             # Since we can't easily sort by a custom map in MongoDB find_one,
@@ -38,18 +38,7 @@ class SubscriptionService:
                 docs.sort(key=lambda x: plan_order.get(str(x.get("plan", "")).lower(), -1), reverse=True)
                 return Subscription(**docs[0])
         except Exception as e:
-            logger.error(f"Error retrieving subscription: {str(e)}")
-        
-        # If not found or error, check if any subscription exists at all
-        existing_any = await db["subscriptions"].find_one({"ownerId": owner_id})
-        if existing_any:
-            # If one exists but isn't active, activate it or return it
-            await db["subscriptions"].update_one(
-                {"_id": existing_any["_id"]},
-                {"$set": {"status": "active", "updatedAt": datetime.now(timezone.utc).isoformat()}}
-            )
-            existing_any["status"] = "active"
-            return Subscription(**existing_any)
+            logger.exception("subscription_get_failed", extra={"event": "subscription_get_failed", "owner_id": owner_id, "error": str(e)})
 
         # If truly not found, create default free subscription
         now = datetime.now(timezone.utc).isoformat()
@@ -89,7 +78,7 @@ class SubscriptionService:
                 upsert=True
             )
         except Exception as e:
-            logger.error(f"Error creating default subscription: {str(e)}")
+            logger.exception("subscription_default_create_failed", extra={"event": "subscription_default_create_failed", "owner_id": owner_id, "error": str(e)})
         return sub
 
     @staticmethod
@@ -182,7 +171,7 @@ class SubscriptionService:
             raise ValueError("Failed to update or create subscription")
             
         except Exception as e:
-            logger.error(f"Error updating subscription for {owner_id} to {plan}: {str(e)}")
+            logger.exception("subscription_update_failed", extra={"event": "subscription_update_failed", "owner_id": owner_id, "plan": plan, "period": period, "error": str(e)})
             raise ValueError(f"Failed to update subscription: {str(e)}")
 
     @staticmethod
@@ -217,7 +206,7 @@ class SubscriptionService:
                 updatedAt=now
             )
         except Exception as e:
-            logger.error(f"Error getting usage for {owner_id}: {str(e)}")
+            logger.exception("subscription_usage_get_failed", extra={"event": "subscription_usage_get_failed", "owner_id": owner_id, "error": str(e)})
             # Return zero usage on error so user can still access the system
             now = datetime.now(timezone.utc).isoformat()
             return Usage(
@@ -251,6 +240,7 @@ class SubscriptionService:
         async for plan_doc in cursor:
             plan_info = {
                 'name': plan_doc['name'],
+                'display_name': plan_doc.get('display_name', plan_doc['name'].title() + ' Plan'),
                 'properties': plan_doc['properties'],
                 'tenants': plan_doc['tenants'],
                 'rooms': plan_doc['rooms'],
@@ -288,7 +278,7 @@ class SubscriptionService:
             property_count = len(property_ids)
             tenant_count = await db["tenants"].count_documents({"propertyId": {"$in": property_ids}}) if property_ids else 0
         except Exception as e:
-            logger.error(f"Error counting resources: {str(e)}")
+            logger.exception("subscription_downgrade_eligibility_failed", extra={"event": "subscription_downgrade_eligibility_failed", "owner_id": owner_id, "error": str(e)})
             return {
                 "can_downgrade": False,
                 "current": {"properties": 0, "tenants": 0},
@@ -387,7 +377,7 @@ class SubscriptionService:
                 upsert=True
             )
             
-            logger.info(f"✓ Created default free subscription for user {owner_id}")
+            logger.info("subscription_default_created", extra={"event": "subscription_default_created", "owner_id": owner_id, "plan": "free"})
             
             return {
                 "success": True,
@@ -397,7 +387,7 @@ class SubscriptionService:
                 "message": "Free subscription created successfully"
             }
         except Exception as e:
-            logger.error(f"Error creating default subscription for {owner_id}: {str(e)}")
+            logger.exception("subscription_default_create_failed", extra={"event": "subscription_default_create_failed", "owner_id": owner_id, "error": str(e)})
             return {
                 "success": False,
                 "user_id": owner_id,
@@ -426,7 +416,7 @@ class SubscriptionService:
             )
             return result.modified_count > 0
         except Exception as e:
-            logger.error(f"Error enabling auto-renewal for {owner_id}: {str(e)}")
+            logger.exception("subscription_auto_renew_enable_failed", extra={"event": "subscription_auto_renew_enable_failed", "owner_id": owner_id, "error": str(e)})
             raise
 
     @staticmethod
@@ -450,7 +440,7 @@ class SubscriptionService:
             )
             return result.modified_count > 0
         except Exception as e:
-            logger.error(f"Error disabling auto-renewal for {owner_id}: {str(e)}")
+            logger.exception("subscription_auto_renew_disable_failed", extra={"event": "subscription_auto_renew_disable_failed", "owner_id": owner_id, "error": str(e)})
             raise
 
     @staticmethod
@@ -482,7 +472,7 @@ class SubscriptionService:
                         sub['razorpaySubscriptionId']
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to cancel Razorpay subscription: {str(e)}")
+                    logger.warning("subscription_cancel_razorpay_cancel_failed", extra={"event": "subscription_cancel_razorpay_cancel_failed", "owner_id": owner_id, "error": str(e)})
                     # Continue anyway to mark subscription as cancelled
             
             # Downgrade to free plan
@@ -514,7 +504,7 @@ class SubscriptionService:
                 }}
             )
             
-            logger.info(f"✓ Subscription cancelled for user {owner_id}")
+            logger.info("subscription_cancelled_to_free", extra={"event": "subscription_cancelled_to_free", "owner_id": owner_id, "plan": "free"})
             
             return {
                 "success": True,
@@ -523,5 +513,5 @@ class SubscriptionService:
             }
             
         except Exception as e:
-            logger.error(f"Error cancelling subscription for {owner_id}: {str(e)}")
+            logger.exception("subscription_cancel_failed", extra={"event": "subscription_cancel_failed", "owner_id": owner_id, "error": str(e)})
             raise

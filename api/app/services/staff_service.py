@@ -2,6 +2,10 @@ from app.models.staff_schema import Staff, StaffOut, StaffCreate, StaffUpdate
 from app.database.mongodb import getCollection
 from datetime import datetime, timezone
 from bson import ObjectId
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class StaffService:
@@ -38,6 +42,20 @@ class StaffService:
             "_id", -1
         ).to_list(length=limit)
 
+        logger.info(
+            "staff_list_success",
+            extra={
+                "event": "staff_list_success",
+                "property_id": property_id,
+                "search": bool(search),
+                "role": role,
+                "skip": skip,
+                "limit": limit,
+                "total": total,
+                "count": len(staff_list),
+            },
+        )
+
         return [
             self._convert_to_out(staff) for staff in staff_list
         ], total
@@ -47,7 +65,8 @@ class StaffService:
         try:
             staff = await self.collection.find_one({"_id": ObjectId(staff_id)})
             return self._convert_to_out(staff) if staff else None
-        except Exception:
+        except Exception as e:
+            logger.warning("staff_get_invalid_id", extra={"event": "staff_get_invalid_id", "staff_id": staff_id, "error": str(e)})
             return None
 
     async def create_staff(self, staff_data: dict) -> StaffOut:
@@ -58,6 +77,15 @@ class StaffService:
 
         result = await self.collection.insert_one(staff_data)
         created_staff = await self.collection.find_one({"_id": result.inserted_id})
+        logger.info(
+            "staff_created",
+            extra={
+                "event": "staff_created",
+                "staff_id": str(result.inserted_id),
+                "property_id": staff_data.get("propertyId"),
+                "role": staff_data.get("role"),
+            },
+        )
         return self._convert_to_out(created_staff)
 
     async def update_staff(self, staff_id: str, staff_data: dict) -> StaffOut:
@@ -70,8 +98,19 @@ class StaffService:
                 {"$set": staff_data},
                 return_document=True,
             )
+            if result:
+                logger.info(
+                    "staff_updated",
+                    extra={
+                        "event": "staff_updated",
+                        "staff_id": staff_id,
+                        "property_id": result.get("propertyId"),
+                        "updated_fields": list(staff_data.keys()),
+                    },
+                )
             return self._convert_to_out(result) if result else None
-        except Exception:
+        except Exception as e:
+            logger.warning("staff_update_invalid_id", extra={"event": "staff_update_invalid_id", "staff_id": staff_id, "error": str(e)})
             return None
 
     async def delete_staff(self, staff_id: str) -> bool:
@@ -85,8 +124,12 @@ class StaffService:
             result = await self.collection.update_one(
                 {"_id": ObjectId(staff_id)}, {"$set": update_data}
             )
-            return result.modified_count > 0
-        except Exception:
+            deleted = result.modified_count > 0
+            if deleted:
+                logger.info("staff_archived", extra={"event": "staff_archived", "staff_id": staff_id})
+            return deleted
+        except Exception as e:
+            logger.warning("staff_delete_invalid_id", extra={"event": "staff_delete_invalid_id", "staff_id": staff_id, "error": str(e)})
             return False
 
     async def restore_staff(self, staff_id: str) -> StaffOut:
@@ -100,8 +143,11 @@ class StaffService:
             result = await self.collection.find_one_and_update(
                 {"_id": ObjectId(staff_id)}, {"$set": update_data}, return_document=True
             )
+            if result:
+                logger.info("staff_restored", extra={"event": "staff_restored", "staff_id": staff_id, "property_id": result.get("propertyId")})
             return self._convert_to_out(result) if result else None
-        except Exception:
+        except Exception as e:
+            logger.warning("staff_restore_invalid_id", extra={"event": "staff_restore_invalid_id", "staff_id": staff_id, "error": str(e)})
             return None
 
     async def get_deleted_staff(
@@ -116,6 +162,18 @@ class StaffService:
         staff_list = await self.collection.find(query).skip(skip).limit(limit).sort(
             "deletedAt", -1
         ).to_list(length=limit)
+
+        logger.info(
+            "staff_archived_list_success",
+            extra={
+                "event": "staff_archived_list_success",
+                "property_id": property_id,
+                "skip": skip,
+                "limit": limit,
+                "total": total,
+                "count": len(staff_list),
+            },
+        )
 
         return [
             self._convert_to_out(staff) for staff in staff_list

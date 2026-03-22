@@ -1,11 +1,15 @@
 
 import uuid
+import logging
 from app.database.mongodb import db
 from app.models.property_schema import PropertyOut
 from app.utils.ownership import build_owner_query, normalize_property_owners
 from typing import List
 from datetime import datetime, timezone
 from bson import ObjectId
+
+
+logger = logging.getLogger(__name__)
 
 class PropertyService:
     def __init__(self):
@@ -27,6 +31,15 @@ class PropertyService:
         await self.db["users"].update_one(
             {"_id": ObjectId(owner_id)},
             {"$addToSet": {"propertyIds": doc["id"]}}
+        )
+        logger.info(
+            "property_created",
+            extra={
+                "event": "property_created",
+                "property_id": doc.get("id"),
+                "owner_id": owner_id,
+                "property_name": doc.get("name"),
+            },
         )
         return PropertyOut(**doc)
 
@@ -67,6 +80,18 @@ class PropertyService:
                 )
 
             properties.append(PropertyOut(**doc))
+
+        logger.info(
+            "property_list_success",
+            extra={
+                "event": "property_list_success",
+                "owner_id": user_id,
+                "skip": skip,
+                "limit": limit,
+                "count": len(properties),
+                "total": total,
+            },
+        )
         
         return properties, total
 
@@ -77,65 +102,114 @@ class PropertyService:
             updates.pop(protected_key, None)
         updates["updatedAt"] = now
 
-        match_query = {"_id": ObjectId(property_id), "isDeleted": {"$ne": True}, **build_owner_query(owner_id)}
-        existing = await self.db["properties"].find_one(match_query)
-        if not existing:
+        try:
+            object_id = ObjectId(property_id)
+        except Exception as e:
+            logger.warning(
+                "property_update_invalid_id",
+                extra={"event": "property_update_invalid_id", "property_id": property_id, "owner_id": owner_id, "error": str(e)},
+            )
             return None
 
-        await self.db["properties"].update_one({"_id": ObjectId(property_id)}, {"$set": updates})
-        doc = await self.db["properties"].find_one({"_id": ObjectId(property_id)})
+        match_query = {"_id": object_id, "isDeleted": {"$ne": True}, **build_owner_query(owner_id)}
+        existing = await self.db["properties"].find_one(match_query)
+        if not existing:
+            logger.warning(
+                "property_update_not_found_or_forbidden",
+                extra={"event": "property_update_not_found_or_forbidden", "property_id": property_id, "owner_id": owner_id},
+            )
+            return None
+
+        await self.db["properties"].update_one({"_id": object_id}, {"$set": updates})
+        doc = await self.db["properties"].find_one({"_id": object_id})
         if not doc:
             return None
         doc["id"] = str(doc["_id"])
         normalize_property_owners(doc, fallback_owner_id=owner_id)
+        logger.info(
+            "property_updated",
+            extra={
+                "event": "property_updated",
+                "property_id": property_id,
+                "owner_id": owner_id,
+                "updated_fields": list(updates.keys()),
+            },
+        )
         return PropertyOut(**doc)
 
     async def delete_property(self, property_id: str, owner_id: str) -> dict:
-        match_query = {"_id": ObjectId(property_id), "isDeleted": {"$ne": True}, **build_owner_query(owner_id)}
+        try:
+            object_id = ObjectId(property_id)
+        except Exception as e:
+            logger.warning(
+                "property_delete_invalid_id",
+                extra={"event": "property_delete_invalid_id", "property_id": property_id, "owner_id": owner_id, "error": str(e)},
+            )
+            return {"success": False, "propertyId": property_id}
+
+        match_query = {"_id": object_id, "isDeleted": {"$ne": True}, **build_owner_query(owner_id)}
         existing = await self.db["properties"].find_one(match_query)
         if not existing:
+            logger.warning(
+                "property_delete_not_found_or_forbidden",
+                extra={"event": "property_delete_not_found_or_forbidden", "property_id": property_id, "owner_id": owner_id},
+            )
             return {"success": False, "propertyId": property_id}
 
         now = datetime.now(timezone.utc).isoformat()
 
         # Soft delete all related data
         # 1. Soft delete all tenants for this property
-        await self.db["tenants"].update_many(
+        tenants_result = await self.db["tenants"].update_many(
             {"propertyId": property_id}, 
             {"$set": {"isDeleted": True, "updatedAt": now}}
         )
         
         # 2. Soft delete all payments for this property
-        await self.db["payments"].update_many(
+        payments_result = await self.db["payments"].update_many(
             {"propertyId": property_id}, 
             {"$set": {"isDeleted": True, "updatedAt": now}}
         )
         
         # 3. Soft delete all beds for this property
-        await self.db["beds"].update_many(
+        beds_result = await self.db["beds"].update_many(
             {"propertyId": property_id}, 
             {"$set": {"isDeleted": True, "updatedAt": now}}
         )
         
         # 4. Soft delete all rooms for this property
-        await self.db["rooms"].update_many(
+        rooms_result = await self.db["rooms"].update_many(
             {"propertyId": property_id}, 
             {"$set": {"isDeleted": True, "updatedAt": now}}
         )
         
         # 5. Soft delete all staff for this property
-        await self.db["staff"].update_many(
+        staff_result = await self.db["staff"].update_many(
             {"propertyId": property_id}, 
             {"$set": {"isDeleted": True, "updatedAt": now}}
         )
 
         # Soft delete the property itself
         await self.db["properties"].update_one(
-            {"_id": ObjectId(property_id)}, 
+            {"_id": object_id}, 
             {"$set": {"isDeleted": True, "updatedAt": now}}
         )
         
         # Remove property ID from all users
         await self.db["users"].update_many({}, {"$pull": {"propertyIds": property_id}})
+
+        logger.info(
+            "property_deleted_with_cascade",
+            extra={
+                "event": "property_deleted_with_cascade",
+                "property_id": property_id,
+                "owner_id": owner_id,
+                "tenants_deleted": tenants_result.modified_count,
+                "payments_deleted": payments_result.modified_count,
+                "beds_deleted": beds_result.modified_count,
+                "rooms_deleted": rooms_result.modified_count,
+                "staff_deleted": staff_result.modified_count,
+            },
+        )
         
         return {"success": True, "propertyId": property_id}

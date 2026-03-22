@@ -32,6 +32,9 @@ import {
   RazorpayCheckoutSession,
   VerifyPaymentRequest,
   VerifyPaymentResponse,
+    RazorpayCreateSubscriptionResponse,
+    VerifySubscriptionRequest,
+    VerifySubscriptionResponse,
   DashboardStats,
   QuotaWarningsResponse,
   ArchivedResourcesResponse,
@@ -836,6 +839,19 @@ export const subscriptionService = {
   async cancelSubscription(): Promise<ApiResponse<Subscription>> {
     return await request<Subscription>('POST', '/subscription/cancel', {}, true) as ApiResponse<Subscription>;
   },
+
+  async createSubscription(
+    plan: string,
+    period: number = 1
+  ): Promise<ApiResponse<RazorpayCreateSubscriptionResponse>> {
+    return await request<RazorpayCreateSubscriptionResponse>('POST', '/subscription/create-subscription', { plan, period }, true) as ApiResponse<RazorpayCreateSubscriptionResponse>;
+  },
+
+  async verifySubscription(
+    data: VerifySubscriptionRequest
+  ): Promise<ApiResponse<VerifySubscriptionResponse>> {
+    return await request<VerifySubscriptionResponse>('POST', '/subscription/verify-subscription', data, true) as ApiResponse<VerifySubscriptionResponse>;
+  },
 };
 
 export const couponService = {
@@ -852,7 +868,7 @@ export const couponService = {
       'GET',
       `/coupons/validate/${encodeURIComponent(code)}?${params.toString()}`,
       undefined,
-      false
+      true
     ) as ApiResponse<{ isValid: boolean; message: string; originalAmount?: number; discountAmount?: number; finalAmount?: number }>;
   },
 
@@ -865,7 +881,7 @@ export const couponService = {
       'POST',
       '/coupons/apply',
       { code, amount, plan },
-      false
+      true
     ) as ApiResponse<{ isValid: boolean; message: string; originalAmount: number; discountAmount: number; finalAmount: number }>;
   },
 };

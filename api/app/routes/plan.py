@@ -6,6 +6,7 @@ All property owners will use these centrally managed plans.
 
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
+import logging
 
 from app.models.plan_schema import Plan, PlanCreate, PlanUpdate
 from app.services.plan_service import PlanService
@@ -13,6 +14,7 @@ from app.utils.helpers import require_admin_user
 
 
 router = APIRouter(prefix="/admin/plans", tags=["Admin - Plans"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=Plan, status_code=status.HTTP_201_CREATED)
@@ -49,13 +51,16 @@ async def create_plan(
     """
     try:
         plan = await PlanService.create_plan(plan_data)
+        logger.info("plan_route_create_success", extra={"event": "plan_route_create_success", "plan_name": plan.name})
         return plan
     except ValueError as e:
+        logger.warning("plan_route_create_validation_failed", extra={"event": "plan_route_create_validation_failed", "plan_name": plan_data.name, "error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
+        logger.exception("plan_route_create_failed", extra={"event": "plan_route_create_failed", "plan_name": plan_data.name, "error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create plan: {str(e)}"
@@ -77,8 +82,10 @@ async def list_plans(
     """
     try:
         plans = await PlanService.get_all_plans(active_only=active_only)
+        logger.info("plan_route_list_success", extra={"event": "plan_route_list_success", "active_only": active_only, "count": len(plans)})
         return plans
     except Exception as e:
+        logger.exception("plan_route_list_failed", extra={"event": "plan_route_list_failed", "active_only": active_only, "error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch plans: {str(e)}"
@@ -99,8 +106,10 @@ async def get_plan_stats(
     """
     try:
         stats = await PlanService.get_plan_stats()
+        logger.info("plan_route_stats_success", extra={"event": "plan_route_stats_success"})
         return stats
     except Exception as e:
+        logger.exception("plan_route_stats_failed", extra={"event": "plan_route_stats_failed", "error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch stats: {str(e)}"
@@ -119,10 +128,12 @@ async def get_plan(
     """
     plan = await PlanService.get_plan_by_name(plan_name)
     if not plan:
+        logger.warning("plan_route_get_not_found", extra={"event": "plan_route_get_not_found", "plan_name": plan_name.lower()})
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Plan '{plan_name}' not found"
         )
+    logger.info("plan_route_get_success", extra={"event": "plan_route_get_success", "plan_name": plan_name.lower()})
     return plan
 
 
@@ -154,17 +165,21 @@ async def update_plan(
     try:
         updated_plan = await PlanService.update_plan(plan_name, update_data)
         if not updated_plan:
+            logger.warning("plan_route_update_not_found", extra={"event": "plan_route_update_not_found", "plan_name": plan_name.lower()})
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Plan '{plan_name}' not found"
             )
+        logger.info("plan_route_update_success", extra={"event": "plan_route_update_success", "plan_name": plan_name.lower()})
         return updated_plan
     except ValueError as e:
+        logger.warning("plan_route_update_validation_failed", extra={"event": "plan_route_update_validation_failed", "plan_name": plan_name.lower(), "error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
+        logger.exception("plan_route_update_failed", extra={"event": "plan_route_update_failed", "plan_name": plan_name.lower(), "error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update plan: {str(e)}"
@@ -185,17 +200,21 @@ async def delete_plan(
     try:
         deleted = await PlanService.delete_plan(plan_name)
         if not deleted:
+            logger.warning("plan_route_delete_not_found", extra={"event": "plan_route_delete_not_found", "plan_name": plan_name.lower()})
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Plan '{plan_name}' not found"
             )
+        logger.info("plan_route_delete_success", extra={"event": "plan_route_delete_success", "plan_name": plan_name.lower()})
         return {"success": True, "message": f"Plan '{plan_name}' deleted successfully"}
     except ValueError as e:
+        logger.warning("plan_route_delete_validation_failed", extra={"event": "plan_route_delete_validation_failed", "plan_name": plan_name.lower(), "error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
+        logger.exception("plan_route_delete_failed", extra={"event": "plan_route_delete_failed", "plan_name": plan_name.lower(), "error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete plan: {str(e)}"
@@ -214,10 +233,12 @@ async def activate_plan(
     """
     plan = await PlanService.activate_plan(plan_name)
     if not plan:
+        logger.warning("plan_route_activate_not_found", extra={"event": "plan_route_activate_not_found", "plan_name": plan_name.lower()})
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Plan '{plan_name}' not found"
         )
+    logger.info("plan_route_activate_success", extra={"event": "plan_route_activate_success", "plan_name": plan_name.lower()})
     return plan
 
 
@@ -235,12 +256,15 @@ async def deactivate_plan(
     try:
         plan = await PlanService.deactivate_plan(plan_name)
         if not plan:
+            logger.warning("plan_route_deactivate_not_found", extra={"event": "plan_route_deactivate_not_found", "plan_name": plan_name.lower()})
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Plan '{plan_name}' not found"
             )
+        logger.info("plan_route_deactivate_success", extra={"event": "plan_route_deactivate_success", "plan_name": plan_name.lower()})
         return plan
     except ValueError as e:
+        logger.warning("plan_route_deactivate_validation_failed", extra={"event": "plan_route_deactivate_validation_failed", "plan_name": plan_name.lower(), "error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
@@ -259,12 +283,14 @@ async def initialize_default_plans(
     """
     try:
         created_count = await PlanService.create_default_plans()
+        logger.info("plan_route_initialize_success", extra={"event": "plan_route_initialize_success", "created_count": created_count})
         return {
             "success": True,
             "message": f"Created {created_count} default plans" if created_count > 0 else "Plans already exist",
             "plans_created": created_count
         }
     except Exception as e:
+        logger.exception("plan_route_initialize_failed", extra={"event": "plan_route_initialize_failed", "error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to initialize plans: {str(e)}"

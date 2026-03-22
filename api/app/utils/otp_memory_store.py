@@ -11,6 +11,27 @@ OTP_TTL_MINUTES = 5
 RESEND_COOLDOWN_SECONDS = 45
 
 
+def _as_utc_aware(value: Optional[datetime | str]) -> Optional[datetime]:
+    """Normalize datetime values from MongoDB/JSON to UTC-aware datetimes."""
+    if not value:
+        return None
+
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+    if not isinstance(value, datetime):
+        return None
+
+    # MongoDB drivers may return naive UTC datetimes depending on client config.
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+
+    return value.astimezone(timezone.utc)
+
+
 async def generate_and_store_otp(email: str, otp_type: str = "registration") -> Tuple[str, bool]:
     """
     Generate and store OTP in MongoDB with resend cooldown
@@ -31,17 +52,14 @@ async def generate_and_store_otp(email: str, otp_type: str = "registration") -> 
     if existing:
         # Check resend cooldown regardless of OTP type to prevent bypass by
         # alternating between registration and password_reset request types.
-        resend_cooldown_expires = existing.get("resend_cooldown_expires_at")
-        if resend_cooldown_expires:
-            if isinstance(resend_cooldown_expires, str):
-                resend_cooldown_expires = datetime.fromisoformat(resend_cooldown_expires)
-            if resend_cooldown_expires > now:
-                # Still in cooldown — return existing OTP only if type matches
-                existing_type = existing.get("otp_type", "registration")
-                if existing_type == otp_type:
-                    return existing.get("otp", ""), False
-                # Different type requested during cooldown: deny resend
-                return "", False
+        resend_cooldown_expires = _as_utc_aware(existing.get("resend_cooldown_expires_at"))
+        if resend_cooldown_expires and resend_cooldown_expires > now:
+            # Still in cooldown — return existing OTP only if type matches
+            existing_type = existing.get("otp_type", "registration")
+            if existing_type == otp_type:
+                return existing.get("otp", ""), False
+            # Different type requested during cooldown: deny resend
+            return "", False
     
     # Generate cryptographically secure 6-digit OTP
     if settings.DEMO_MODE:
@@ -84,7 +102,7 @@ async def get_otp(email: str) -> Optional[dict]:
         return None
     
     now = datetime.now(timezone.utc)
-    expires_at = doc.get("expires_at")
+    expires_at = _as_utc_aware(doc.get("expires_at"))
     
     # Check expiration
     if expires_at and expires_at < now:
@@ -127,13 +145,13 @@ async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tu
     now = datetime.now(timezone.utc)
     
     # Check expiration
-    expires_at = stored.get("expires_at")
+    expires_at = _as_utc_aware(stored.get("expires_at"))
     if expires_at and expires_at < now:
         await db[OTP_COLLECTION].delete_one({"email": normalized_email})
         return False, "OTP expired. Please request a new OTP"
 
     # Enforce temporary lock before evaluating OTP match.
-    locked_until = stored.get("locked_until")
+    locked_until = _as_utc_aware(stored.get("locked_until"))
     if locked_until:
         if locked_until > now:
             remaining_seconds = int((locked_until - now).total_seconds())
@@ -185,7 +203,7 @@ async def get_resend_cooldown_remaining(email: str) -> int:
     if not doc:
         return 0
     
-    resend_cooldown_expires = doc.get("resend_cooldown_expires_at")
+    resend_cooldown_expires = _as_utc_aware(doc.get("resend_cooldown_expires_at"))
     if not resend_cooldown_expires:
         return 0
     

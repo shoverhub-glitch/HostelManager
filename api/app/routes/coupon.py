@@ -167,7 +167,8 @@ async def delete_coupon(
 async def validate_coupon(
     code: str,
     amount: int = Query(..., description="Amount in paise"),
-    plan: Optional[str] = Query(None, description="Plan name (optional)")
+    plan: Optional[str] = Query(None, description="Plan name (optional)"),
+    user_id: str = Depends(get_current_user)
 ):
     """
     Public endpoint: Validate coupon and get discount details

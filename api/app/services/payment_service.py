@@ -3,13 +3,21 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from ..models.payment_schema import Payment, PaymentCreate, PaymentStatus, format_amount_paise, parse_amount_to_paise
 from app.database.mongodb import getCollection
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 class PaymentService:
     def __init__(self):
         self.collection = getCollection("payments")
 
     async def get_payment_by_id(self, payment_id: str) -> Optional[Payment]:
-        payment = await self.collection.find_one({"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}})
+        try:
+            payment = await self.collection.find_one({"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}})
+        except Exception as e:
+            logger.warning("payment_get_invalid_id", extra={"event": "payment_get_invalid_id", "payment_id": payment_id, "error": str(e)})
+            return None
         if payment:
             payment["id"] = str(payment["_id"])
             return Payment(**payment)
@@ -45,6 +53,16 @@ class PaymentService:
             # Format amount for response
             payment_dict["amount"] = format_amount_paise(payment_dict["amountPaise"])
             payment_dict.pop("amountPaise", None)
+            logger.info(
+                "payment_created",
+                extra={
+                    "event": "payment_created",
+                    "payment_id": payment_dict["id"],
+                    "tenant_id": payment_dict.get("tenantId"),
+                    "property_id": payment_dict.get("propertyId"),
+                    "status": payment_dict.get("status"),
+                },
+            )
             return Payment(**payment_dict)
         except DuplicateKeyError:
             # Payment already exists for this tenant on this due date
@@ -59,6 +77,15 @@ class PaymentService:
                 # Format amount for response
                 existing["amount"] = format_amount_paise(existing.get("amountPaise", existing.get("amount", 0)))
                 existing.pop("amountPaise", None)
+                logger.info(
+                    "payment_create_duplicate_return_existing",
+                    extra={
+                        "event": "payment_create_duplicate_return_existing",
+                        "tenant_id": payment_dict.get("tenantId"),
+                        "property_id": payment_dict.get("propertyId"),
+                        "due_date": payment_dict.get("dueDate"),
+                    },
+                )
                 return Payment(**existing)
             raise
 
@@ -91,15 +118,28 @@ class PaymentService:
             elif p["status"] == PaymentStatus.DUE.value:
                 pending += amount_paise
         
-        return {
+        stats = {
             'collected': format_amount_paise(collected),
             'pending': format_amount_paise(pending),
         }
+        logger.info(
+            "payment_stats_computed",
+            extra={
+                "event": "payment_stats_computed",
+                "payments_count": len(payments),
+                "scoped_properties": len(property_ids) if property_ids is not None else None,
+            },
+        )
+        return stats
 
     async def update_payment(self, payment_id: str, payment_update) -> Optional[Payment]:
         from datetime import date as date_type
         
-        payment = await self.collection.find_one({"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}})
+        try:
+            payment = await self.collection.find_one({"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}})
+        except Exception as e:
+            logger.warning("payment_update_invalid_id", extra={"event": "payment_update_invalid_id", "payment_id": payment_id, "error": str(e)})
+            return None
         if not payment:
             return None
         update_data = payment_update.model_dump(exclude_unset=True)
@@ -135,16 +175,34 @@ class PaymentService:
         # Format amount for response
         payment["amount"] = format_amount_paise(payment.get("amountPaise", payment.get("amount", 0)))
         payment.pop("amountPaise", None)
+        logger.info(
+            "payment_updated",
+            extra={
+                "event": "payment_updated",
+                "payment_id": payment_id,
+                "tenant_id": payment.get("tenantId"),
+                "property_id": payment.get("propertyId"),
+                "updated_fields": list(update_data.keys()),
+            },
+        )
         return Payment(**payment)
 
     async def delete_payment(self, payment_id: str) -> bool:
         """Delete a single payment by ID"""
         now = datetime.now(timezone.utc).isoformat()
-        result = await self.collection.update_one(
-            {"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}},
-            {"$set": {"isDeleted": True, "updatedAt": now}}
-        )
-        return result.modified_count == 1
+        try:
+            result = await self.collection.update_one(
+                {"_id": ObjectId(payment_id), "isDeleted": {"$ne": True}},
+                {"$set": {"isDeleted": True, "updatedAt": now}}
+            )
+        except Exception as e:
+            logger.warning("payment_delete_invalid_id", extra={"event": "payment_delete_invalid_id", "payment_id": payment_id, "error": str(e)})
+            return False
+
+        deleted = result.modified_count == 1
+        if deleted:
+            logger.info("payment_deleted", extra={"event": "payment_deleted", "payment_id": payment_id})
+        return deleted
 
     async def delete_payments_by_tenant(self, tenant_id: str) -> int:
         """Delete all payments for a specific tenant. Returns count of deleted payments."""
@@ -152,5 +210,9 @@ class PaymentService:
         result = await self.collection.update_many(
             {"tenantId": tenant_id, "isDeleted": {"$ne": True}},
             {"$set": {"isDeleted": True, "updatedAt": now}}
+        )
+        logger.info(
+            "payments_deleted_by_tenant",
+            extra={"event": "payments_deleted_by_tenant", "tenant_id": tenant_id, "deleted_count": result.modified_count},
         )
         return result.modified_count

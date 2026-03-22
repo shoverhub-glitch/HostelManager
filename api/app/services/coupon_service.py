@@ -6,6 +6,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def _coupon_meta(code: str) -> dict:
+    normalized = (code or "").strip().upper()
+    return {"coupon_code": normalized if normalized else "UNKNOWN"}
+
 class CouponService:
     
     @staticmethod
@@ -17,6 +22,7 @@ class CouponService:
             # Check if coupon code already exists
             existing = await db["coupons"].find_one({"code": code.upper()})
             if existing:
+                logger.warning("coupon_create_duplicate", extra={"event": "coupon_create_duplicate", **_coupon_meta(code)})
                 raise ValueError(f"Coupon code '{code}' already exists")
             
             # Validate discount value
@@ -43,11 +49,21 @@ class CouponService:
             )
             
             result = await db["coupons"].insert_one(coupon.model_dump())
-            logger.info(f"✓ Coupon created: {code}")
+            logger.info(
+                "coupon_created",
+                extra={
+                    "event": "coupon_created",
+                    **_coupon_meta(code),
+                    "discount_type": discount_type,
+                    "discount_value": discount_value,
+                    "has_expiry": bool(expires_at),
+                    "max_usage": max_usage,
+                },
+            )
             return coupon
             
         except Exception as e:
-            logger.error(f"Error creating coupon: {str(e)}")
+            logger.exception("coupon_create_failed", extra={"event": "coupon_create_failed", **_coupon_meta(code), "error": str(e)})
             raise
 
     @staticmethod
@@ -59,7 +75,7 @@ class CouponService:
                 return Coupon(**doc)
             return None
         except Exception as e:
-            logger.error(f"Error retrieving coupon: {str(e)}")
+            logger.exception("coupon_get_failed", extra={"event": "coupon_get_failed", **_coupon_meta(code), "error": str(e)})
             return None
 
     @staticmethod
@@ -73,27 +89,49 @@ class CouponService:
             coupon = await CouponService.get_coupon(code)
             
             if not coupon:
+                logger.info("coupon_validate_not_found", extra={"event": "coupon_validate_not_found", **_coupon_meta(code), "amount": amount, "plan": plan})
                 return False, "Coupon not found", amount, amount
             
             if not coupon.isActive:
+                logger.info("coupon_validate_inactive", extra={"event": "coupon_validate_inactive", **_coupon_meta(code), "amount": amount, "plan": plan})
                 return False, "Coupon is inactive", amount, amount
             
             # Check expiration
             if coupon.expiresAt:
                 if datetime.fromisoformat(coupon.expiresAt) < datetime.now(timezone.utc):
+                    logger.info("coupon_validate_expired", extra={"event": "coupon_validate_expired", **_coupon_meta(code), "amount": amount, "plan": plan})
                     return False, "Coupon has expired", amount, amount
             
             # Check usage limit
             if coupon.maxUsageCount and coupon.usageCount >= coupon.maxUsageCount:
+                logger.info(
+                    "coupon_validate_usage_limit_reached",
+                    extra={
+                        "event": "coupon_validate_usage_limit_reached",
+                        **_coupon_meta(code),
+                        "amount": amount,
+                        "plan": plan,
+                        "usage_count": coupon.usageCount,
+                        "max_usage_count": coupon.maxUsageCount,
+                    },
+                )
                 return False, "Coupon usage limit reached", amount, amount
             
             # Check minimum amount
             if amount < coupon.minAmount:
+                logger.info(
+                    "coupon_validate_min_amount_failed",
+                    extra={"event": "coupon_validate_min_amount_failed", **_coupon_meta(code), "amount": amount, "min_amount": coupon.minAmount, "plan": plan},
+                )
                 return False, f"Minimum order amount {coupon.minAmount} paise required", amount, amount
             
             # Check applicable plans
             if coupon.applicablePlans and plan:
                 if plan not in coupon.applicablePlans:
+                    logger.info(
+                        "coupon_validate_plan_not_applicable",
+                        extra={"event": "coupon_validate_plan_not_applicable", **_coupon_meta(code), "plan": plan, "applicable_plans": coupon.applicablePlans},
+                    )
                     return False, f"Coupon not applicable for {plan} plan", amount, amount
             
             # Calculate discount
@@ -103,11 +141,22 @@ class CouponService:
                 discount = min(coupon.discountValue, amount)  # Can't discount more than amount
             
             final_amount = amount - discount
+            logger.info(
+                "coupon_validate_success",
+                extra={
+                    "event": "coupon_validate_success",
+                    **_coupon_meta(code),
+                    "amount": amount,
+                    "final_amount": final_amount,
+                    "discount_amount": discount,
+                    "plan": plan,
+                },
+            )
             
             return True, "Coupon applied successfully", amount, final_amount
             
         except Exception as e:
-            logger.error(f"Error validating coupon: {str(e)}")
+            logger.exception("coupon_validate_failed", extra={"event": "coupon_validate_failed", **_coupon_meta(code), "error": str(e)})
             return False, f"Error validating coupon: {str(e)}", amount, amount
 
     @staticmethod
@@ -130,6 +179,18 @@ class CouponService:
         coupon = await CouponService.get_coupon(code)
         discount = original - final
         discount_percentage = int(discount * 100 / original) if original > 0 else 0
+
+        logger.info(
+            "coupon_apply_success",
+            extra={
+                "event": "coupon_apply_success",
+                **_coupon_meta(code),
+                "amount": original,
+                "final_amount": final,
+                "discount_amount": discount,
+                "plan": plan,
+            },
+        )
         
         return CouponValidationResponse(
             isValid=True,
@@ -148,9 +209,12 @@ class CouponService:
                 {"code": code.upper()},
                 {"$inc": {"usageCount": 1}, "$set": {"updatedAt": datetime.now(timezone.utc).isoformat()}}
             )
-            return result.modified_count > 0
+            updated = result.modified_count > 0
+            if updated:
+                logger.info("coupon_usage_incremented", extra={"event": "coupon_usage_incremented", **_coupon_meta(code)})
+            return updated
         except Exception as e:
-            logger.error(f"Error incrementing coupon usage: {str(e)}")
+            logger.exception("coupon_increment_usage_failed", extra={"event": "coupon_increment_usage_failed", **_coupon_meta(code), "error": str(e)})
             return False
 
     @staticmethod
@@ -170,10 +234,14 @@ class CouponService:
             )
             
             if result:
+                logger.info(
+                    "coupon_updated",
+                    extra={"event": "coupon_updated", **_coupon_meta(code), "updated_fields": list(kwargs.keys())},
+                )
                 return Coupon(**result)
             return None
         except Exception as e:
-            logger.error(f"Error updating coupon: {str(e)}")
+            logger.exception("coupon_update_failed", extra={"event": "coupon_update_failed", **_coupon_meta(code), "error": str(e)})
             return None
 
     @staticmethod
@@ -181,9 +249,12 @@ class CouponService:
         """Delete coupon"""
         try:
             result = await db["coupons"].delete_one({"code": code.upper()})
-            return result.deleted_count > 0
+            deleted = result.deleted_count > 0
+            if deleted:
+                logger.info("coupon_deleted", extra={"event": "coupon_deleted", **_coupon_meta(code)})
+            return deleted
         except Exception as e:
-            logger.error(f"Error deleting coupon: {str(e)}")
+            logger.exception("coupon_delete_failed", extra={"event": "coupon_delete_failed", **_coupon_meta(code), "error": str(e)})
             return False
 
     @staticmethod
@@ -195,9 +266,10 @@ class CouponService:
                 query['isActive'] = is_active
             
             coupons = await db["coupons"].find(query).to_list(length=None)
+            logger.info("coupon_list_success", extra={"event": "coupon_list_success", "is_active": is_active, "count": len(coupons)})
             return [Coupon(**doc) for doc in coupons]
         except Exception as e:
-            logger.error(f"Error listing coupons: {str(e)}")
+            logger.exception("coupon_list_failed", extra={"event": "coupon_list_failed", "is_active": is_active, "error": str(e)})
             return []
 
     @staticmethod
@@ -211,6 +283,15 @@ class CouponService:
             usage_percentage = 0
             if coupon.maxUsageCount:
                 usage_percentage = int(coupon.usageCount * 100 / coupon.maxUsageCount)
+            logger.info(
+                "coupon_stats_success",
+                extra={
+                    "event": "coupon_stats_success",
+                    **_coupon_meta(code),
+                    "usage_count": coupon.usageCount,
+                    "max_usage_count": coupon.maxUsageCount,
+                },
+            )
             
             return {
                 'code': coupon.code,
@@ -224,5 +305,5 @@ class CouponService:
                 'createdAt': coupon.createdAt
             }
         except Exception as e:
-            logger.error(f"Error getting coupon stats: {str(e)}")
+            logger.exception("coupon_stats_failed", extra={"event": "coupon_stats_failed", **_coupon_meta(code), "error": str(e)})
             return None

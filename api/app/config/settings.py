@@ -1,7 +1,9 @@
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 MONGO_URL = os.environ.get("MONGO_URL")
 MONGO_DB_NAME = os.environ.get("MONGO_DB_NAME","project")
@@ -20,19 +22,19 @@ DEMO_OTP = os.environ.get("DEMO_OTP", "130499")
 PUBLIC_PATHS = os.environ.get("PUBLIC_PATHS")
 
 if not PUBLIC_PATHS:
-	PUBLIC_PATHS = ",".join([
-		f"/api/{API_VERSION}/health",
-		f"/api/{API_VERSION}/auth/login",
-		f"/api/{API_VERSION}/auth/register",
-		f"/api/{API_VERSION}/auth/refresh",
-		f"/api/{API_VERSION}/auth/forgot-password",
-		f"/api/{API_VERSION}/auth/verify-reset-otp",
-		f"/api/{API_VERSION}/auth/reset-password",
-		f"/api/{API_VERSION}/auth/email/send-otp",
-		f"/api/{API_VERSION}/auth/email/verify-otp",
-		f"/api/{API_VERSION}/auth/email/resend-otp",
-		f"/api/{API_VERSION}/subscription/webhook",
-	])
+    PUBLIC_PATHS = ",".join([
+        f"/api/{API_VERSION}/health",
+        f"/api/{API_VERSION}/auth/login",
+        f"/api/{API_VERSION}/auth/register",
+        f"/api/{API_VERSION}/auth/refresh",
+        f"/api/{API_VERSION}/auth/forgot-password",
+        f"/api/{API_VERSION}/auth/verify-reset-otp",
+        f"/api/{API_VERSION}/auth/reset-password",
+        f"/api/{API_VERSION}/auth/email/send-otp",
+        f"/api/{API_VERSION}/auth/email/verify-otp",
+        f"/api/{API_VERSION}/auth/email/resend-otp",
+        f"/api/{API_VERSION}/subscription/webhook",
+    ])
 # Razorpay
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET")
@@ -47,7 +49,10 @@ if not os.path.exists(BACKUP_PATH):
     try:
         os.makedirs(BACKUP_PATH, exist_ok=True)
     except Exception as e:
-        print(f"Warning: Could not create backup directory: {e}")
+        logger.warning(
+            "backup_directory_create_failed",
+            extra={"event": "backup_directory_create_failed", "path": BACKUP_PATH, "error": str(e)},
+        )
 
 # Admin security configuration
 # Email-based access control for admin endpoints.
@@ -58,3 +63,12 @@ ADMIN_ACCESS_FAIL_CLOSED = os.environ.get("ADMIN_ACCESS_FAIL_CLOSED", "true").lo
 # App Configuration
 APP_NAME = os.environ.get("APP_NAME", "Hostel Manager")
 APP_URL = os.environ.get("APP_URL", "https://your-app-url.com")
+
+# Logging Configuration
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
+LOG_TO_CONSOLE = os.environ.get("LOG_TO_CONSOLE", "true").lower() == "true"
+LOG_TO_FILE = os.environ.get("LOG_TO_FILE", "false").lower() == "true"
+LOG_ENDPOINTS_ONLY = os.environ.get("LOG_ENDPOINTS_ONLY", "false").lower() == "true"
+LOG_DIR = os.environ.get("LOG_DIR", "logs")
+LOG_FILE_MAX_BYTES = int(os.environ.get("LOG_FILE_MAX_BYTES", 10 * 1024 * 1024))
+LOG_FILE_BACKUP_COUNT = int(os.environ.get("LOG_FILE_BACKUP_COUNT", 5))

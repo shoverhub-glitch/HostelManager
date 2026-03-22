@@ -11,6 +11,7 @@ from app.models.payment_schema import PaymentCreate
 from app.services.payment_service import PaymentService
 from app.models.tenant_schema import BillingConfig
 from typing import Optional, List
+from pymongo.errors import OperationFailure
 import logging
 
 
@@ -87,6 +88,14 @@ class TenantService:
             anchor_day=anchor_day,
             billing_status=BillingStatus.DUE.value,
             today=today,
+        )
+
+    @staticmethod
+    def _is_transaction_not_supported_error(exc: Exception) -> bool:
+        return (
+            isinstance(exc, OperationFailure)
+            and exc.code == 20
+            and "Transaction numbers are only allowed" in str(exc)
         )
 
     async def get_tenants(
@@ -276,54 +285,68 @@ class TenantService:
             # Remove billingConfig if auto-generate is disabled
             tenant_data.pop("billingConfig", None)
 
-        # Use transaction to atomically check bed availability, create tenant, and update bed
-        async with await client.start_session() as session:
-            async with session.start_transaction():
-                bed_id = tenant_data.get("bedId")
-                if bed_id:
-                    # Check and reserve bed atomically within transaction
-                    # Use find_one_and_update with condition to ensure bed is available.
-                    # Accept both Mongo ObjectId and app-level string ids.
-                    try:
-                        bed_filter = {"_id": ObjectId(bed_id), "status": "available", "isDeleted": {"$ne": True}}
-                    except InvalidId:
-                        bed_filter = {"id": bed_id, "status": "available", "isDeleted": {"$ne": True}}
+        async def _reserve_bed_insert_tenant_and_link(*, session=None) -> None:
+            bed_id = tenant_data.get("bedId")
+            bed_collection = self.collection.database["beds"]
 
-                    result = await self.collection.database["beds"].find_one_and_update(
-                        bed_filter,
+            session_kwargs = {"session": session} if session is not None else {}
+            find_and_update_kwargs = {"return_document": True, **session_kwargs}
+
+            if bed_id:
+                # Reserve bed first so duplicate assignments are rejected.
+                try:
+                    bed_filter = {"_id": ObjectId(bed_id), "status": "available", "isDeleted": {"$ne": True}}
+                except InvalidId:
+                    bed_filter = {"id": bed_id, "status": "available", "isDeleted": {"$ne": True}}
+
+                result = await bed_collection.find_one_and_update(
+                    bed_filter,
+                    {"$set": {"status": BedStatus.OCCUPIED.value, "updatedAt": now}},
+                    **find_and_update_kwargs,
+                )
+                if not result:
+                    result = await bed_collection.find_one_and_update(
+                        {"id": bed_id, "status": "available", "isDeleted": {"$ne": True}},
                         {"$set": {"status": BedStatus.OCCUPIED.value, "updatedAt": now}},
-                        return_document=True,
-                        session=session
+                        **find_and_update_kwargs,
                     )
-                    if not result:
-                        # Retry via app-level id in case bed id was stored as a string.
-                        result = await self.collection.database["beds"].find_one_and_update(
-                            {"id": bed_id, "status": "available", "isDeleted": {"$ne": True}},
-                            {"$set": {"status": BedStatus.OCCUPIED.value, "updatedAt": now}},
-                            return_document=True,
-                            session=session
-                        )
-                    if not result:
-                        raise ValueError("Bed not found or already occupied")
-                
-                # Insert tenant
-                result = await self.collection.insert_one(tenant_data, session=session)
-                tenant_data["id"] = str(result.inserted_id)
-                
-                # Update bed with tenantId
-                if bed_id:
-                    try:
-                        await self.collection.database["beds"].update_one(
-                            {"_id": ObjectId(bed_id)},
-                            {"$set": {"tenantId": tenant_data["id"]}},
-                            session=session
-                        )
-                    except InvalidId:
-                        await self.collection.database["beds"].update_one(
-                            {"id": bed_id},
-                            {"$set": {"tenantId": tenant_data["id"]}},
-                            session=session
-                        )
+                if not result:
+                    raise ValueError("Bed not found or already occupied")
+
+            result = await self.collection.insert_one(tenant_data, **session_kwargs)
+            tenant_data["id"] = str(result.inserted_id)
+
+            if bed_id:
+                try:
+                    await bed_collection.update_one(
+                        {"_id": ObjectId(bed_id)},
+                        {"$set": {"tenantId": tenant_data["id"]}},
+                        **session_kwargs,
+                    )
+                except InvalidId:
+                    await bed_collection.update_one(
+                        {"id": bed_id},
+                        {"$set": {"tenantId": tenant_data["id"]}},
+                        **session_kwargs,
+                    )
+
+        # Prefer transaction for atomicity, but gracefully degrade for non-replica deployments.
+        try:
+            async with await client.start_session() as session:
+                async with session.start_transaction():
+                    await _reserve_bed_insert_tenant_and_link(session=session)
+        except Exception as exc:
+            if not self._is_transaction_not_supported_error(exc):
+                raise
+
+            logger.warning(
+                "tenant_create_fallback_without_transaction",
+                extra={
+                    "event": "tenant_create_fallback_without_transaction",
+                    "reason": str(exc),
+                },
+            )
+            await _reserve_bed_insert_tenant_and_link()
 
         # Create payment outside transaction (can be retried independently if it fails)
         if auto_generate and billing_config:

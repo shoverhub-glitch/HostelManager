@@ -417,18 +417,35 @@ class TenantService:
         
         # Handle tenant status change to vacated
         if new_status == "vacated" and orig_status != "vacated":
-            # Use transaction to free up bed atomically
-            async with await client.start_session() as session:
-                async with session.start_transaction():
-                    if orig_bed_id:
-                        result = await self.collection.database["beds"].find_one_and_update(
-                            {"$or": [{"_id": ObjectId(orig_bed_id)}, {"id": orig_bed_id}], "isDeleted": {"$ne": True}},
-                            {"$set": {"status": BedStatus.AVAILABLE.value, "tenantId": None, "updatedAt": datetime.now(timezone.utc).isoformat()}},
-                            return_document=True,
-                            session=session
-                        )
-                        if not result:
-                            raise ValueError(f"Bed {orig_bed_id} not found")
+            # Try transaction for atomicity, fall back for non-replica deployments
+            async def _free_bed_for_vacate(*, session=None) -> None:
+                if orig_bed_id:
+                    session_kwargs = {"session": session} if session is not None else {}
+                    result = await self.collection.database["beds"].find_one_and_update(
+                        {"$or": [{"_id": ObjectId(orig_bed_id)}, {"id": orig_bed_id}], "isDeleted": {"$ne": True}},
+                        {"$set": {"status": BedStatus.AVAILABLE.value, "tenantId": None, "updatedAt": datetime.now(timezone.utc).isoformat()}},
+                        return_document=True,
+                        **session_kwargs
+                    )
+                    if not result:
+                        raise ValueError(f"Bed {orig_bed_id} not found")
+            
+            try:
+                async with await client.start_session() as session:
+                    async with session.start_transaction():
+                        await _free_bed_for_vacate(session=session)
+            except Exception as exc:
+                if not self._is_transaction_not_supported_error(exc):
+                    raise
+                
+                logger.warning(
+                    "tenant_update_vacate_fallback_without_transaction",
+                    extra={
+                        "event": "tenant_update_vacate_fallback_without_transaction",
+                        "reason": str(exc),
+                    },
+                )
+                await _free_bed_for_vacate()
             
             # Clear roomId and bedId
             tenant_data["roomId"] = None
@@ -448,18 +465,35 @@ class TenantService:
             if not new_bed_id or not new_room_id:
                 raise ValueError("Room and bed are mandatory when reactivating a vacated tenant")
             
-            # Use transaction to atomically occupy the new bed
-            async with await client.start_session() as session:
-                async with session.start_transaction():
-                    result = await self.collection.database["beds"].find_one_and_update(
-                        {"$or": [{"_id": ObjectId(new_bed_id)}, {"id": new_bed_id}],
-                         "status": "available", "isDeleted": {"$ne": True}},
-                        {"$set": {"status": BedStatus.OCCUPIED.value, "tenantId": tenant_id, "updatedAt": datetime.now(timezone.utc).isoformat()}},
-                        return_document=True,
-                        session=session
-                    )
-                    if not result:
-                        raise ValueError("Bed is already occupied or not found")
+            # Try transaction for atomicity, fall back for non-replica deployments
+            async def _occupy_bed_for_reactivate(*, session=None) -> None:
+                session_kwargs = {"session": session} if session is not None else {}
+                result = await self.collection.database["beds"].find_one_and_update(
+                    {"$or": [{"_id": ObjectId(new_bed_id)}, {"id": new_bed_id}],
+                     "status": "available", "isDeleted": {"$ne": True}},
+                    {"$set": {"status": BedStatus.OCCUPIED.value, "tenantId": tenant_id, "updatedAt": datetime.now(timezone.utc).isoformat()}},
+                    return_document=True,
+                    **session_kwargs
+                )
+                if not result:
+                    raise ValueError("Bed is already occupied or not found")
+            
+            try:
+                async with await client.start_session() as session:
+                    async with session.start_transaction():
+                        await _occupy_bed_for_reactivate(session=session)
+            except Exception as exc:
+                if not self._is_transaction_not_supported_error(exc):
+                    raise
+                
+                logger.warning(
+                    "tenant_update_reactivate_fallback_without_transaction",
+                    extra={
+                        "event": "tenant_update_reactivate_fallback_without_transaction",
+                        "reason": str(exc),
+                    },
+                )
+                await _occupy_bed_for_reactivate()
             
             # Clear checkout date when reactivating
             if "checkoutDate" not in tenant_data:
@@ -475,53 +509,54 @@ class TenantService:
             bed_changed = orig_bed_id != new_bed_id
             
             if bed_changed:
-                # Use transaction to atomically free old bed and occupy new bed
-                async with await client.start_session() as session:
-                    async with session.start_transaction():
-                        # Free up old bed if it existed
-                        if orig_bed_id:
-                            result = await self.collection.database["beds"].find_one_and_update(
-                                {"$or": [{"_id": ObjectId(orig_bed_id)}, {"id": orig_bed_id}],
-                                 "isDeleted": {"$ne": True}},
-                                {"$set": {"status": BedStatus.AVAILABLE.value, "tenantId": None, "updatedAt": datetime.now(timezone.utc).isoformat()}},
-                                return_document=True,
-                                session=session
-                            )
-                            if not result:
-                                raise ValueError(f"Original bed {orig_bed_id} not found")
-                        
-                        # Occupy new bed if it's being assigned
-                        if new_bed_id:
-                            result = await self.collection.database["beds"].find_one_and_update(
-                                {"$or": [{"_id": ObjectId(new_bed_id)}, {"id": new_bed_id}],
-                                 "status": "available", "isDeleted": {"$ne": True}},
-                                {"$set": {"status": BedStatus.OCCUPIED.value, "tenantId": tenant_id, "updatedAt": datetime.now(timezone.utc).isoformat()}},
-                                return_document=True,
-                                session=session
-                            )
-                            if not result:
-                                raise ValueError("New bed is already occupied or not found")
+                # Try transaction for atomicity, fall back for non-replica deployments
+                async def _swap_beds_for_active(*, session=None) -> None:
+                    session_kwargs = {"session": session} if session is not None else {}
+                    
+                    # Free up old bed if it existed
+                    if orig_bed_id:
+                        result = await self.collection.database["beds"].find_one_and_update(
+                            {"$or": [{"_id": ObjectId(orig_bed_id)}, {"id": orig_bed_id}],
+                             "isDeleted": {"$ne": True}},
+                            {"$set": {"status": BedStatus.AVAILABLE.value, "tenantId": None, "updatedAt": datetime.now(timezone.utc).isoformat()}},
+                            return_document=True,
+                            **session_kwargs
+                        )
+                        if not result:
+                            raise ValueError(f"Original bed {orig_bed_id} not found")
+                    
+                    # Occupy new bed if it's being assigned
+                    if new_bed_id:
+                        result = await self.collection.database["beds"].find_one_and_update(
+                            {"$or": [{"_id": ObjectId(new_bed_id)}, {"id": new_bed_id}],
+                             "status": "available", "isDeleted": {"$ne": True}},
+                            {"$set": {"status": BedStatus.OCCUPIED.value, "tenantId": tenant_id, "updatedAt": datetime.now(timezone.utc).isoformat()}},
+                            return_document=True,
+                            **session_kwargs
+                        )
+                        if not result:
+                            raise ValueError("New bed is already occupied or not found")
+                
+                try:
+                    async with await client.start_session() as session:
+                        async with session.start_transaction():
+                            await _swap_beds_for_active(session=session)
+                except Exception as exc:
+                    if not self._is_transaction_not_supported_error(exc):
+                        raise
+                    
+                    logger.warning(
+                        "tenant_update_bed_swap_fallback_without_transaction",
+                        extra={
+                            "event": "tenant_update_bed_swap_fallback_without_transaction",
+                            "reason": str(exc),
+                        },
+                    )
+                    await _swap_beds_for_active()
             
             # Clear checkout date when reactivating
             if "checkoutDate" not in tenant_data:
                 tenant_data["checkoutDate"] = None
-        
-        # Handle bed changes for active tenants
-        elif new_status == "active":
-            # Room and bed are mandatory for active tenants
-            if not new_bed_id or not new_room_id:
-                raise ValueError("Room and bed are mandatory for active tenants")
-            
-            bed_changed = orig_bed_id != new_bed_id
-            
-            if bed_changed:
-                # Free up old bed if it existed
-                if orig_bed_id:
-                    await bed_service.update_bed(orig_bed_id, BedUpdate(status=BedStatus.AVAILABLE.value, tenantId=None))
-                
-                # Occupy new bed if it's being assigned
-                if new_bed_id:
-                    await bed_service.update_bed(new_bed_id, BedUpdate(status=BedStatus.OCCUPIED.value, tenantId=tenant_id))
         
         # Ensure billingConfig is handled properly
         if "billingConfig" in tenant_data:

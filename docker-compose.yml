@@ -55,9 +55,10 @@ services:
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
     networks:
       - backend-network
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "mongodb://admin:securepassword06@localhost:27017/admin?authSource=admin"]
-      interval: 10s
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@localhost:27017/admin?authSource=admin"]
+      interval: 10s      
       timeout: 5s
       retries: 5
       start_period: 15s

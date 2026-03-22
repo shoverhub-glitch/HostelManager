@@ -43,7 +43,6 @@ services:
     image: mongo:7
     container_name: api-mongodb
     restart: always
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     expose:
       - "27017"
     volumes:
@@ -57,11 +56,7 @@ services:
     networks:
       - backend-network
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mongosh --quiet --eval \"try { rs.status(); } catch (e) { rs.initiate({_id:'rs0', members:[{_id:0, host:'mongodb:27017'}]}); }\" mongodb://$$MONGO_INITDB_ROOT_USERNAME:$$MONGO_INITDB_ROOT_PASSWORD@localhost:27017/admin?authSource=admin ; mongosh --quiet --eval \"db.adminCommand('ping').ok\" mongodb://$$MONGO_INITDB_ROOT_USERNAME:$$MONGO_INITDB_ROOT_PASSWORD@localhost:27017/admin?authSource=admin | grep 1"
-        ]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "mongodb://admin:securepassword06@localhost:27017/admin?authSource=admin"]
       interval: 10s
       timeout: 5s
       retries: 5

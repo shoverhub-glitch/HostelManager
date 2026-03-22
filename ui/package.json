@@ -1,7 +1,7 @@
 {
   "name": "hostel-manager",
   "description": "Property management system for hostels and guest houses",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Hostel Manager Team",
   "license": "UNLICENSED",
   "main": "expo-router/entry",

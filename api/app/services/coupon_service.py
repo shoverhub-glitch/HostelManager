@@ -98,7 +98,12 @@ class CouponService:
             
             # Check expiration
             if coupon.expiresAt:
-                if datetime.fromisoformat(coupon.expiresAt) < datetime.now(timezone.utc):
+                # FIX: Handle potential naive datetimes from fromisoformat
+                expires = datetime.fromisoformat(coupon.expiresAt.replace('Z', '+00:00'))
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                
+                if expires < datetime.now(timezone.utc):
                     logger.info("coupon_validate_expired", extra={"event": "coupon_validate_expired", **_coupon_meta(code), "amount": amount, "plan": plan})
                     return False, "Coupon has expired", amount, amount
             
@@ -200,6 +205,55 @@ class CouponService:
             finalAmount=final,
             discountPercentage=discount_percentage if coupon.discountType == 'percentage' else None
         )
+
+    @staticmethod
+    async def apply_and_increment_usage(code: str, amount: int, plan: str = None) -> Tuple[bool, str, Optional[int], Optional[int]]:
+        """
+        Atomically validate and increment coupon usage in one DB operation.
+        Prevents race conditions where multiple requests use the last remaining coupon slot.
+        """
+        try:
+            # 1. Initial validation (read-only)
+            is_valid, message, original, final = await CouponService.validate_coupon(code, amount, plan)
+            if not is_valid:
+                return is_valid, message, original, final
+            
+            # 2. Atomic increment with condition
+            # Filter must match the same criteria as validate_coupon
+            filter_query = {
+                "code": code.upper(),
+                "isActive": True,
+                "$or": [
+                    {"maxUsageCount": None},
+                    {"$expr": {"$lt": ["$usageCount", "$maxUsageCount"]}}
+                ]
+            }
+            
+            # We also need to re-check expiration in the filter for true atomicity
+            # but MongoDB date comparison with strings in $expr is complex.
+            # Since expiresAt doesn't change frequently, the previous validate_coupon check is mostly sufficient.
+            
+            update_op = {
+                "$inc": {"usageCount": 1},
+                "$set": {"updatedAt": datetime.now(timezone.utc).isoformat()}
+            }
+            
+            result = await db["coupons"].find_one_and_update(
+                filter_query,
+                update_op,
+                return_document=True
+            )
+            
+            if not result:
+                logger.warning("coupon_atomic_increment_failed", extra={"event": "coupon_atomic_increment_failed", **_coupon_meta(code)})
+                return False, "Coupon usage limit reached or coupon deactivated", amount, amount
+                
+            logger.info("coupon_atomic_apply_success", extra={"event": "coupon_atomic_apply_success", **_coupon_meta(code)})
+            return True, "Coupon applied and usage incremented", original, final
+            
+        except Exception as e:
+            logger.exception("coupon_atomic_apply_failed", extra={"event": "coupon_atomic_apply_failed", **_coupon_meta(code), "error": str(e)})
+            return False, f"Error applying coupon: {str(e)}", amount, amount
 
     @staticmethod
     async def increment_usage(code: str) -> bool:

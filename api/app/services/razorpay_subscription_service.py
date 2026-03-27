@@ -10,8 +10,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 import logging
 
-from app.config.settings import RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, APP_NAME, APP_URL
-from app.database.mongodb import db
+from app.config.settings import RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, APP_URL
+from bson import ObjectId
+from app.database.mongodb import db, client
 from app.utils.email_service import send_renewal_reminder_email
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,11 @@ class RazorpaySubscriptionService:
                 }
             }
 
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+
             subscription = await loop.run_in_executor(
                 None, functools.partial(razorpay_client.subscription.create, subscription_data)
             )
@@ -95,7 +100,11 @@ class RazorpaySubscriptionService:
             Dict with cancellation details
         """
         try:
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+
             if cancel_at_cycle_end:
                 subscription = await loop.run_in_executor(
                     None, functools.partial(
@@ -171,7 +180,11 @@ class RazorpaySubscriptionService:
                         }
                     }
 
-                    loop = asyncio.get_event_loop()
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = asyncio.get_event_loop()
+
                     rzp_plan = await loop.run_in_executor(
                         None, functools.partial(razorpay_client.plan.create, plan_data)
                     )
@@ -218,7 +231,11 @@ class RazorpaySubscriptionService:
             Dict with pause details
         """
         try:
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+
             subscription = await loop.run_in_executor(
                 None, functools.partial(
                     razorpay_client.subscription.pause,
@@ -245,7 +262,11 @@ class RazorpaySubscriptionService:
             Dict with subscription status
         """
         try:
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+
             subscription = await loop.run_in_executor(
                 None, functools.partial(razorpay_client.subscription.fetch, razorpay_subscription_id)
             )
@@ -272,7 +293,6 @@ class RazorpaySubscriptionService:
             Payment link URL if created successfully, None otherwise
         """
         try:
-            amount_rupees = amount / 100
             link_payload = {
                 'amount': amount,
                 'currency': 'INR',
@@ -294,7 +314,11 @@ class RazorpaySubscriptionService:
                 'callback_url': f'{APP_URL}/subscription/verify?order_id={order_id}',
                 'callback_method': 'get'
             }
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+
             payment_link = await loop.run_in_executor(
                 None, functools.partial(razorpay_client.payment_link.create, link_payload)
             )
@@ -345,11 +369,19 @@ class RazorpaySubscriptionService:
             
             for sub in expiring_subs:
                 try:
-                    # Get user info
-                    user = await db.users.find_one({'_id': sub['ownerId']})
+                    # FIX: Query user by ObjectId
+                    owner_id = sub.get('ownerId')
+                    if not owner_id:
+                         continue
+
+                    try:
+                        user = await db.users.find_one({'_id': ObjectId(owner_id)})
+                    except Exception:
+                         user = await db.users.find_one({'_id': owner_id})
+
                     if not user:
                         stats['failed'] += 1
-                        stats['errors'].append(f"User {sub['ownerId']} not found")
+                        stats['errors'].append(f"User {owner_id} not found")
                         continue
                     
                     owner_email = user.get('email')
@@ -357,7 +389,7 @@ class RazorpaySubscriptionService:
                     
                     if not owner_email:
                         stats['failed'] += 1
-                        stats['errors'].append(f"User {sub['ownerId']} missing email")
+                        stats['errors'].append(f"User {owner_id} missing email")
                         continue
                     
                     # Create renewal order via Razorpay API
@@ -388,16 +420,20 @@ class RazorpaySubscriptionService:
                     renewal_order_data = {
                         'amount': price,
                         'currency': 'INR',
-                        'receipt': f"renew_{str(sub['ownerId'])[:10]}_{datetime.now(timezone.utc).strftime('%Y%m%d')}",
+                        'receipt': f"renew_{str(owner_id)[:10]}_{datetime.now(timezone.utc).strftime('%Y%m%d')}",
                         'notes': {
-                            'owner_id': str(sub['ownerId']),
+                            'owner_id': str(owner_id),
                             'plan': sub['plan'],
                             'period': str(sub['period']),
                             'renewal': 'true',
                             'subscription_id': str(sub['_id'])
                         }
                     }
-                    loop = asyncio.get_event_loop()
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = asyncio.get_event_loop()
+
                     order = await loop.run_in_executor(
                         None, functools.partial(razorpay_client.order.create, renewal_order_data)
                     )
@@ -415,7 +451,7 @@ class RazorpaySubscriptionService:
                     
                     # Store renewal order for payment verification
                     await db.renewal_orders.insert_one({
-                        'ownerId': str(sub['ownerId']),
+                        'ownerId': str(owner_id),
                         'subscriptionId': sub['_id'],
                         'orderId': order['id'],
                         'plan': sub['plan'],
@@ -439,18 +475,18 @@ class RazorpaySubscriptionService:
                             amount_str=amount_str,
                             expiry_date=expiry_date,
                             payment_link=payment_link_url,
-                            app_name=APP_NAME or "Hostel Manager"
+                            app_name="Hostel Manager"
                         )
                         
                         if email_sent:
                             stats['notified'] += 1
-                            logger.info("razorpay_renewal_notification_sent", extra={"event": "razorpay_renewal_notification_sent", "order_id": order.get("id"), "owner_id": str(sub.get("ownerId"))})
+                            logger.info("razorpay_renewal_notification_sent", extra={"event": "razorpay_renewal_notification_sent", "order_id": order.get("id"), "owner_id": str(owner_id)})
                         else:
-                            logger.warning("razorpay_renewal_notification_failed", extra={"event": "razorpay_renewal_notification_failed", "order_id": order.get("id"), "owner_id": str(sub.get("ownerId"))})
+                            logger.warning("razorpay_renewal_notification_failed", extra={"event": "razorpay_renewal_notification_failed", "order_id": order.get("id"), "owner_id": str(owner_id)})
                     else:
-                        logger.warning("razorpay_renewal_payment_link_missing", extra={"event": "razorpay_renewal_payment_link_missing", "order_id": order.get("id"), "owner_id": str(sub.get("ownerId"))})
+                        logger.warning("razorpay_renewal_payment_link_missing", extra={"event": "razorpay_renewal_payment_link_missing", "order_id": order.get("id"), "owner_id": str(owner_id)})
                     
-                    logger.info("razorpay_renewal_order_created", extra={"event": "razorpay_renewal_order_created", "order_id": order.get("id"), "owner_id": str(sub.get("ownerId")), "plan": sub.get("plan"), "period": sub.get("period")})
+                    logger.info("razorpay_renewal_order_created", extra={"event": "razorpay_renewal_order_created", "order_id": order.get("id"), "owner_id": str(owner_id), "plan": sub.get("plan"), "period": sub.get("period")})
                     
                 except Exception as e:
                     stats['failed'] += 1
@@ -523,7 +559,12 @@ class RazorpaySubscriptionService:
                 # Calculate new period end
                 # If current period end is in the past (late renewal), start from now
                 # If current period end is in the future (early renewal), extend it
-                current_end = datetime.fromisoformat(sub['currentPeriodEnd'])
+                # FIX: Ensure timezone-aware comparison
+                current_end_str = sub['currentPeriodEnd']
+                current_end = datetime.fromisoformat(current_end_str.replace('Z', '+00:00'))
+                if current_end.tzinfo is None:
+                    current_end = current_end.replace(tzinfo=timezone.utc)
+                
                 now = datetime.now(timezone.utc)
                 
                 base_date = max(current_end, now)
@@ -581,8 +622,10 @@ class RazorpaySubscriptionService:
             )
             
             # Update subscription with error
+            # FIX: Ensure ownerId is used consistently (str vs ObjectId)
+            owner_id = renewal['ownerId']
             await db.subscriptions.update_one(
-                {'ownerId': renewal['ownerId']},
+                {'ownerId': owner_id},
                 {
                     '$set': {
                         'renewalError': f'Payment failed: {error_msg}',

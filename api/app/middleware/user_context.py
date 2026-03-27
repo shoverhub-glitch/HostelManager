@@ -2,17 +2,23 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.database.mongodb import db
 from bson import ObjectId
+from bson.errors import InvalidId
 from app.utils.ownership import build_owner_query
 from jose import jwt
 from fastapi import HTTPException, status
 from app.config import settings
 import logging
+import time
 from jose import JWTError, ExpiredSignatureError
 from starlette.responses import JSONResponse
 from app.database.token_blacklist import is_token_blacklisted
 
-
 logger = logging.getLogger(__name__)
+
+# Simple in-process TTL cache for subscriptions to reduce DB round-trips
+# Key: user_id, Value: (subscription_data, expiry_timestamp)
+_subscription_cache = {}
+_SUBSCRIPTION_CACHE_TTL = 60  # seconds
 
 class UserContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -87,13 +93,24 @@ class UserContextMiddleware(BaseHTTPMiddleware):
                     return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid token type"})
 
                 user_id = payload.get("sub")
+                iat = payload.get("iat")
                 if user_id is None:
                     logger.warning(
                         "auth_jwt_missing_sub",
                         extra={"event": "auth_jwt_missing_sub", "path": request.url.path, "request_id": request_id},
                     )
                     return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid authentication credentials"})
-                user = await db["users"].find_one({"_id": ObjectId(user_id)})
+
+                try:
+                    user_obj_id = ObjectId(user_id)
+                except (InvalidId, TypeError):
+                    logger.warning(
+                        "auth_invalid_user_id_format",
+                        extra={"event": "auth_invalid_user_id_format", "path": request.url.path, "request_id": request_id},
+                    )
+                    return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid authentication credentials"})
+
+                user = await db["users"].find_one({"_id": user_obj_id})
                 if user:
                     if user.get("isDeleted") or user.get("isDisabled"):
                         logger.warning(
@@ -102,14 +119,38 @@ class UserContextMiddleware(BaseHTTPMiddleware):
                         )
                         return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"detail": "Account is not active"})
 
+                    # SECURITY: Check if token was issued before the last significant account update (like password change)
+                    if iat and user.get("updatedAt"):
+                        updated_at = user["updatedAt"]
+                        if isinstance(updated_at, str):
+                            from datetime import datetime
+                            try:
+                                updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                            except Exception:
+                                updated_at = None
+                        
+                        if updated_at and iat < int(updated_at.timestamp()):
+                            logger.info(
+                                "auth_stale_token",
+                                extra={"event": "auth_stale_token", "user_id": user_id, "iat": iat, "updated_at": updated_at.timestamp()},
+                            )
+                            return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Session invalidated due to account update. Please log in again."})
+
                     role = user.get("role")
+                    # FIX: Add sane limit to property fetch
                     owned_properties = await db["properties"].find(
                         build_owner_query(user_id),
                         {"_id": 1}
-                    ).to_list(length=None)
+                    ).to_list(length=500)
                     property_ids = [str(doc["_id"]) for doc in owned_properties]
                     # Sanitize user object (remove sensitive fields)
                     user = {k: v for k, v in user.items() if k not in ["password", "hashed_password"]}
+                else:
+                    logger.warning(
+                        "auth_user_not_found",
+                        extra={"event": "auth_user_not_found", "path": request.url.path, "request_id": request_id, "user_id": user_id},
+                    )
+                    return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid authentication credentials"})
             except ExpiredSignatureError:
                 logger.info(
                     "auth_token_expired",
@@ -135,17 +176,24 @@ class UserContextMiddleware(BaseHTTPMiddleware):
             )
             return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Missing or invalid Authorization header"})
         
-        # Load subscription info
+        # Load subscription info with short-lived TTL cache
         if user_id:
-            from app.services.subscription_service import SubscriptionService
-            try:
-                subscription = await SubscriptionService.get_subscription(user_id)
-            except Exception as e:
-                logger.warning(
-                    "subscription_load_failed",
-                    extra={"event": "subscription_load_failed", "request_id": request_id, "user_id": user_id, "error": str(e)},
-                )
-                subscription = None
+            now = time.time()
+            cached_sub, expiry = _subscription_cache.get(user_id, (None, 0))
+            
+            if cached_sub and now < expiry:
+                subscription = cached_sub
+            else:
+                from app.services.subscription_service import SubscriptionService
+                try:
+                    subscription = await SubscriptionService.get_subscription(user_id)
+                    _subscription_cache[user_id] = (subscription, now + _SUBSCRIPTION_CACHE_TTL)
+                except Exception as e:
+                    logger.warning(
+                        "subscription_load_failed",
+                        extra={"event": "subscription_load_failed", "request_id": request_id, "user_id": user_id, "error": str(e)},
+                    )
+                    subscription = None
         
         # Attach metadata to request.state
         request.state.user_id = user_id

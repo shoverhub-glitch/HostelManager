@@ -1,12 +1,11 @@
-import os
 from pymongo import MongoClient
-from dotenv import load_dotenv
-load_dotenv()
-MONGO_URI = os.environ.get("MONGO_URL")
-DB_NAME = os.environ.get("MONGO_DB_NAME")
+from app.config import settings
+
+MONGO_URI = settings.MONGO_URL
+DB_NAME = settings.MONGO_DB_NAME
 
 if not MONGO_URI or not DB_NAME:
-    raise RuntimeError("MONGO_URI and DB_NAME environment variables must be set.")
+    raise RuntimeError("MONGO_URL and MONGO_DB_NAME environment variables must be set.")
 
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]

@@ -46,54 +46,62 @@ async def check_login_attempts(email: str) -> tuple[bool, int | None]:
     return False, None
 
 
-async def increment_login_attempts(email: str) -> int:
-    """
-    Increment failed login attempts
-    Returns: number of failed attempts after incrementing
-    """
+async def _increment_attempts(collection, email: str, max_attempts: int) -> int:
+    """Helper for atomic increment with window-expiry reset (Critical #6)"""
     normalized_email = email.strip().lower()
     now = datetime.now(timezone.utc)
-    
-    # 1. Fetch current attempt status
-    attempt_doc = await login_attempts_collection.find_one({"email": normalized_email})
-    
-    # 2. Determine if we should reset the counter
-    # If last attempt was more than 10 minutes ago, restart from 1
-    if attempt_doc and attempt_doc.get("updatedAt"):
-        last_attempt = attempt_doc.get("updatedAt")
-        if last_attempt.tzinfo is None:
-            last_attempt = last_attempt.replace(tzinfo=timezone.utc)
-        
-        if now - last_attempt > timedelta(minutes=LOCKOUT_DURATION_MINUTES):
-            # Window expired, reset to 1
-            await login_attempts_collection.update_one(
-                {"email": normalized_email},
-                {"$set": {"failedAttempts": 1, "updatedAt": now, "lockedUntil": None}}
-            )
-            return 1
+    window_cutoff = now - timedelta(minutes=LOCKOUT_DURATION_MINUTES)
 
-    # 3. Normal increment within the window
-    result = await login_attempts_collection.find_one_and_update(
-        {"email": normalized_email},
+    # Atomic update:
+    # 1. If document doesn't exist, create with failedAttempts=1
+    # 2. If existing updatedAt < window_cutoff, reset failedAttempts to 1
+    # 3. Else, increment failedAttempts
+    # 4. If new count >= max_attempts, set lockedUntil
+    
+    pipeline = [
         {
-            "$inc": {"failedAttempts": 1},
-            "$set": {"updatedAt": now}
+            "$set": {
+                "failedAttempts": {
+                    "$cond": {
+                        "if": {"$lt": ["$updatedAt", window_cutoff]},
+                        "then": 1,
+                        "else": {"$add": ["$failedAttempts", 1]}
+                    }
+                },
+                "updatedAt": now
+            }
         },
+        {
+            "$set": {
+                "lockedUntil": {
+                    "$cond": {
+                        "if": {"$gte": ["$failedAttempts", max_attempts]},
+                        "then": now + timedelta(minutes=LOCKOUT_DURATION_MINUTES),
+                        "else": None # Clear lock if we reset to 1 or if it's not needed
+                    }
+                }
+            }
+        }
+    ]
+
+    # Note: aggregation in find_one_and_update requires MongoDB 4.2+
+    # Fallback logic for older MongoDB versions might be needed if compatibility is an issue.
+    result = await collection.find_one_and_update(
+        {"email": normalized_email},
+        pipeline,
         upsert=True,
         return_document=True
     )
     
-    failed_attempts = result.get("failedAttempts", 1)
-    
-    # Lock account if max attempts reached
-    if failed_attempts >= MAX_LOGIN_ATTEMPTS:
-        locked_until = now + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
-        await login_attempts_collection.update_one(
-            {"email": normalized_email},
-            {"$set": {"lockedUntil": locked_until}}
-        )
-    
-    return failed_attempts
+    return result.get("failedAttempts", 1)
+
+
+async def increment_login_attempts(email: str) -> int:
+    """
+    Increment failed login attempts atomically.
+    Returns: number of failed attempts after incrementing.
+    """
+    return await _increment_attempts(login_attempts_collection, email, MAX_LOGIN_ATTEMPTS)
 
 
 async def reset_login_attempts(email: str):
@@ -140,61 +148,13 @@ async def check_otp_attempts(email: str) -> tuple[bool, int | None]:
 
 async def increment_otp_attempts(email: str) -> int:
     """
-    Increment failed OTP verification attempts
-    Returns: number of failed attempts after incrementing
+    Increment failed OTP verification attempts atomically.
+    Returns: number of failed attempts after incrementing.
     """
-    normalized_email = email.strip().lower()
-    now = datetime.now(timezone.utc)
+    return await _increment_attempts(otp_attempts_collection, email, MAX_OTP_ATTEMPTS)
 
-    # 1. Fetch current attempt status
-    attempt_doc = await otp_attempts_collection.find_one({"email": normalized_email})
-    
-    # 2. Determine if we should reset the counter
-    if attempt_doc and attempt_doc.get("updatedAt"):
-        last_attempt = attempt_doc.get("updatedAt")
-        if last_attempt.tzinfo is None:
-            last_attempt = last_attempt.replace(tzinfo=timezone.utc)
-        
-        if now - last_attempt > timedelta(minutes=LOCKOUT_DURATION_MINUTES):
-            # Window expired, reset to 1
-            await otp_attempts_collection.update_one(
-                {"email": normalized_email},
-                {"$set": {"failedAttempts": 1, "updatedAt": now, "lockedUntil": None}}
-            )
-            return 1
-    
-    result = await otp_attempts_collection.find_one_and_update(
-        {"email": normalized_email},
-        {
-            "$inc": {"failedAttempts": 1},
-            "$set": {"updatedAt": now}
-        },
-        upsert=True,
-        return_document=True
-    )
-    
-    failed_attempts = result.get("failedAttempts", 1)
-    
-    # Lock account if max attempts reached
-    if failed_attempts >= MAX_OTP_ATTEMPTS:
-        locked_until = now + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
-        await otp_attempts_collection.update_one(
-            {"email": normalized_email},
-            {"$set": {"lockedUntil": locked_until}}
-        )
-    
-    return failed_attempts
-
-
-async def reset_otp_attempts(email: str):
-    """Reset OTP attempts for successful verification"""
-    normalized_email = email.strip().lower()
-    await otp_attempts_collection.update_one(
-        {"email": normalized_email},
-        {"$set": {"failedAttempts": 0, "lockedUntil": None}}
-    )
 
 async def delete_otp_attempts(email: str):
-    """Delete OTP attempt record entirely (used when new OTP is requested)"""
+    """Delete OTP attempt record entirely (used when new OTP is requested or verified successfully)"""
     normalized_email = email.strip().lower()
     await otp_attempts_collection.delete_one({"email": normalized_email})

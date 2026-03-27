@@ -128,7 +128,7 @@ class RoomService:
         
         # Handle bed count changes
         if "numberOfBeds" in room_data:
-            await self._handle_bed_count_change(room_id, room_data)
+            await self._handle_bed_count_change(room_id, room_data, current_room)
         
         await self.collection.update_one({"_id": object_id}, {"$set": room_data})
         doc = await self.collection.find_one({"_id": object_id})
@@ -141,15 +141,16 @@ class RoomService:
             return Room(**doc)
         return None
     
-    async def _handle_bed_count_change(self, room_id: str, room_data: dict):
+    async def _handle_bed_count_change(self, room_id: str, room_data: dict, current_room: dict = None):
         """Handle changes in number of beds - relocate or vacate tenants as needed"""
         beds_collection = getCollection("beds")
         tenants_collection = getCollection("tenants")
         
-        # Get current room to compare
-        current_room = await self.collection.find_one({"_id": ObjectId(room_id), "isDeleted": {"$ne": True}})
+        # Get current room to compare if not provided
         if not current_room:
-            return
+            current_room = await self.collection.find_one({"_id": ObjectId(room_id), "isDeleted": {"$ne": True}})
+            if not current_room:
+                return
         
         current_bed_count = current_room.get("numberOfBeds", 0)
         new_bed_count = room_data.get("numberOfBeds", 0)
@@ -157,14 +158,23 @@ class RoomService:
         
         if new_bed_count < current_bed_count:
             # Reducing beds - handle affected tenants
-            # Get beds that will be removed (bed numbers > new_bed_count, using numeric comparison)
-            beds_to_remove = await beds_collection.find({
+            # FIX: Robustly handle non-numeric bed numbers by sorting and taking the tail
+            all_beds = await beds_collection.find({
                 "roomId": room_id,
-                "$expr": {"$gt": [{"$toInt": "$bedNumber"}, new_bed_count]},
                 "isDeleted": {"$ne": True}
-            }).to_list(None)
+            }).sort("bedNumber", 1).to_list(None)
+            
+            # Use numeric sorting if possible, fallback to string
+            try:
+                all_beds.sort(key=lambda b: int(b["bedNumber"]))
+            except (ValueError, TypeError):
+                pass # Already sorted as strings
+                
+            beds_to_keep = all_beds[:new_bed_count]
+            beds_to_remove = all_beds[new_bed_count:]
             
             now = datetime.now(timezone.utc).isoformat()
+            keep_bed_ids = [str(b["_id"]) for b in beds_to_keep]
 
             for bed in beds_to_remove:
                 tenant_id = bed.get("tenantId")
@@ -173,8 +183,7 @@ class RoomService:
                     available_bed = await beds_collection.find_one({
                         "roomId": room_id,
                         "status": "available",
-                        "$expr": {"$lte": [{"$toInt": "$bedNumber"}, new_bed_count]},
-                        "_id": {"$ne": bed["_id"]},
+                        "_id": {"$in": [ObjectId(bid) for bid in keep_bed_ids]},
                         "isDeleted": {"$ne": True}
                     })
                     
@@ -184,7 +193,6 @@ class RoomService:
                             "propertyId": property_id,
                             "roomId": {"$ne": room_id},
                             "status": "available",
-                            "_id": {"$ne": bed["_id"]},
                             "isDeleted": {"$ne": True}
                         })
                     
@@ -212,17 +220,9 @@ class RoomService:
                             {"_id": ObjectId(tenant_id)},
                             {"$set": update_data}
                         )
-                        logger.info(
-                            "room_bed_reduction_tenant_relocated",
-                            extra={
-                                "event": "room_bed_reduction_tenant_relocated",
-                                "room_id": room_id,
-                                "tenant_id": tenant_id,
-                                "new_bed_id": str(available_bed.get("_id")),
-                            },
-                        )
                     else:
                         # No available bed - mark tenant as vacated
+                        # FIX: Clear bedId and roomId
                         await tenants_collection.update_one(
                             {"_id": ObjectId(tenant_id)},
                             {
@@ -230,13 +230,11 @@ class RoomService:
                                     "tenantStatus": "vacated",
                                     "checkoutDate": now,
                                     "billingConfig": None,
+                                    "bedId": None,
+                                    "roomId": None,
                                     "updatedAt": now
                                 }
                             }
-                        )
-                        logger.warning(
-                            "room_bed_reduction_tenant_vacated",
-                            extra={"event": "room_bed_reduction_tenant_vacated", "room_id": room_id, "tenant_id": tenant_id},
                         )
                 
                 # Soft delete the bed
@@ -289,11 +287,26 @@ class RoomService:
         }
         
         if new_bed_count < current_bed_count:
-            # Count available beds in same room first (using numeric comparison)
+            # FIX: Robustly handle non-numeric bed numbers for preview
+            all_beds = await beds_collection.find({
+                "roomId": room_id,
+                "isDeleted": {"$ne": True}
+            }).sort("bedNumber", 1).to_list(None)
+            
+            try:
+                all_beds.sort(key=lambda b: int(b["bedNumber"]))
+            except (ValueError, TypeError):
+                pass
+
+            beds_to_keep = all_beds[:new_bed_count]
+            beds_to_remove = all_beds[new_bed_count:]
+            keep_bed_ids = [b["_id"] for b in beds_to_keep]
+
+            # Count available beds in same room first
             available_beds_same_room = await beds_collection.count_documents({
                 "roomId": room_id,
                 "status": "available",
-                "$expr": {"$lte": [{"$toInt": "$bedNumber"}, new_bed_count]},
+                "_id": {"$in": keep_bed_ids},
                 "isDeleted": {"$ne": True}
             })
             
@@ -307,13 +320,6 @@ class RoomService:
             
             result["availableBedsInSameRoom"] = available_beds_same_room
             result["availableBedsInProperty"] = available_beds_other_rooms
-            
-            # Get beds that will be removed (using numeric comparison)
-            beds_to_remove = await beds_collection.find({
-                "roomId": room_id,
-                "$expr": {"$gt": [{"$toInt": "$bedNumber"}, new_bed_count]},
-                "isDeleted": {"$ne": True}
-            }).to_list(None)
             
             available_same_room_index = 0
             available_other_room_index = 0
@@ -382,6 +388,7 @@ class RoomService:
             
             if tenant_id:
                 # Update tenant to vacated status
+                # FIX: Clear bedId and roomId
                 await tenants_collection.update_one(
                     {"_id": ObjectId(tenant_id)},
                     {
@@ -389,6 +396,8 @@ class RoomService:
                             "tenantStatus": "vacated",
                             "checkoutDate": now,
                             "billingConfig": None,
+                            "bedId": None,
+                            "roomId": None,
                             "updatedAt": now
                         }
                     }

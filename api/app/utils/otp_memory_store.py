@@ -59,10 +59,11 @@ async def generate_and_store_otp(email: str, otp_type: str = "registration") -> 
             if existing_type == otp_type:
                 return existing.get("otp", ""), False
             # Different type requested during cooldown: deny resend
-            return "", False
+            # FIX: Raise error so caller knows not to send blank OTP
+            raise ValueError(f"A different OTP is already active for this email. Please try again in {int((resend_cooldown_expires - now).total_seconds())} seconds.")
     
     # Generate cryptographically secure 6-digit OTP
-    if settings.DEMO_MODE:
+    if settings.ENV.lower() != "production":
         otp = settings.DEMO_OTP
     else:
         otp = f"{secrets.randbelow(900000) + 100000}"
@@ -125,7 +126,7 @@ async def verify_otp(email: str, otp: str, otp_type: str = "registration") -> Tu
         Tuple of (is_valid, error_message)
     """
     normalized_email = email.strip().lower()
-    if settings.DEMO_MODE and hmac.compare_digest(otp, settings.DEMO_OTP):
+    if settings.ENV.lower() != "production" and hmac.compare_digest(otp, settings.DEMO_OTP):
         # Demo bypass: still enforce type to prevent cross-flow abuse
         stored = await get_otp(normalized_email)
         if stored and stored.get("otp_type", "registration") != otp_type:

@@ -1,7 +1,7 @@
 from typing import Dict
 
 from app.models.subscription_schema import Subscription, Usage
-from app.database.mongodb import db, client
+from app.database.mongodb import db, client, is_transaction_unsupported
 from datetime import datetime, timedelta, timezone
 from app.utils.ownership import build_owner_query
 import logging
@@ -26,19 +26,35 @@ class SubscriptionService:
     async def get_subscription(owner_id: str):
         """Get active subscription for owner, creating default free if none is active."""
         try:
-            # Plan order for sorting: premium > pro > free
-            # Since we can't easily sort by a custom map in MongoDB find_one,
-            # we'll fetch all active and sort in Python
-            docs = await db["subscriptions"].find(
-                {"ownerId": owner_id, "status": "active"}
-            ).to_list(length=None)
+            # FIX (High #8): Use MongoDB aggregation for efficient sorting and limit(1)
+            # This is much faster than fetching all into memory and sorting in Python.
+            pipeline = [
+                {"$match": {"ownerId": owner_id, "status": "active"}},
+                {"$addFields": {
+                    "planOrder": {
+                        "$switch": {
+                            "branches": [
+                                {"case": {"$eq": ["$plan", "premium"]}, "then": 2},
+                                {"case": {"$eq": ["$plan", "pro"]}, "then": 1},
+                            ],
+                            "default": 0
+                        }
+                    }
+                }},
+                {"$sort": {"planOrder": -1}},
+                {"$limit": 1}
+            ]
+            
+            cursor = db["subscriptions"].aggregate(pipeline)
+            docs = await cursor.to_list(length=1)
             
             if docs:
-                plan_order = {"premium": 2, "pro": 1, "free": 0}
-                docs.sort(key=lambda x: plan_order.get(str(x.get("plan", "")).lower(), -1), reverse=True)
                 return Subscription(**docs[0])
         except Exception as e:
             logger.exception("subscription_get_failed", extra={"event": "subscription_get_failed", "owner_id": owner_id, "error": str(e)})
+            # If it's a transient DB error, we should probably raise so the request fails 
+            # rather than returning a default free plan which might be a downgrade.
+            raise
 
         # If truly not found, create default free subscription
         now = datetime.now(timezone.utc).isoformat()
@@ -79,6 +95,8 @@ class SubscriptionService:
             )
         except Exception as e:
             logger.exception("subscription_default_create_failed", extra={"event": "subscription_default_create_failed", "owner_id": owner_id, "error": str(e)})
+            # FIX (Critical #1): Re-raise so we don't return a stale/unsaved sub object
+            raise
         return sub
 
     @staticmethod
@@ -139,34 +157,54 @@ class SubscriptionService:
             }
             
             # Use transaction to ensure atomicity: mark old inactive, activate new
-            async with await client.start_session() as session:
-                async with session.start_transaction():
-                    # 1. Mark all other subscriptions for this owner as inactive
-                    await db["subscriptions"].update_many(
-                        {"ownerId": owner_id, "plan": {"$ne": plan}},
-                        {"$set": {"status": "inactive", "updatedAt": now, "autoRenewal": False}},
-                        session=session
-                    )
-                    
-                    # 2. Upsert the target subscription to active
-                    result = await db["subscriptions"].find_one_and_update(
-                        {"ownerId": owner_id, "plan": plan},
-                        {"$set": sub_data},
-                        upsert=True,
-                        return_document=True,
-                        session=session
-                    )
-                    
-                    if result:
-                        # Ensure createdAt exists (if it was an upsert-insert)
-                        if "createdAt" not in result:
-                            await db["subscriptions"].update_one(
-                                {"_id": result["_id"]},
-                                {"$set": {"createdAt": now}},
-                                session=session
-                            )
-                            result["createdAt"] = now
-                        return Subscription(**result)
+            async def _perform_update(session=None):
+                # 1. Mark all other subscriptions for this owner as inactive
+                await db["subscriptions"].update_many(
+                    {"ownerId": owner_id, "plan": {"$ne": plan}},
+                    {"$set": {"status": "inactive", "updatedAt": now, "autoRenewal": False}},
+                    session=session
+                )
+                
+                # 2. Upsert the target subscription to active
+                result = await db["subscriptions"].find_one_and_update(
+                    {"ownerId": owner_id, "plan": plan},
+                    {"$set": sub_data},
+                    upsert=True,
+                    return_document=True,
+                    session=session
+                )
+                
+                if result:
+                    # Ensure createdAt exists (if it was an upsert-insert)
+                    if "createdAt" not in result:
+                        await db["subscriptions"].update_one(
+                            {"_id": result["_id"]},
+                            {"$set": {"createdAt": now}},
+                            session=session
+                        )
+                        result["createdAt"] = now
+                    return result
+                return None
+
+            try:
+                async with await client.start_session() as session:
+                    async with session.start_transaction():
+                        result_doc = await _perform_update(session=session)
+            except Exception as exc:
+                if not is_transaction_unsupported(exc):
+                    raise
+                
+                logger.warning(
+                    "subscription_update_fallback_without_transaction",
+                    extra={
+                        "event": "subscription_update_fallback_without_transaction",
+                        "reason": str(exc),
+                    },
+                )
+                result_doc = await _perform_update()
+            
+            if result_doc:
+                return Subscription(**result_doc)
             
             raise ValueError("Failed to update or create subscription")
             
@@ -180,13 +218,13 @@ class SubscriptionService:
         try:
             # Count active properties (exclude deleted and archived)
             owned_properties = await db["properties"].find(
-                {**build_owner_query(owner_id), "isDeleted": {"$ne": True}, "active": {"$ne": False}},
+                {**build_owner_query(owner_id), "isDeleted": {"$ne": True}, "active": True},
                 {"_id": 1}
             ).to_list(length=None)
             property_ids = [str(doc["_id"]) for doc in owned_properties]
 
             properties = len(property_ids)
-            # Count only active (non-archived, non-deleted) resources
+            # Count only active (non-archived, non-deleted) tenants
             tenants = await db["tenants"].count_documents(
                 {"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}, "archived": {"$ne": True}}
             ) if property_ids else 0
@@ -270,13 +308,15 @@ class SubscriptionService:
         try:
             # Count current resources
             owned_properties = await db["properties"].find(
-                build_owner_query(owner_id),
+                {**build_owner_query(owner_id), "active": True, "isDeleted": {"$ne": True}},
                 {"_id": 1}
             ).to_list(length=None)
             property_ids = [str(doc["_id"]) for doc in owned_properties]
 
             property_count = len(property_ids)
-            tenant_count = await db["tenants"].count_documents({"propertyId": {"$in": property_ids}}) if property_ids else 0
+            tenant_count = await db["tenants"].count_documents(
+                {"propertyId": {"$in": property_ids}, "isDeleted": {"$ne": True}, "archived": {"$ne": True}}
+            ) if property_ids else 0
         except Exception as e:
             logger.exception("subscription_downgrade_eligibility_failed", extra={"event": "subscription_downgrade_eligibility_failed", "owner_id": owner_id, "error": str(e)})
             return {
@@ -365,9 +405,9 @@ class SubscriptionService:
                 "roomLimit": free_plan['rooms'],
                 "tenantLimit": free_plan['tenants'],
                 "staffLimit": free_plan['staff'],
-                "autoRenewal": False,
                 "createdAt": now,
-                "updatedAt": now
+                "updatedAt": now,
+                "autoRenewal": False
             }
             
             # Upsert to handle duplicates gracefully
@@ -399,12 +439,6 @@ class SubscriptionService:
     async def enable_auto_renewal(owner_id: str) -> bool:
         """
         Enable auto-renewal for active subscription
-        
-        Args:
-            owner_id: User ID
-            
-        Returns:
-            True if successful
         """
         try:
             result = await db["subscriptions"].update_one(
@@ -423,12 +457,6 @@ class SubscriptionService:
     async def disable_auto_renewal(owner_id: str) -> bool:
         """
         Disable auto-renewal for active subscription
-        
-        Args:
-            owner_id: User ID
-            
-        Returns:
-            True if successful
         """
         try:
             result = await db["subscriptions"].update_one(
@@ -447,12 +475,6 @@ class SubscriptionService:
     async def cancel_subscription(owner_id: str) -> Dict:
         """
         Cancel active subscription and Razorpay recurring subscription if exists
-        
-        Args:
-            owner_id: User ID
-            
-        Returns:
-            Dict with cancellation details
         """
         try:
             from app.services.razorpay_subscription_service import RazorpaySubscriptionService

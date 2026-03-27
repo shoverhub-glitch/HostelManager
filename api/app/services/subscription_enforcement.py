@@ -48,11 +48,13 @@ class SubscriptionEnforcement:
 
             # Check subscription status and date
             now = datetime.now(timezone.utc)
-            expiry = datetime.fromisoformat(sub.currentPeriodEnd.replace('Z', '+00:00'))
-            if expiry.tzinfo is None:
+            # Ensure expiry is timezone-aware for comparison
+            expiry_str = sub.currentPeriodEnd.replace('Z', '+00:00') if sub.currentPeriodEnd else None
+            expiry = datetime.fromisoformat(expiry_str) if expiry_str else None
+            if expiry and expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
 
-            if sub.status == "expired" or expiry < now:
+            if sub.status == "expired" or not expiry or expiry < now:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=f"Subscription expired on {sub.currentPeriodEnd}. Please renew to proceed."
@@ -126,11 +128,12 @@ class SubscriptionEnforcement:
 
             # Check subscription status AND expiry date (consistent with property check)
             now = datetime.now(timezone.utc)
-            expiry = datetime.fromisoformat(sub.currentPeriodEnd.replace('Z', '+00:00'))
-            if expiry.tzinfo is None:
+            expiry_str = sub.currentPeriodEnd.replace('Z', '+00:00') if sub.currentPeriodEnd else None
+            expiry = datetime.fromisoformat(expiry_str) if expiry_str else None
+            if expiry and expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
 
-            if sub.status == "expired" or expiry < now:
+            if sub.status == "expired" or not expiry or expiry < now:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=f"Subscription expired on {sub.currentPeriodEnd}. Please renew to create tenants."
@@ -144,24 +147,31 @@ class SubscriptionEnforcement:
                 logger.warning("subscription_plan_limits_missing", extra={"event": "subscription_plan_limits_missing", "plan": sub.plan, "context": "tenant"})
                 limits = {"properties": 1, "tenants": 80, "rooms": 30, "staff": 3}
 
-            # Count existing active tenants in THIS property only (exclude deleted and archived)
+            # Count existing active tenants across ALL properties for the owner (exclude deleted and archived)
+            # FIX (Critical #4): Tenant quota is total across all properties, not per property.
+            all_property_ids = [str(p["_id"]) for p in await db["properties"].find(
+                {**build_owner_query(owner_id), "isDeleted": {"$ne": True}, "active": True},
+                {"_id": 1}
+            ).to_list(length=None)]
+
             current = await db["tenants"].count_documents({
-                "propertyId": property_id,
+                "propertyId": {"$in": all_property_ids},
                 "isDeleted": {"$ne": True},
                 "archived": {"$ne": True}
-            })
+            }) if all_property_ids else 0
 
-            # Check quota (max tenants per property)
-            if current >= limits["tenants"]:
+            # Check quota (total tenants across all properties)
+            tenant_limit = limits["tenants"]
+            if current >= tenant_limit:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    detail=f"You've reached the limit of {limits['tenants']} tenants per property on {sub.plan.title()} plan. "
+                    detail=f"You've reached the limit of {tenant_limit} tenants across all your properties on the {sub.plan.title()} plan. "
                             f"Upgrade your subscription to add more tenants."
                 )
 
             logger.info(
                 "subscription_tenant_create_allowed",
-                extra={"event": "subscription_tenant_create_allowed", "owner_id": owner_id, "plan": sub.plan, "property_id": property_id, "current": current, "limit": limits["tenants"]},
+                extra={"event": "subscription_tenant_create_allowed", "owner_id": owner_id, "plan": sub.plan, "current": current, "limit": tenant_limit},
             )
         except HTTPException:
             raise
@@ -204,11 +214,12 @@ class SubscriptionEnforcement:
 
             # Check subscription status AND expiry date (consistent with property check)
             now = datetime.now(timezone.utc)
-            expiry = datetime.fromisoformat(sub.currentPeriodEnd.replace('Z', '+00:00'))
-            if expiry.tzinfo is None:
+            expiry_str = sub.currentPeriodEnd.replace('Z', '+00:00') if sub.currentPeriodEnd else None
+            expiry = datetime.fromisoformat(expiry_str) if expiry_str else None
+            if expiry and expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
 
-            if sub.status == "expired" or expiry < now:
+            if sub.status == "expired" or not expiry or expiry < now:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=f"Subscription expired on {sub.currentPeriodEnd}. Please renew to create rooms."
@@ -283,11 +294,12 @@ class SubscriptionEnforcement:
 
             # Check subscription status AND expiry date (consistent with property check)
             now = datetime.now(timezone.utc)
-            expiry = datetime.fromisoformat(sub.currentPeriodEnd.replace('Z', '+00:00'))
-            if expiry.tzinfo is None:
+            expiry_str = sub.currentPeriodEnd.replace('Z', '+00:00') if sub.currentPeriodEnd else None
+            expiry = datetime.fromisoformat(expiry_str) if expiry_str else None
+            if expiry and expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
 
-            if sub.status == "expired" or expiry < now:
+            if sub.status == "expired" or not expiry or expiry < now:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=f"Subscription expired on {sub.currentPeriodEnd}. Please renew to add staff members."
@@ -472,4 +484,3 @@ class SubscriptionEnforcement:
             raise
         except Exception as e:
             logger.exception("subscription_tenant_archive_check_failed", extra={"event": "subscription_tenant_archive_check_failed", "tenant_id": tenant_id, "error": str(e)})
-

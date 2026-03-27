@@ -287,11 +287,18 @@ async def verify_payment(payload: dict, user_id: str = Depends(get_current_user)
         period = plan_data.get("period", 1)
         
         await SubscriptionService.update_subscription(user_id, plan, period)
-        
+
         # Apply coupon usage if coupon was used
         if coupon_code:
-            await CouponService.increment_usage(coupon_code)
-
+            # FIX: Use atomic apply and increment to prevent over-usage race conditions
+            from app.services.plan_service import PlanService
+            try:
+                plan_price = await PlanService.get_plan_price(plan, period)
+                await CouponService.apply_and_increment_usage(coupon_code, plan_price, plan)
+            except Exception as e:
+                # If lookup fails, fallback to simple increment (better than nothing)
+                logger.warning("subscription_verify_coupon_atomic_failed", extra={"event": "subscription_verify_coupon_atomic_failed", "error": str(e)})
+                await CouponService.increment_usage(coupon_code)
         logger.info(
             "subscription_verify_payment_success",
             extra={

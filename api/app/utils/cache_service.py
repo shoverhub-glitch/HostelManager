@@ -1,62 +1,37 @@
-import json
+# In-memory cache using a simple dictionary with TTL
+import time
 import logging
-from typing import Optional, Any
-import redis.asyncio as redis
-from app.config.settings import REDIS_URL
 
 logger = logging.getLogger(__name__)
 
-class RedisCache:
-    """Async Redis cache for performance optimization."""
-    _client: Optional[redis.Redis] = None
+_cache = {}
+
+class InMemoryCache:
+    """Simple in-memory cache with TTL."""
+    
+    @classmethod
+    async def get(cls, key: str):
+        """Get value from cache, return None if expired or not found."""
+        item = _cache.get(key)
+        if item and item["expires_at"] > time.time():
+            return item["value"]
+        # Remove expired item if found
+        if item:
+            del _cache[key]
+        return None
 
     @classmethod
-    async def get_client(cls) -> redis.Redis:
-        if cls._client is None:
-            cls._client = redis.from_url(REDIS_URL, decode_responses=True)
-        return cls._client
+    async def set(cls, key: str, value: any, ttl: int):
+        """Set value in cache with TTL in seconds."""
+        _cache[key] = {"value": value, "expires_at": time.time() + ttl}
 
     @classmethod
-    async def get(cls, key: str) -> Optional[Any]:
-        """Fetch from cache and deserialize JSON."""
-        try:
-            client = await cls.get_client()
-            data = await client.get(key)
-            return json.loads(data) if data else None
-        except Exception as e:
-            logger.error(f"Cache GET error: {str(e)}")
-            return None
+    async def delete(cls, key: str):
+        """Delete item from cache."""
+        if key in _cache:
+            del _cache[key]
 
     @classmethod
-    async def set(cls, key: str, value: Any, expire_seconds: int = 300) -> bool:
-        """Serialize to JSON and store in cache with TTL."""
-        try:
-            client = await cls.get_client()
-            await client.set(key, json.dumps(value), ex=expire_seconds)
-            return True
-        except Exception as e:
-            logger.error(f"Cache SET error: {str(e)}")
-            return False
-
-    @classmethod
-    async def delete(cls, key: str) -> bool:
-        """Remove item from cache."""
-        try:
-            client = await cls.get_client()
-            await client.delete(key)
-            return True
-        except Exception as e:
-            logger.error(f"Cache DELETE error: {str(e)}")
-            return False
-
-    @classmethod
-    async def invalidate_prefix(cls, prefix: str) -> bool:
-        """Invalidate all keys starting with prefix (e.g. 'plans:')"""
-        try:
-            client = await cls.get_client()
-            async for key in client.scan_iter(f"{prefix}*"):
-                await client.delete(key)
-            return True
-        except Exception as e:
-            logger.error(f"Cache Prefix Invalidation error: {str(e)}")
-            return False
+    async def clear(cls):
+        """Clear the entire cache."""
+        _cache.clear()

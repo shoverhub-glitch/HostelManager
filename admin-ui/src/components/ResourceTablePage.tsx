@@ -1,51 +1,39 @@
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Button,
   DatePicker,
-  Descriptions,
   Form,
   Grid,
   Input,
   InputNumber,
-  List,
   Modal,
   Pagination,
   Select,
   Space,
   Switch,
   Table,
-  Tag,
   TimePicker,
   Tooltip,
-  Typography,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
-import { useEffect, useMemo, useState } from 'react';
 import {
   SearchOutlined,
   ReloadOutlined,
   PlusOutlined,
   EditOutlined,
-  FilterOutlined,
   DatabaseOutlined,
   CheckOutlined,
   CloseOutlined,
 } from '@ant-design/icons';
-import {
-  brandColor,
-  colorPalette,
-  typography,
-  spacing,
-  radius,
-  shadows,
-} from '../theme';
+import { colorPalette, typography, spacing, radius, shadows } from '../theme';
 
-const { useBreakpoint } = Grid;
 dayjs.extend(customParseFormat);
 
-/* ─── theme shortcuts ─────────────────────────────────────────────────────── */
+const { useBreakpoint } = Grid;
+
 const c = {
   primary:    colorPalette.primary[500],
   primary400: colorPalette.primary[400],
@@ -53,24 +41,26 @@ const c = {
   primary50:  colorPalette.primary[50],
   success:    colorPalette.success[500],
   success50:  colorPalette.success[50],
+  success200: colorPalette.success[200],
   danger:     colorPalette.danger[500],
   danger50:   colorPalette.danger[50],
+  danger200:  colorPalette.danger[200],
   warning:    colorPalette.warning[500],
   warning50:  colorPalette.warning[50],
-  n50:        colorPalette.neutral[50],
-  n100:       colorPalette.neutral[100],
-  n200:       colorPalette.neutral[200],
-  n300:       colorPalette.neutral[300],
-  n400:       colorPalette.neutral[400],
-  n500:       colorPalette.neutral[500],
-  n600:       colorPalette.neutral[600],
-  n700:       colorPalette.neutral[700],
-  n800:       colorPalette.neutral[800],
-  n900:       colorPalette.neutral[900],
-  n950:       colorPalette.neutral[950],
+  n50:  colorPalette.neutral[50],
+  n100: colorPalette.neutral[100],
+  n200: colorPalette.neutral[200],
+  n300: colorPalette.neutral[300],
+  n400: colorPalette.neutral[400],
+  n500: colorPalette.neutral[500],
+  n600: colorPalette.neutral[600],
+  n700: colorPalette.neutral[700],
+  n800: colorPalette.neutral[800],
+  n900: colorPalette.neutral[900],
+  n950: colorPalette.neutral[950],
 };
 
-/* ─── types ───────────────────────────────────────────────────────────────── */
+/* ─── Types ───────────────────────────────────────────────────────────────── */
 type EditorKind = 'boolean' | 'number' | 'date' | 'datetime' | 'time' | 'json' | 'string' | 'select';
 
 export interface FieldConfig {
@@ -95,7 +85,7 @@ interface ResourceTablePageProps {
   createTemplate?: Record<string, unknown>;
 }
 
-/* ─── helpers (unchanged logic) ──────────────────────────────────────────── */
+/* ─── Helpers ─────────────────────────────────────────────────────────────── */
 const DATE_KEY_PATTERN = /(date|datetime|timestamp|_at|at$|expiry|expires|dob|birth|start|end)/i;
 const TIME_KEY_PATTERN = /(time|hour|minute)/i;
 
@@ -109,14 +99,14 @@ function isNumberLike(v: unknown): v is number   { return typeof v === 'number' 
 function isComplexValue(v: unknown): v is object { return typeof v === 'object' && v !== null; }
 function isDateOnlyString(v: string): boolean    { return /^\d{4}-\d{2}-\d{2}$/.test(v); }
 function isTimeString(v: string): boolean        { return /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(v); }
-function isDayjsLike(v: unknown): v is { isValid:()=>boolean; format:(f?:string)=>string; toISOString:()=>string } {
+function isDayjsLike(v: unknown): v is { isValid: () => boolean; format: (f?: string) => string; toISOString: () => string } {
   if (!v || typeof v !== 'object') return false;
-  const c = v as Record<string, unknown>;
-  return typeof c.isValid === 'function' && typeof c.format === 'function' && typeof c.toISOString === 'function';
+  const obj = v as Record<string, unknown>;
+  return typeof obj.isValid === 'function' && typeof obj.format === 'function' && typeof obj.toISOString === 'function';
 }
 function inferFieldKind(key: string, value: unknown): EditorKind {
-  if (isBooleanLike(value)) return 'boolean';
-  if (isNumberLike(value))  return 'number';
+  if (isBooleanLike(value))  return 'boolean';
+  if (isNumberLike(value))   return 'number';
   if (isComplexValue(value)) return 'json';
   const nk = key.toLowerCase();
   if (typeof value === 'string') {
@@ -140,12 +130,16 @@ function valuesEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 function getEditableKeys(record: Record<string, unknown>, idField: string): string[] {
-  return Object.keys(record).filter(k => !['_id','id',idField,'createdAt','updatedAt','password','hashed_password'].includes(k));
+  return Object.keys(record).filter(k =>
+    !['_id', 'id', idField, 'createdAt', 'updatedAt', 'password', 'hashed_password'].includes(k)
+  );
 }
 function toFormValue(value: unknown, kind: EditorKind): unknown {
   if (kind === 'json') return isComplexValue(value) ? JSON.stringify(value, null, 2) : value;
   if (kind === 'date' || kind === 'datetime') {
-    if (typeof value === 'string' || typeof value === 'number') { const p = dayjs(value); return p.isValid() ? p : undefined; }
+    if (typeof value === 'string' || typeof value === 'number') {
+      const p = dayjs(value); return p.isValid() ? p : undefined;
+    }
     return undefined;
   }
   if (kind === 'time') {
@@ -186,112 +180,122 @@ function fromFormValue(input: unknown, original: unknown, kind: EditorKind): unk
   return input;
 }
 
-/* ─── small UI atoms ──────────────────────────────────────────────────────── */
-
-/** Pill for boolean values */
+/* ─── Small UI Atoms ──────────────────────────────────────────────────────── */
 function BoolPill({ value }: { value: boolean }) {
   return (
-    <span
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 4,
-        padding: '2px 9px', borderRadius: radius.full,
-        fontSize: 11, fontWeight: 600,
-        background: value ? c.success50 : c.danger50,
-        color:      value ? c.success   : c.danger,
-        border: `1px solid ${value ? colorPalette.success[200] : colorPalette.danger[200]}`,
-      }}
-    >
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      padding: '2px 9px', borderRadius: radius.full,
+      fontSize: 11, fontWeight: 700,
+      background: value ? c.success50 : c.danger50,
+      color:      value ? c.success   : c.danger,
+      border: `1px solid ${value ? c.success200 : c.danger200}`,
+    }}>
       {value ? <CheckOutlined style={{ fontSize: 9 }} /> : <CloseOutlined style={{ fontSize: 9 }} />}
       {value ? 'true' : 'false'}
     </span>
   );
 }
 
-/** Cell text — truncated with tooltip */
 function CellText({ value }: { value: string }) {
   if (value === '—') return <span style={{ color: c.n300, fontSize: 13 }}>—</span>;
   return (
     <Tooltip title={value.length > 40 ? value : undefined}>
-      <span
-        style={{
-          fontSize: 13, color: c.n700, display: 'block',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          maxWidth: 200,
-        }}
-      >
+      <span style={{
+        fontSize: 13, color: c.n700, display: 'block',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        maxWidth: 220,
+      }}>
         {value}
       </span>
     </Tooltip>
   );
 }
 
-/** Section label inside modal forms */
 function FieldLabel({ label, kind }: { label: React.ReactNode; kind: EditorKind }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <span style={{ fontSize: 13, fontWeight: 600, color: c.n700 }}>{label}</span>
-      <span
-        style={{
-          fontSize: 10, fontWeight: 600,
-          color: c.n400, background: c.n100,
-          padding: '1px 6px', borderRadius: radius.full,
-          textTransform: 'uppercase', letterSpacing: 0.5,
-        }}
-      >
+      <span style={{
+        fontSize: 10, fontWeight: 600,
+        color: c.n400, background: c.n100,
+        padding: '1px 6px', borderRadius: radius.full,
+        textTransform: 'uppercase', letterSpacing: 0.5,
+      }}>
         {getKindLabel(kind)}
       </span>
     </div>
   );
 }
 
-/** Count badge */
 function CountBadge({ count, loading }: { count: number; loading: boolean }) {
   return (
-    <span
-      style={{
-        display: 'inline-flex', alignItems: 'center',
-        padding: '2px 10px', borderRadius: radius.full,
-        fontSize: 12, fontWeight: 700,
-        background: c.primary50, color: c.primary,
-        border: `1px solid ${c.primary100}`,
-        minWidth: 36, justifyContent: 'center',
-      }}
-    >
+    <span style={{
+      display: 'inline-flex', alignItems: 'center',
+      padding: '2px 10px', borderRadius: radius.full,
+      fontSize: 12, fontWeight: 700,
+      background: c.primary50, color: c.primary,
+      border: `1px solid ${c.primary100}`,
+      minWidth: 36, justifyContent: 'center',
+    }}>
       {loading ? '…' : count.toLocaleString()}
     </span>
   );
 }
 
-/* ─── main component ──────────────────────────────────────────────────────── */
+function EmptyState({ title }: { title: string }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: `${spacing.xxl}px ${spacing.lg}px`,
+      textAlign: 'center',
+      background: '#fff',
+      borderRadius: radius.lg,
+      border: `1px dashed ${c.n200}`,
+    }}>
+      <div style={{
+        width: 52, height: 52, borderRadius: radius.lg,
+        background: c.n100, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 22, color: c.n400, marginBottom: spacing.md,
+      }}>
+        <DatabaseOutlined />
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 600, color: c.n600, marginBottom: 4 }}>No records found</div>
+      <div style={{ fontSize: 12, color: c.n400 }}>Try adjusting your search or filters for {title}</div>
+    </div>
+  );
+}
+
+/* ─── Main Component ──────────────────────────────────────────────────────── */
 export default function ResourceTablePage({
   title, subtitle, idField,
   listData, updateData, createData,
   fieldConfigs, createTemplate,
 }: ResourceTablePageProps) {
-  const screens    = useBreakpoint();
-  const isMobile   = !screens.md;
-  const isSmall    = !screens.sm;
+  const screens  = useBreakpoint();
+  const isMobile = !screens.md;
+  const isSmall  = !screens.sm;
 
   const [messageApi, contextHolder] = message.useMessage();
   const [editForm]   = Form.useForm();
   const [createForm] = Form.useForm();
 
-  const [rows, setRows]       = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch]   = useState('');
-  const [page, setPage]       = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [total, setTotal]     = useState(0);
+  const [rows, setRows]             = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading]       = useState(false);
+  const [search, setSearch]         = useState('');
+  const [page, setPage]             = useState(1);
+  const [pageSize, setPageSize]     = useState(25);
+  const [total, setTotal]           = useState(0);
 
-  const [editingRow, setEditingRow]           = useState<Record<string, unknown> | null>(null);
+  const [editingRow, setEditingRow]               = useState<Record<string, unknown> | null>(null);
   const [editingFieldKinds, setEditingFieldKinds] = useState<Record<string, EditorKind>>({});
-  const [savingEdit, setSavingEdit]           = useState(false);
+  const [savingEdit, setSavingEdit]               = useState(false);
 
-  const [creating, setCreating]       = useState(false);
+  const [creating, setCreating]           = useState(false);
   const [createPayload, setCreatePayload] = useState('{}');
   const [savingCreate, setSavingCreate]   = useState(false);
 
-  const loadRows = async () => {
+  const loadRows = useCallback(async () => {
     setLoading(true);
     try {
       const res = await listData({ page, pageSize, search });
@@ -302,14 +306,15 @@ export default function ResourceTablePage({
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, search, listData, messageApi]);
 
+  // Load on page/pageSize change; search is manual (press Enter)
   useEffect(() => { loadRows(); }, [page, pageSize]);
 
   const displayKeys = useMemo(() => {
     if (rows.length === 0) return [idField];
-    const sample = rows[0];
-    const keys   = Object.keys(sample).filter(k => !['id','_id','createdAt','updatedAt'].includes(k));
+    const sample  = rows[0];
+    const keys    = Object.keys(sample).filter(k => !['id', '_id', 'createdAt', 'updatedAt'].includes(k));
     const selected = keys.slice(0, 7);
     return sample[idField] === undefined ? selected : [idField, ...selected];
   }, [rows, idField]);
@@ -318,6 +323,9 @@ export default function ResourceTablePage({
     displayKeys.filter(k => k !== idField).slice(0, 4),
     [displayKeys, idField]
   );
+
+  const getRecordId = (record: Record<string, unknown>) =>
+    prettyValue(record[idField] ?? record.id ?? record.code ?? 'Record');
 
   const openEditModal = (record: Record<string, unknown>) => {
     const editableKeys = getEditableKeys(record, idField);
@@ -347,7 +355,7 @@ export default function ResourceTablePage({
     setCreating(true);
   };
 
-  /* columns */
+  /* ── Columns ── */
   const columns = useMemo<ColumnsType<Record<string, unknown>>>(() => {
     const generated: ColumnsType<Record<string, unknown>> = displayKeys.map(key => ({
       title: (
@@ -359,16 +367,14 @@ export default function ResourceTablePage({
       key,
       ellipsis: true,
       render: (value: unknown) =>
-        isBooleanLike(value)
-          ? <BoolPill value={value} />
-          : <CellText value={prettyValue(value)} />,
+        isBooleanLike(value) ? <BoolPill value={value} /> : <CellText value={prettyValue(value)} />,
     }));
 
     generated.push({
       title: '',
       key: 'actions',
       fixed: 'right',
-      width: 68,
+      width: 72,
       render: (_: unknown, record: Record<string, unknown>) => (
         <button
           onClick={() => openEditModal(record)}
@@ -378,8 +384,7 @@ export default function ResourceTablePage({
             fontSize: 12, fontWeight: 600,
             background: c.primary50, color: c.primary,
             border: `1px solid ${c.primary100}`,
-            cursor: 'pointer', transition: 'all 0.15s',
-            whiteSpace: 'nowrap',
+            cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap',
           }}
           onMouseEnter={e => {
             const el = e.currentTarget as HTMLButtonElement;
@@ -420,12 +425,12 @@ export default function ResourceTablePage({
       return;
     }
 
-    if (Object.keys(parsed).length === 0) { messageApi.info('No changes to save'); return; }
+    if (Object.keys(parsed).length === 0) { messageApi.info('No changes detected'); return; }
 
     setSavingEdit(true);
     try {
       await updateData(String(idValue), parsed);
-      messageApi.success('Record updated');
+      messageApi.success('Record updated successfully');
       setEditingRow(null);
       setEditingFieldKinds({});
       editForm.resetFields();
@@ -454,16 +459,17 @@ export default function ResourceTablePage({
       } catch { messageApi.error('Please fix invalid fields'); return; }
     } else {
       try { payload = JSON.parse(createPayload); }
-      catch { messageApi.error('Invalid JSON'); return; }
+      catch { messageApi.error('Invalid JSON payload'); return; }
     }
 
     setSavingCreate(true);
     try {
       await createData(payload);
-      messageApi.success('Record created');
+      messageApi.success(`${title} created successfully`);
       setCreating(false);
       setCreatePayload('{}');
       createForm.resetFields();
+      setPage(1);
       await loadRows();
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : 'Create failed');
@@ -472,19 +478,17 @@ export default function ResourceTablePage({
     }
   };
 
-  /* field renderer */
+  /* ── Field renderer ── */
   const renderField = (key: string, kind: EditorKind, originalValue: unknown) => {
-    const config = fieldConfigs?.[key];
+    const config    = fieldConfigs?.[key];
     const labelNode = <FieldLabel label={config?.label ?? key} kind={kind} />;
-
     const rules: any[] = [];
-    if (config?.required || ['name','code','title','display_name'].includes(key)) {
+
+    if (config?.required || ['name', 'code', 'title', 'display_name'].includes(key)) {
       rules.push({ required: true, message: `${key} is required` });
     }
 
-    const itemStyle: React.CSSProperties = {
-      marginBottom: spacing.md,
-    };
+    const itemStyle: React.CSSProperties = { marginBottom: spacing.md };
 
     if (kind === 'number') {
       const min = config?.min ?? (/(price|amount|count|capacity|properties|tenants|rooms|staff|total|value|order)/i.test(key) ? 0 : undefined);
@@ -492,10 +496,7 @@ export default function ResourceTablePage({
       if (config?.max !== undefined) rules.push({ type: 'number', max: config.max, message: `Max ${config.max}` });
       return (
         <Form.Item key={key} label={labelNode} name={key} rules={rules} style={itemStyle}>
-          <InputNumber
-            style={{ width: '100%', borderRadius: radius.md }}
-            placeholder={config?.placeholder}
-          />
+          <InputNumber style={{ width: '100%', borderRadius: radius.md }} placeholder={config?.placeholder} />
         </Form.Item>
       );
     }
@@ -535,11 +536,7 @@ export default function ResourceTablePage({
     if (kind === 'select' && config?.options) {
       return (
         <Form.Item key={key} label={labelNode} name={key} rules={rules} style={itemStyle}>
-          <Select
-            options={config.options}
-            placeholder={config.placeholder}
-            style={{ borderRadius: radius.md }}
-          />
+          <Select options={config.options} placeholder={config.placeholder} style={{ borderRadius: radius.md }} />
         </Form.Item>
       );
     }
@@ -555,86 +552,73 @@ export default function ResourceTablePage({
       return (
         <Form.Item
           key={key} label={labelNode} name={key} rules={rules} style={itemStyle}
-          extra={
-            <span style={{ fontSize: 11, color: c.n400 }}>
-              {config?.extra ?? 'Editing requires valid JSON structure.'}
-            </span>
-          }
+          extra={<span style={{ fontSize: 11, color: c.n400 }}>{config?.extra ?? 'Editing requires valid JSON structure.'}</span>}
         >
           <Input.TextArea
             rows={4}
             placeholder={config?.placeholder}
             style={{
-              fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-              fontSize: 12, borderRadius: radius.md,
-              background: c.n50,
+              fontFamily: "'ui-monospace', 'SFMono-Regular', monospace",
+              fontSize: 12, borderRadius: radius.md, background: c.n50,
             }}
           />
         </Form.Item>
       );
     }
 
-    const isLong = (typeof originalValue === 'string' && originalValue.length > 100);
+    const isLong = typeof originalValue === 'string' && originalValue.length > 100;
     return (
-      <Form.Item key={key} label={labelNode} name={key} rules={rules} extra={config?.extra ? <span style={{ fontSize: 11, color: c.n400 }}>{config.extra}</span> : undefined} style={itemStyle}>
+      <Form.Item
+        key={key} label={labelNode} name={key} rules={rules}
+        extra={config?.extra ? <span style={{ fontSize: 11, color: c.n400 }}>{config.extra}</span> : undefined}
+        style={itemStyle}
+      >
         {isLong
-          ? <Input.TextArea rows={4} placeholder={config?.placeholder} style={{ borderRadius: radius.md }} />
+          ? <Input.TextArea rows={3} placeholder={config?.placeholder} style={{ borderRadius: radius.md }} />
           : <Input placeholder={config?.placeholder} style={{ borderRadius: radius.md }} />
         }
       </Form.Item>
     );
   };
 
-  /* ── modal shared styles ── */
   const modalWidth = isMobile ? 'calc(100vw - 24px)' : 760;
   const modalTop   = isMobile ? 8 : 40;
 
-  /* ── record id for display ── */
-  const getRecordId = (record: Record<string, unknown>) =>
-    prettyValue(record[idField] ?? record.id ?? record.code ?? 'Record');
-
-  /* ══════════════════════════════════════════════════════════
+  /* ══════════════════════════════════════════
      RENDER
-  ══════════════════════════════════════════════════════════ */
+  ══════════════════════════════════════════ */
   return (
     <>
       {contextHolder}
 
-      {/* ── Page container ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
 
-        {/* ── Page header card ── */}
-        <div
-          style={{
-            background: '#fff',
-            borderRadius: radius.lg,
-            border: `1px solid ${c.n200}`,
-            boxShadow: shadows.sm,
-            padding: isMobile ? `${spacing.md}px` : `${spacing.lg}px ${spacing.xl}px`,
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: spacing.md,
-          }}
-        >
-          {/* Left: title + subtitle */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, minWidth: 0 }}>
-            <div
-              style={{
-                width: 40, height: 40, borderRadius: radius.md, flexShrink: 0,
-                background: c.primary50,
-                border: `1px solid ${c.primary100}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: c.primary, fontSize: 18,
-              }}
-            >
+        {/* ── Page header ── */}
+        <div style={{
+          background: '#fff',
+          borderRadius: radius.lg,
+          border: `1px solid ${c.n200}`,
+          boxShadow: shadows.sm,
+          padding: isMobile ? `${spacing.md}px` : `${spacing.lg}px ${spacing.xl}px`,
+          display: 'flex', flexWrap: 'wrap',
+          alignItems: 'center', justifyContent: 'space-between',
+          gap: spacing.md,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, minWidth: 0, flex: 1 }}>
+            <div style={{
+              width: 42, height: 42, borderRadius: radius.md, flexShrink: 0,
+              background: c.primary50,
+              border: `1px solid ${c.primary100}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: c.primary, fontSize: 18,
+            }}>
               <DatabaseOutlined />
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' }}>
                 <h2 style={{
-                  margin: 0, fontSize: isMobile ? 16 : 20,
+                  margin: 0,
+                  fontSize: isMobile ? 16 : 20,
                   fontWeight: 800, color: c.n900, letterSpacing: -0.4,
                 }}>
                   {title}
@@ -645,7 +629,6 @@ export default function ResourceTablePage({
             </div>
           </div>
 
-          {/* Right: create button */}
           {createData && (
             <button
               onClick={openCreateModal}
@@ -655,8 +638,8 @@ export default function ResourceTablePage({
                 borderRadius: radius.md, border: 'none',
                 background: `linear-gradient(135deg, ${c.primary400}, ${c.primary})`,
                 color: '#fff', fontSize: 13, fontWeight: 700,
-                cursor: 'pointer', boxShadow: `0 2px 8px ${c.primary}44`,
-                transition: 'all 0.15s', flexShrink: 0,
+                cursor: 'pointer', boxShadow: `0 2px 8px ${c.primary}40`,
+                transition: 'opacity 0.15s', flexShrink: 0,
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.88'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
@@ -667,14 +650,9 @@ export default function ResourceTablePage({
           )}
         </div>
 
-        {/* ── Toolbar: search + refresh ── */}
-        <div
-          style={{
-            display: 'flex', flexWrap: 'wrap', alignItems: 'center',
-            gap: spacing.sm,
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 180, maxWidth: 360 }}>
+        {/* ── Toolbar ── */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm }}>
+          <div style={{ flex: 1, minWidth: 180, maxWidth: 380 }}>
             <Input
               allowClear
               prefix={<SearchOutlined style={{ color: c.n400, fontSize: 13 }} />}
@@ -691,26 +669,31 @@ export default function ResourceTablePage({
               }}
             />
           </div>
-          <Tooltip title="Refresh">
+          <Tooltip title="Refresh data">
             <button
               onClick={() => { setPage(1); loadRows(); }}
               style={{
                 width: 36, height: 36, borderRadius: radius.md,
                 background: '#fff', border: `1px solid ${c.n200}`,
-                color: c.n500, cursor: 'pointer', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', fontSize: 14,
-                transition: 'all 0.15s',
+                color: c.n500, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 14, transition: 'all 0.15s',
               }}
-              onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = c.primary; el.style.color = c.primary; }}
-              onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = c.n200; el.style.color = c.n500; }}
+              onMouseEnter={e => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.borderColor = c.primary; el.style.color = c.primary;
+              }}
+              onMouseLeave={e => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.borderColor = c.n200; el.style.color = c.n500;
+              }}
             >
               <ReloadOutlined />
             </button>
           </Tooltip>
 
-          {/* total count — visible on desktop */}
           {!isMobile && total > 0 && (
-            <span style={{ fontSize: 12, color: c.n400, marginLeft: spacing.xs }}>
+            <span style={{ fontSize: 12, color: c.n400 }}>
               {total.toLocaleString()} record{total !== 1 ? 's' : ''}
             </span>
           )}
@@ -718,48 +701,38 @@ export default function ResourceTablePage({
 
         {/* ── Data area ── */}
         {isMobile ? (
-          /* ── Mobile card list ── */
+          /* Mobile card list */
           <div>
             {loading ? (
               <div style={{ textAlign: 'center', padding: spacing.xl, color: c.n400, fontSize: 13 }}>
-                Loading…
+                Loading records…
               </div>
             ) : rows.length === 0 ? (
-              <div
-                style={{
-                  textAlign: 'center', padding: `${spacing.xl}px ${spacing.lg}px`,
-                  background: '#fff', borderRadius: radius.lg,
-                  border: `1px solid ${c.n200}`, color: c.n400, fontSize: 13,
-                }}
-              >
-                No records found
-              </div>
+              <EmptyState title={title} />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
                 {rows.map((record, idx) => {
                   const recordId = getRecordId(record);
                   return (
-                    <div
-                      key={idx}
-                      style={{
-                        background: '#fff',
-                        borderRadius: radius.lg,
-                        border: `1px solid ${c.n200}`,
-                        boxShadow: shadows.sm,
-                        overflow: 'hidden',
-                      }}
-                    >
+                    <div key={idx} style={{
+                      background: '#fff',
+                      borderRadius: radius.lg,
+                      border: `1px solid ${c.n200}`,
+                      boxShadow: shadows.sm,
+                      overflow: 'hidden',
+                    }}>
                       {/* card header */}
-                      <div
-                        style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          padding: `${spacing.sm}px ${spacing.md}px`,
-                          background: c.n50,
-                          borderBottom: `1px solid ${c.n100}`,
-                          gap: spacing.sm,
-                        }}
-                      >
-                        <div style={{ fontSize: 13, fontWeight: 700, color: c.n800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: `${spacing.sm}px ${spacing.md}px`,
+                        background: c.n50,
+                        borderBottom: `1px solid ${c.n100}`,
+                        gap: spacing.sm,
+                      }}>
+                        <div style={{
+                          fontSize: 13, fontWeight: 700, color: c.n800,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
                           {recordId}
                         </div>
                         <button
@@ -776,23 +749,18 @@ export default function ResourceTablePage({
                         </button>
                       </div>
 
-                      {/* fields grid */}
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: isSmall ? '1fr' : '1fr 1fr',
-                          gap: 0,
-                        }}
-                      >
+                      {/* field grid */}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: isSmall ? '1fr' : '1fr 1fr',
+                        gap: 0,
+                      }}>
                         {previewKeys.map((key, ki) => (
-                          <div
-                            key={key}
-                            style={{
-                              padding: `${spacing.sm}px ${spacing.md}px`,
-                              borderBottom: ki < previewKeys.length - 1 ? `1px solid ${c.n100}` : undefined,
-                              borderRight: !isSmall && ki % 2 === 0 ? `1px solid ${c.n100}` : undefined,
-                            }}
-                          >
+                          <div key={key} style={{
+                            padding: `${spacing.sm}px ${spacing.md}px`,
+                            borderBottom: ki < previewKeys.length - 2 ? `1px solid ${c.n100}` : undefined,
+                            borderRight: !isSmall && ki % 2 === 0 ? `1px solid ${c.n100}` : undefined,
+                          }}>
                             <div style={{ fontSize: 10, fontWeight: 700, color: c.n400, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 3 }}>
                               {key}
                             </div>
@@ -822,16 +790,14 @@ export default function ResourceTablePage({
             </div>
           </div>
         ) : (
-          /* ── Desktop table ── */
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: radius.lg,
-              border: `1px solid ${c.n200}`,
-              boxShadow: shadows.sm,
-              overflow: 'hidden',
-            }}
-          >
+          /* Desktop table */
+          <div style={{
+            background: '#fff',
+            borderRadius: radius.lg,
+            border: `1px solid ${c.n200}`,
+            boxShadow: shadows.sm,
+            overflow: 'hidden',
+          }}>
             <Table
               rowKey={record => String(record[idField] ?? record.id ?? record.code ?? Math.random())}
               loading={loading}
@@ -844,6 +810,7 @@ export default function ResourceTablePage({
                 pageSize,
                 total,
                 showSizeChanger: true,
+                pageSizeOptions: ['10', '25', '50', '100'],
                 showTotal: (t, range) => (
                   <span style={{ fontSize: 12, color: c.n400 }}>
                     {range[0]}–{range[1]} of {t.toLocaleString()}
@@ -852,9 +819,10 @@ export default function ResourceTablePage({
                 onChange: (p, ps) => { setPage(p); setPageSize(ps || 25); },
                 style: { padding: `${spacing.sm}px ${spacing.lg}px` },
               }}
+              locale={{ emptyText: <EmptyState title={title} /> }}
               style={{ fontFamily: typography.fontFamily.regular }}
               onRow={() => ({
-                style: { transition: 'background 0.12s' },
+                style: { transition: 'background 0.1s' },
                 onMouseEnter: (e) => { (e.currentTarget as HTMLElement).style.background = c.n50; },
                 onMouseLeave: (e) => { (e.currentTarget as HTMLElement).style.background = '#fff'; },
               })}
@@ -863,9 +831,7 @@ export default function ResourceTablePage({
         )}
       </div>
 
-      {/* ════════════════════════════════════════════
-          EDIT MODAL
-      ════════════════════════════════════════════ */}
+      {/* ════════════ EDIT MODAL ════════════ */}
       <Modal
         open={!!editingRow}
         onCancel={() => { setEditingRow(null); setEditingFieldKinds({}); editForm.resetFields(); }}
@@ -875,33 +841,22 @@ export default function ResourceTablePage({
         confirmLoading={savingEdit}
         width={modalWidth}
         style={{ top: modalTop }}
+        destroyOnClose
         styles={{
-          header: {
-            padding: `${spacing.md}px ${spacing.lg}px`,
-            borderBottom: `1px solid ${c.n100}`,
-          },
-          body: {
-            padding: `${spacing.lg}px`,
-            maxHeight: '70vh',
-            overflowY: 'auto',
-          },
-          footer: {
-            padding: `${spacing.sm}px ${spacing.lg}px`,
-            borderTop: `1px solid ${c.n100}`,
-          },
+          header: { padding: `${spacing.md}px ${spacing.lg}px`, borderBottom: `1px solid ${c.n100}` },
+          body: { padding: `${spacing.lg}px`, maxHeight: '70vh', overflowY: 'auto' },
+          footer: { padding: `${spacing.sm}px ${spacing.lg}px`, borderTop: `1px solid ${c.n100}` },
         }}
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
             <EditOutlined style={{ color: c.primary, fontSize: 15 }} />
             <span style={{ fontSize: 15, fontWeight: 700, color: c.n800 }}>Edit {title}</span>
             {editingRow && (
-              <span
-                style={{
-                  fontSize: 11, fontWeight: 600, color: c.n500,
-                  background: c.n100, padding: '2px 8px', borderRadius: radius.full,
-                  maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}
-              >
+              <span style={{
+                fontSize: 11, fontWeight: 600, color: c.n500,
+                background: c.n100, padding: '2px 8px', borderRadius: radius.full,
+                maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
                 {getRecordId(editingRow)}
               </span>
             )}
@@ -922,16 +877,14 @@ export default function ResourceTablePage({
               Field types are shown next to each label. Only changed fields will be saved.
             </p>
             <Form form={editForm} layout="vertical" requiredMark={false}>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-                  columnGap: spacing.lg,
-                }}
-              >
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                columnGap: spacing.lg,
+              }}>
                 {getEditableKeys(editingRow, idField).map(key => {
                   const originalValue = editingRow[key];
-                  const kind = editingFieldKinds[key] ?? inferFieldKind(key, originalValue);
+                  const kind          = editingFieldKinds[key] ?? inferFieldKind(key, originalValue);
                   return renderField(key, kind, originalValue);
                 })}
               </div>
@@ -940,9 +893,7 @@ export default function ResourceTablePage({
         )}
       </Modal>
 
-      {/* ════════════════════════════════════════════
-          CREATE MODAL
-      ════════════════════════════════════════════ */}
+      {/* ════════════ CREATE MODAL ════════════ */}
       <Modal
         open={creating}
         onCancel={() => { setCreating(false); createForm.resetFields(); }}
@@ -952,20 +903,11 @@ export default function ResourceTablePage({
         confirmLoading={savingCreate}
         width={modalWidth}
         style={{ top: modalTop }}
+        destroyOnClose
         styles={{
-          header: {
-            padding: `${spacing.md}px ${spacing.lg}px`,
-            borderBottom: `1px solid ${c.n100}`,
-          },
-          body: {
-            padding: `${spacing.lg}px`,
-            maxHeight: '70vh',
-            overflowY: 'auto',
-          },
-          footer: {
-            padding: `${spacing.sm}px ${spacing.lg}px`,
-            borderTop: `1px solid ${c.n100}`,
-          },
+          header: { padding: `${spacing.md}px ${spacing.lg}px`, borderBottom: `1px solid ${c.n100}` },
+          body: { padding: `${spacing.lg}px`, maxHeight: '70vh', overflowY: 'auto' },
+          footer: { padding: `${spacing.sm}px ${spacing.lg}px`, borderTop: `1px solid ${c.n100}` },
         }}
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
@@ -984,13 +926,11 @@ export default function ResourceTablePage({
       >
         {createTemplate ? (
           <Form form={createForm} layout="vertical" requiredMark={false}>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-                columnGap: spacing.lg,
-              }}
-            >
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+              columnGap: spacing.lg,
+            }}>
               {Object.entries(createTemplate).map(([key, value]) => {
                 const config = fieldConfigs?.[key];
                 const kind   = config?.kind ?? inferFieldKind(key, value);
@@ -1008,7 +948,7 @@ export default function ResourceTablePage({
               value={createPayload}
               onChange={e => setCreatePayload(e.target.value)}
               style={{
-                fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                fontFamily: "'ui-monospace', 'SFMono-Regular', monospace",
                 fontSize: 12, borderRadius: radius.md, background: c.n50,
               }}
             />

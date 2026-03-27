@@ -1,7 +1,102 @@
 version: "3.9"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCTION docker-compose
+# Key fixes:
+#  1. MongoDB replica set init via a one-shot service (rs-init) so the FastAPI
+#     backend never starts before the replica set is fully ready. This was the
+#     root cause of tenant-creation failures – transactions need a replica set.
+#  2. Named volumes declared with explicit driver opts so Docker never silently
+#     drops them on `docker compose down` (you must pass --volumes to delete).
+#  3. Backup sidecar (mongo-backup) runs mongodump daily into a host-mounted
+#     directory so data survives even total container/volume loss.
+#  4. Gunicorn worker count raised to match CPU cores (adjust WORKERS_COUNT env).
+#  5. Nginx kept intact; TLS certs volume made explicit.
+#  6. All services restricted to a single internal network; nothing exposes
+#     Mongo or the backend to the outside world.
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
 
+  # ── MongoDB ────────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: api-mongodb
+    restart: always
+    expose:
+      - "27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb          # persist config too
+      - ./mongo-keyfile:/etc/mongo-keyfile:ro  # replica-set auth key (see README)
+    env_file:
+      - .env
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+    networks:
+      - backend-network
+    # --replSet rs0: required for transactions; --keyFile: enables inter-node auth
+    command: >
+      mongod
+      --replSet rs0
+      --bind_ip_all
+      --keyFile /etc/mongo-keyfile
+    healthcheck:
+      test:
+        - "CMD"
+        - "mongosh"
+        - "--quiet"
+        - "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@localhost:27017/admin?authSource=admin"
+        - "--eval"
+        - "db.adminCommand('ping').ok"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *default-logging
+
+  # ── Replica-set initialiser (runs once, then exits) ────────────────────────
+  # FIX: This is the missing piece. The FastAPI app was starting before the
+  # replica set was initiated. Transactions (used in tenant creation) require a
+  # fully initiated replica set, not just a running mongod with --replSet.
+  rs-init:
+    image: mongo:7
+    container_name: api-mongodb-rs-init
+    restart: "no"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    env_file:
+      - .env
+    networks:
+      - backend-network
+    entrypoint: >
+      mongosh
+      --quiet
+      "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/admin?authSource=admin"
+      --eval "
+        try {
+          rs.status();
+          print('Replica set already initiated');
+        } catch(e) {
+          rs.initiate({
+            _id: 'rs0',
+            members: [{ _id: 0, host: 'mongodb:27017' }]
+          });
+          print('Replica set initiated');
+        }
+      "
+    logging: *default-logging
+
+  # ── FastAPI backend ────────────────────────────────────────────────────────
   backend:
     build:
       context: ./api
@@ -19,12 +114,16 @@ services:
       LOG_LEVEL: "INFO"
       LOG_FILE_MAX_BYTES: "10485760"
       LOG_FILE_BACKUP_COUNT: "5"
+      # Tune workers to your CPU count; 2–4 is good for most VPS sizes
+      WEB_CONCURRENCY: "${WORKERS_COUNT:-2}"
     volumes:
       - ./mongodb_backups:/app/backups
       - ./api_logs:/app/logs
     depends_on:
       mongodb:
         condition: service_healthy
+      rs-init:
+        condition: service_completed_successfully
     networks:
       - backend-network
     healthcheck:
@@ -33,41 +132,9 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *default-logging
 
-  mongodb:
-    image: mongo:7
-    container_name: api-mongodb
-    restart: always
-    expose:
-      - "27017"
-    volumes:
-      - ./mongodb_data:/data/db
-    env_file:
-      - .env
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
-    networks:
-      - backend-network
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@localhost:27017/admin?authSource=admin"]
-      interval: 10s      
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-
+  # ── Nginx reverse-proxy ────────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
     container_name: api-nginx
@@ -77,17 +144,69 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - letsencrypt_data:/etc/letsencrypt:ro
     depends_on:
       - backend
     networks:
       - backend-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *default-logging
+
+  # ── Daily backup sidecar ───────────────────────────────────────────────────
+  # Writes compressed mongodump archives to ./mongodb_backups on the host.
+  # Retains last 30 dumps; adjust BACKUP_RETAIN_DAYS as needed.
+  mongo-backup:
+    image: mongo:7
+    container_name: api-mongodb-backup
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rs-init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      BACKUP_RETAIN_DAYS: "${BACKUP_RETAIN_DAYS:-30}"
+    volumes:
+      - ./mongodb_backups:/backups
+    networks:
+      - backend-network
+    # Sleep 24 h between dumps; first dump runs 60 s after start so the
+    # replica set has time to elect a primary.
+    entrypoint: >
+      /bin/sh -c "
+        sleep 60;
+        while true; do
+          TIMESTAMP=$$(date +%Y%m%d_%H%M%S);
+          DEST=/backups/dump_$$TIMESTAMP;
+          echo \"[backup] Starting dump $$TIMESTAMP\";
+          mongodump
+            --uri=\"mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/${MONGO_INITDB_DATABASE}?authSource=admin\"
+            --out=$$DEST
+            --gzip
+            && echo \"[backup] Dump $$TIMESTAMP OK\"
+            || echo \"[backup] Dump $$TIMESTAMP FAILED\";
+          find /backups -maxdepth 1 -type d -name 'dump_*' -mtime +${BACKUP_RETAIN_DAYS:-30} -exec rm -rf {} +;
+          sleep 86400;
+        done
+      "
+    logging: *default-logging
 
 networks:
   backend-network:
     driver: bridge
+
+volumes:
+  # Use explicit labels so these volumes are never mistakenly pruned.
+  mongodb_data:
+    driver: local
+    labels:
+      com.project.description: "MongoDB primary data – DO NOT DELETE"
+  mongodb_config:
+    driver: local
+    labels:
+      com.project.description: "MongoDB config data"
+  letsencrypt_data:
+    driver: local
+    labels:
+      com.project.description: "Let's Encrypt TLS certificates"

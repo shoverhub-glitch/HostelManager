@@ -1,5 +1,7 @@
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ApartmentOutlined,
+  BellOutlined,
   CloudDownloadOutlined,
   CreditCardOutlined,
   DashboardOutlined,
@@ -7,31 +9,25 @@ import {
   LogoutOutlined,
   MenuOutlined,
   PercentageOutlined,
+  RightOutlined,
+  SearchOutlined,
   ShopOutlined,
   TeamOutlined,
   UserOutlined,
   CloseOutlined,
-  BellOutlined,
-  SearchOutlined,
-  RightOutlined,
 } from '@ant-design/icons';
 import {
   Avatar,
   Badge,
-  Button,
   ConfigProvider,
   Drawer,
   Grid,
   Input,
-  Layout,
-  Menu,
   Spin,
   Tooltip,
-  Typography,
   message,
   theme,
 } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
 import {
   createCoupon,
   createPlan,
@@ -50,7 +46,9 @@ import {
   getAdminAccessToken,
   setAdminSecurityKey,
 } from './auth';
-import { DashboardPanel, LoginView, ResourceTablePage } from './components';
+import { DashboardPanel } from './components/DashboardPanel';
+import { LoginView } from './components/LoginView';
+import ResourceTablePage from './components/ResourceTablePage';
 import type { AuthenticatedAdmin, ResourceKey } from './types';
 import {
   brandColor,
@@ -60,10 +58,8 @@ import {
   radius,
   shadows,
   layout,
-  styles as themeStyles,
 } from './theme';
 
-const { Header, Content, Sider } = Layout;
 const { useBreakpoint } = Grid;
 
 type SectionKey =
@@ -167,16 +163,14 @@ const COUPON_TEMPLATE = {
   minAmount: 0, applicablePlans: [], isActive: true,
 };
 
-// ─── Bottom nav items (mobile only — top 5 most used) ────────────────────────
 const BOTTOM_NAV_ITEMS = [
-  { key: 'dashboard',  icon: <DashboardOutlined />,  label: 'Home'     },
-  { key: 'users',      icon: <UserOutlined />,        label: 'Users'    },
-  { key: 'tenants',    icon: <TeamOutlined />,        label: 'Tenants'  },
-  { key: 'payments',   icon: <CreditCardOutlined />,  label: 'Payments' },
-  { key: 'properties', icon: <HomeOutlined />,        label: 'More'     },
+  { key: 'dashboard',  icon: <DashboardOutlined />,  label: 'Home'    },
+  { key: 'users',      icon: <UserOutlined />,        label: 'Users'   },
+  { key: 'tenants',    icon: <TeamOutlined />,        label: 'Tenants' },
+  { key: 'payments',   icon: <CreditCardOutlined />,  label: 'Pay'     },
+  { key: '__more__',   icon: <MenuOutlined />,        label: 'More'    },
 ];
 
-// ─── Nav groups ──────────────────────────────────────────────────────────────
 const NAV_GROUPS = [
   {
     label: 'OVERVIEW',
@@ -187,10 +181,10 @@ const NAV_GROUPS = [
   {
     label: 'MANAGEMENT',
     items: [
-      { key: 'users',      icon: <UserOutlined />,         label: 'Users'      },
-      { key: 'properties', icon: <HomeOutlined />,         label: 'Properties' },
-      { key: 'tenants',    icon: <TeamOutlined />,         label: 'Tenants'    },
-      { key: 'rooms',      icon: <ApartmentOutlined />,    label: 'Rooms'      },
+      { key: 'users',      icon: <UserOutlined />,      label: 'Users'      },
+      { key: 'properties', icon: <HomeOutlined />,      label: 'Properties' },
+      { key: 'tenants',    icon: <TeamOutlined />,      label: 'Tenants'    },
+      { key: 'rooms',      icon: <ApartmentOutlined />, label: 'Rooms'      },
     ],
   },
   {
@@ -210,11 +204,9 @@ const NAV_GROUPS = [
   },
 ];
 
-// ─── Sidebar ──────────────────────────────────────────────────────────────────
+/* ── SidebarContent ─────────────────────────────────────────────────────────── */
 function SidebarContent({
-  section,
-  collapsed,
-  onSelect,
+  section, collapsed, onSelect,
 }: {
   section: SectionKey;
   collapsed: boolean;
@@ -223,57 +215,40 @@ function SidebarContent({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Brand */}
-      <div
-        style={{
-          height: layout.headerHeight,
-          display: 'flex',
-          alignItems: 'center',
-          padding: collapsed ? '0 20px' : `0 ${spacing.lg}px`,
-          gap: spacing.sm,
-          borderBottom: `1px solid rgba(255,255,255,0.06)`,
-          overflow: 'hidden',
-          transition: 'padding 0.2s',
+      <div style={{
+        height: layout.headerHeight,
+        display: 'flex',
+        alignItems: 'center',
+        padding: collapsed ? '0 20px' : `0 ${spacing.lg}px`,
+        gap: spacing.sm,
+        borderBottom: 'rgba(255,255,255,0.07) 1px solid',
+        overflow: 'hidden',
+        transition: 'padding 0.22s',
+        flexShrink: 0,
+      }}>
+        <div style={{
+          width: 34, height: 34,
+          borderRadius: radius.md,
+          background: `linear-gradient(135deg, ${colorPalette.primary[400]}, ${colorPalette.primary[600]})`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
-        }}
-      >
-        {/* Logo mark */}
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: radius.md,
-            background: `linear-gradient(135deg, ${colorPalette.primary[400]}, ${colorPalette.primary[600]})`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            boxShadow: `0 0 12px ${colorPalette.primary[500]}55`,
-          }}
-        >
+          boxShadow: `0 0 14px ${colorPalette.primary[500]}55`,
+        }}>
           <HomeOutlined style={{ color: '#fff', fontSize: 16 }} />
         </div>
         {!collapsed && (
           <div style={{ overflow: 'hidden' }}>
-            <div
-              style={{
-                color: '#fff',
-                fontSize: typography.fontSize.sm,
-                fontWeight: 700,
-                letterSpacing: 0.2,
-                whiteSpace: 'nowrap',
-              }}
-            >
+            <div style={{
+              color: '#fff', fontSize: typography.fontSize.sm,
+              fontWeight: 700, letterSpacing: 0.2, whiteSpace: 'nowrap',
+            }}>
               HostelManager
             </div>
-            <div
-              style={{
-                color: colorPalette.primary[300],
-                fontSize: 10,
-                fontWeight: 500,
-                letterSpacing: 1,
-                textTransform: 'uppercase',
-              }}
-            >
+            <div style={{
+              color: colorPalette.primary[300],
+              fontSize: 10, fontWeight: 600,
+              letterSpacing: 1.2, textTransform: 'uppercase',
+            }}>
               Admin Console
             </div>
           </div>
@@ -281,58 +256,57 @@ function SidebarContent({
       </div>
 
       {/* Nav */}
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: `${spacing.sm}px 0`, scrollbarWidth: 'none' }}>
+      <div style={{
+        flex: 1, overflowY: 'auto', overflowX: 'hidden',
+        padding: `${spacing.sm}px 0`,
+        scrollbarWidth: 'none',
+      }}>
         {NAV_GROUPS.map((group) => (
           <div key={group.label} style={{ marginBottom: spacing.xs }}>
             {!collapsed && (
-              <div
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: 1.5,
-                  color: colorPalette.neutral[600],
-                  padding: `${spacing.sm}px ${spacing.lg}px ${spacing.xs}px`,
-                  textTransform: 'uppercase',
-                }}
-              >
+              <div style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: 1.6,
+                color: colorPalette.neutral[600],
+                padding: `${spacing.sm}px ${spacing.lg}px ${spacing.xs}px`,
+                textTransform: 'uppercase',
+              }}>
                 {group.label}
               </div>
             )}
             {group.items.map((item) => {
               const active = section === item.key;
               return (
-                <Tooltip
-                  key={item.key}
-                  title={collapsed ? item.label : ''}
-                  placement="right"
-                >
+                <Tooltip key={item.key} title={collapsed ? item.label : ''} placement="right">
                   <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onSelect(item.key as SectionKey)}
+                    onKeyDown={e => e.key === 'Enter' && onSelect(item.key as SectionKey)}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
+                      display: 'flex', alignItems: 'center',
                       gap: spacing.sm,
                       padding: collapsed ? `10px 0` : `10px ${spacing.lg}px`,
                       justifyContent: collapsed ? 'center' : 'flex-start',
                       cursor: 'pointer',
                       borderRadius: radius.md,
-                      margin: `2px ${spacing.sm}px`,
+                      margin: `1px ${spacing.sm}px`,
                       transition: 'all 0.15s',
                       background: active
-                        ? `linear-gradient(90deg, ${colorPalette.primary[600]}22, ${colorPalette.primary[500]}11)`
+                        ? `linear-gradient(90deg, ${colorPalette.primary[600]}22, transparent)`
                         : 'transparent',
                       borderLeft: active
                         ? `3px solid ${colorPalette.primary[400]}`
                         : '3px solid transparent',
                       color: active ? colorPalette.primary[300] : colorPalette.neutral[400],
+                      outline: 'none',
                     }}
-                    onMouseEnter={(e) => {
+                    onMouseEnter={e => {
                       if (!active) {
-                        (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)';
+                        (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)';
                         (e.currentTarget as HTMLElement).style.color = colorPalette.neutral[200];
                       }
                     }}
-                    onMouseLeave={(e) => {
+                    onMouseLeave={e => {
                       if (!active) {
                         (e.currentTarget as HTMLElement).style.background = 'transparent';
                         (e.currentTarget as HTMLElement).style.color = colorPalette.neutral[400];
@@ -341,12 +315,12 @@ function SidebarContent({
                   >
                     <span style={{ fontSize: 15, flexShrink: 0 }}>{item.icon}</span>
                     {!collapsed && (
-                      <span style={{ fontSize: typography.fontSize.sm, fontWeight: active ? 600 : 400, whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: typography.fontSize.sm, fontWeight: active ? 600 : 400, whiteSpace: 'nowrap', flex: 1 }}>
                         {item.label}
                       </span>
                     )}
                     {!collapsed && active && (
-                      <RightOutlined style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.6 }} />
+                      <RightOutlined style={{ fontSize: 10, opacity: 0.5 }} />
                     )}
                   </div>
                 </Tooltip>
@@ -356,35 +330,25 @@ function SidebarContent({
         ))}
       </div>
 
-      {/* Bottom version badge */}
+      {/* System status pill */}
       {!collapsed && (
-        <div
-          style={{
-            padding: `${spacing.md}px ${spacing.lg}px`,
-            borderTop: `1px solid rgba(255,255,255,0.06)`,
-            flexShrink: 0,
-          }}
-        >
-          <div
-            style={{
-              background: `${colorPalette.primary[500]}18`,
-              border: `1px solid ${colorPalette.primary[500]}33`,
-              borderRadius: radius.md,
-              padding: `${spacing.xs}px ${spacing.sm}px`,
-              display: 'flex',
-              alignItems: 'center',
-              gap: spacing.xs,
-            }}
-          >
-            <div
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                background: colorPalette.success[400],
-                boxShadow: `0 0 6px ${colorPalette.success[400]}`,
-              }}
-            />
+        <div style={{
+          padding: `${spacing.md}px ${spacing.lg}px`,
+          borderTop: 'rgba(255,255,255,0.06) 1px solid',
+          flexShrink: 0,
+        }}>
+          <div style={{
+            background: `${colorPalette.primary[500]}15`,
+            border: `1px solid ${colorPalette.primary[500]}30`,
+            borderRadius: radius.md,
+            padding: `${spacing.xs}px ${spacing.sm}px`,
+            display: 'flex', alignItems: 'center', gap: spacing.xs,
+          }}>
+            <div style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: colorPalette.success[400],
+              boxShadow: `0 0 6px ${colorPalette.success[400]}`,
+            }} />
             <span style={{ fontSize: 11, color: colorPalette.neutral[400], fontWeight: 500 }}>
               All systems operational
             </span>
@@ -395,16 +359,17 @@ function SidebarContent({
   );
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+/* ── App ────────────────────────────────────────────────────────────────────── */
 export default function App() {
   const screens = useBreakpoint();
   const isMobile = !screens.lg;
   const [messageApi, contextHolder] = message.useMessage();
-  const [loading, setLoading]           = useState(true);
-  const [loggingIn, setLoggingIn]       = useState(false);
-  const [admin, setAdmin]               = useState<AuthenticatedAdmin | null>(null);
-  const [section, setSection]           = useState<SectionKey>('dashboard');
-  const [collapsed, setCollapsed]       = useState(false);
+
+  const [loading, setLoading]         = useState(true);
+  const [loggingIn, setLoggingIn]     = useState(false);
+  const [admin, setAdmin]             = useState<AuthenticatedAdmin | null>(null);
+  const [section, setSection]         = useState<SectionKey>('dashboard');
+  const [collapsed, setCollapsed]     = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
@@ -415,7 +380,10 @@ export default function App() {
       try {
         const me = await fetchAdminMe();
         if (!mounted) return;
-        if (!me?.adminAccess) { clearAdminAccessToken(); throw new Error('No admin access'); }
+        if (!me?.adminAccess) {
+          clearAdminAccessToken();
+          throw new Error('No admin access');
+        }
         setAdmin(me);
       } catch {
         if (!mounted) return;
@@ -437,7 +405,11 @@ export default function App() {
       else clearAdminSecurityKey();
       await loginAdmin(values.email, values.password);
       const me = await fetchAdminMe();
-      if (!me?.adminAccess) { clearAdminAccessToken(); clearAdminSecurityKey(); throw new Error('No portal access'); }
+      if (!me?.adminAccess) {
+        clearAdminAccessToken();
+        clearAdminSecurityKey();
+        throw new Error('No portal access');
+      }
       setAdmin(me);
       setSection('dashboard');
       messageApi.success('Signed in successfully');
@@ -454,13 +426,14 @@ export default function App() {
     setMobileNavOpen(false);
   };
 
-  const handleSectionChange = (nextSection: SectionKey) => {
+  const handleSectionChange = useCallback((nextSection: SectionKey) => {
     setSection(nextSection);
     if (isMobile) setMobileNavOpen(false);
-  };
+  }, [isMobile]);
 
   const renderSection = () => {
     if (section === 'dashboard') return <DashboardPanel />;
+    if (section === 'backups')   return <DashboardPanel forceBackupsOnly />;
 
     if (section === 'plans') {
       const d = SECTION_DETAILS.plans;
@@ -490,8 +463,6 @@ export default function App() {
       );
     }
 
-    if (section === 'backups') return <DashboardPanel forceBackupsOnly />;
-
     const d = SECTION_DETAILS[section];
     let cfg: any = {};
     if (section === 'users')    cfg = USER_CONFIGS;
@@ -502,7 +473,7 @@ export default function App() {
       <ResourceTablePage
         key={section}
         title={d.title} subtitle={d.subtitle} idField={d.idField}
-        listData={async ({ page, pageSize, search }: { page: number; pageSize: number; search: string }) => {
+        listData={async ({ page, pageSize, search }) => {
           const r = await listResource(section as ResourceKey, { page, pageSize, search });
           return { rows: r.rows, total: r.meta.total };
         }}
@@ -512,35 +483,26 @@ export default function App() {
     );
   };
 
-  // ── Loading ────────────────────────────────────────────────────────────────
+  /* ── Loading ─────────────────────────────────────────────────────────────── */
   if (loading) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100vh',
-          background: colorPalette.neutral[950],
-          gap: spacing.md,
-        }}
-      >
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: radius.lg,
-            background: `linear-gradient(135deg, ${colorPalette.primary[400]}, ${colorPalette.primary[600]})`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: `0 0 24px ${colorPalette.primary[500]}66`,
-          }}
-        >
-          <HomeOutlined style={{ color: '#fff', fontSize: 22 }} />
+      <div style={{
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        height: '100vh',
+        background: colorPalette.neutral[950],
+        gap: spacing.md,
+      }}>
+        <div style={{
+          width: 52, height: 52, borderRadius: radius.xl,
+          background: `linear-gradient(135deg, ${colorPalette.primary[400]}, ${colorPalette.primary[600]})`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: `0 0 28px ${colorPalette.primary[500]}66`,
+          fontSize: 22,
+        }}>
+          <HomeOutlined style={{ color: '#fff' }} />
         </div>
-        <Spin size="large" style={{ color: colorPalette.primary[400] }} />
+        <Spin size="large" />
         <span style={{ color: colorPalette.neutral[500], fontSize: typography.fontSize.sm }}>
           Authenticating…
         </span>
@@ -548,7 +510,7 @@ export default function App() {
     );
   }
 
-  // ── Login ──────────────────────────────────────────────────────────────────
+  /* ── Login ───────────────────────────────────────────────────────────────── */
   if (!admin) {
     return (
       <>
@@ -558,9 +520,8 @@ export default function App() {
     );
   }
 
-  const siderWidth = collapsed ? 72 : layout.siderWidth;
-  // On mobile we show a bottom nav bar (56px) instead of a sidebar
-  const BOTTOM_NAV_HEIGHT = 56;
+  const siderWidth = collapsed ? layout.siderCollapsed : layout.siderWidth;
+  const BOTTOM_NAV_HEIGHT = layout.bottomNavHeight;
 
   return (
     <>
@@ -578,62 +539,55 @@ export default function App() {
           algorithm: theme.defaultAlgorithm,
         }}
       >
-        {/* ── Sidebar (desktop only) ── */}
+        {/* ── Desktop Sidebar ── */}
         {!isMobile && (
-          <div
-            style={{
-              position: 'fixed',
-              left: 0, top: 0, bottom: 0,
-              width: siderWidth,
-              background: `linear-gradient(180deg, ${colorPalette.neutral[900]} 0%, ${colorPalette.neutral[950]} 100%)`,
-              boxShadow: '4px 0 24px rgba(0,0,0,0.3)',
-              zIndex: 20,
-              transition: 'width 0.2s cubic-bezier(0.4,0,0.2,1)',
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
+          <div style={{
+            position: 'fixed',
+            left: 0, top: 0, bottom: 0,
+            width: siderWidth,
+            background: `linear-gradient(180deg, ${colorPalette.neutral[900]} 0%, ${colorPalette.neutral[950]} 100%)`,
+            boxShadow: '4px 0 24px rgba(0,0,0,0.28)',
+            zIndex: 20,
+            transition: 'width 0.22s cubic-bezier(0.4,0,0.2,1)',
+            overflow: 'hidden',
+            display: 'flex', flexDirection: 'column',
+          }}>
             <SidebarContent section={section} collapsed={collapsed} onSelect={handleSectionChange} />
             {/* Collapse toggle */}
             <button
-              onClick={() => setCollapsed((c) => !c)}
+              onClick={() => setCollapsed(c => !c)}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               style={{
-                position: 'absolute',
-                right: -12,
-                top: layout.headerHeight / 2 - 12,
-                width: 24, height: 24,
-                borderRadius: '50%',
+                position: 'absolute', right: -12, top: layout.headerHeight / 2 - 12,
+                width: 24, height: 24, borderRadius: '50%',
                 background: colorPalette.neutral[800],
                 border: `1px solid ${colorPalette.neutral[700]}`,
                 color: colorPalette.neutral[400],
-                cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10,
-                zIndex: 30,
+                cursor: 'pointer', display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, zIndex: 30,
                 transition: 'all 0.2s',
                 boxShadow: shadows.md,
               }}
-              onMouseEnter={(e) => {
+              onMouseEnter={e => {
                 const el = e.currentTarget as HTMLButtonElement;
                 el.style.background = colorPalette.primary[600];
                 el.style.color = '#fff';
                 el.style.borderColor = colorPalette.primary[500];
               }}
-              onMouseLeave={(e) => {
+              onMouseLeave={e => {
                 const el = e.currentTarget as HTMLButtonElement;
                 el.style.background = colorPalette.neutral[800];
                 el.style.color = colorPalette.neutral[400];
                 el.style.borderColor = colorPalette.neutral[700];
               }}
-              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               {collapsed ? '›' : '‹'}
             </button>
           </div>
         )}
 
-        {/* ── Full-screen mobile drawer (all sections) ── */}
+        {/* ── Mobile Drawer ── */}
         {isMobile && (
           <Drawer
             placement="left"
@@ -664,70 +618,49 @@ export default function App() {
         )}
 
         {/* ── Main area ── */}
-        <div
-          style={{
-            marginLeft: isMobile ? 0 : siderWidth,
-            minHeight: '100vh',
-            background: colorPalette.neutral[50],
-            transition: 'margin-left 0.2s cubic-bezier(0.4,0,0.2,1)',
-            // On mobile add bottom padding so content clears the bottom nav
-            paddingBottom: isMobile ? BOTTOM_NAV_HEIGHT : 0,
-          }}
-        >
+        <div style={{
+          marginLeft: isMobile ? 0 : siderWidth,
+          minHeight: '100vh',
+          background: colorPalette.neutral[50],
+          transition: 'margin-left 0.22s cubic-bezier(0.4,0,0.2,1)',
+          paddingBottom: isMobile ? BOTTOM_NAV_HEIGHT : 0,
+        }}>
           {/* ── Top Header ── */}
-          <div
-            style={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 10,
-              height: layout.headerHeight,
-              background: 'rgba(248,250,252,0.92)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              borderBottom: `1px solid ${colorPalette.neutral[200]}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              // Tighter horizontal padding on mobile
-              padding: isMobile ? `0 ${spacing.sm}px` : `0 ${spacing.lg}px`,
-              boxShadow: '0 1px 0 rgba(0,0,0,0.04)',
-              // Prevent children from overflowing
-              overflow: 'hidden',
-              gap: spacing.sm,
-            }}
-          >
-            {/* Left: hamburger (mobile) + title */}
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 10,
+            height: layout.headerHeight,
+            background: 'rgba(248,250,252,0.94)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            borderBottom: `1px solid ${colorPalette.neutral[200]}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: isMobile ? `0 ${spacing.sm}px` : `0 ${spacing.lg}px`,
+            boxShadow: '0 1px 0 rgba(0,0,0,0.04)',
+            overflow: 'hidden', gap: spacing.sm,
+          }}>
+            {/* Left */}
             <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm, minWidth: 0, flex: 1 }}>
               {isMobile && (
                 <button
                   onClick={() => setMobileNavOpen(true)}
                   style={{
-                    flexShrink: 0,
-                    background: 'none',
+                    flexShrink: 0, background: 'none',
                     border: `1px solid ${colorPalette.neutral[200]}`,
-                    borderRadius: radius.sm,
-                    color: colorPalette.neutral[600],
-                    cursor: 'pointer',
-                    width: 36, height: 36,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 15,
+                    borderRadius: radius.sm, color: colorPalette.neutral[600],
+                    cursor: 'pointer', width: 36, height: 36,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15,
                   }}
                 >
                   <MenuOutlined />
                 </button>
               )}
               <div style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: isMobile ? typography.fontSize.md : typography.fontSize.sm,
-                    fontWeight: 700,
-                    color: colorPalette.neutral[800],
-                    letterSpacing: -0.2,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
+                <div style={{
+                  fontSize: isMobile ? typography.fontSize.md : typography.fontSize.sm,
+                  fontWeight: 700, color: colorPalette.neutral[800],
+                  letterSpacing: -0.2, whiteSpace: 'nowrap',
+                  overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>
                   {SECTION_DETAILS[section].title}
                 </div>
                 {!isMobile && (
@@ -738,57 +671,45 @@ export default function App() {
               </div>
             </div>
 
-            {/* Right: actions — desktop gets more, mobile gets essentials only */}
+            {/* Right */}
             <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs, flexShrink: 0 }}>
-              {/* Search — desktop only */}
               {!isMobile && (
                 <Input
                   prefix={<SearchOutlined style={{ color: colorPalette.neutral[400], fontSize: 13 }} />}
                   placeholder="Quick search…"
                   style={{
-                    width: 180,
-                    borderRadius: radius.full,
+                    width: 180, borderRadius: radius.full,
                     background: colorPalette.neutral[100],
-                    borderColor: 'transparent',
-                    fontSize: typography.fontSize.sm,
+                    borderColor: 'transparent', fontSize: typography.fontSize.sm,
                   }}
                   size="small"
                 />
               )}
 
-              {/* Notification bell */}
+              {/* Notifications */}
               <Badge count={3} size="small" color={colorPalette.primary[500]}>
-                <button
-                  style={{
-                    width: 34, height: 34,
-                    borderRadius: radius.md,
-                    background: colorPalette.neutral[100],
-                    border: `1px solid ${colorPalette.neutral[200]}`,
-                    color: colorPalette.neutral[500],
-                    cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 14, flexShrink: 0,
-                  }}
-                >
+                <button style={{
+                  width: 34, height: 34, borderRadius: radius.md,
+                  background: colorPalette.neutral[100],
+                  border: `1px solid ${colorPalette.neutral[200]}`,
+                  color: colorPalette.neutral[500], cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 14, flexShrink: 0,
+                }}>
                   <BellOutlined />
                 </button>
               </Badge>
 
-              {/* Avatar pill — desktop shows name, mobile shows avatar only */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: isMobile ? '4px' : `5px 10px 5px 5px`,
-                  borderRadius: radius.full,
-                  border: `1px solid ${colorPalette.neutral[200]}`,
-                  background: '#fff',
-                  flexShrink: 0,
-                  maxWidth: isMobile ? 36 : 'none',
-                  overflow: 'hidden',
-                }}
-              >
+              {/* Avatar pill */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: isMobile ? '4px' : `5px 10px 5px 5px`,
+                borderRadius: radius.full,
+                border: `1px solid ${colorPalette.neutral[200]}`,
+                background: '#fff', flexShrink: 0,
+                maxWidth: isMobile ? 36 : 'none',
+                overflow: 'hidden',
+              }}>
                 <Avatar
                   size={26}
                   style={{
@@ -801,34 +722,34 @@ export default function App() {
                 {!isMobile && (
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 600, color: colorPalette.neutral[800], lineHeight: 1.2, whiteSpace: 'nowrap' }}>
-                      {admin.email?.split('@')[0]}
+                      {admin.name || admin.email?.split('@')[0]}
                     </div>
-                    <div style={{ fontSize: 10, color: colorPalette.neutral[400], lineHeight: 1 }}>Admin</div>
+                    <div style={{ fontSize: 10, color: colorPalette.neutral[400], lineHeight: 1 }}>
+                      {admin.role ?? 'Admin'}
+                    </div>
                   </div>
                 )}
               </div>
 
-              {/* Logout — icon only on mobile to save space */}
+              {/* Logout */}
               <Tooltip title="Sign out">
                 <button
                   onClick={handleLogout}
                   style={{
-                    width: 34, height: 34,
-                    borderRadius: radius.md,
+                    width: 34, height: 34, borderRadius: radius.md,
                     background: colorPalette.danger[50],
                     border: `1px solid ${colorPalette.danger[200]}`,
                     color: colorPalette.danger[500],
-                    cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 14, flexShrink: 0,
-                    transition: 'all 0.15s',
+                    cursor: 'pointer', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                    fontSize: 14, flexShrink: 0, transition: 'all 0.15s',
                   }}
-                  onMouseEnter={(e) => {
+                  onMouseEnter={e => {
                     const el = e.currentTarget as HTMLButtonElement;
                     el.style.background = colorPalette.danger[500];
                     el.style.color = '#fff';
                   }}
-                  onMouseLeave={(e) => {
+                  onMouseLeave={e => {
                     const el = e.currentTarget as HTMLButtonElement;
                     el.style.background = colorPalette.danger[50];
                     el.style.color = colorPalette.danger[500];
@@ -840,73 +761,55 @@ export default function App() {
             </div>
           </div>
 
-          {/* ── Page content ── */}
-          <div
-            style={{
-              padding: isMobile ? spacing.sm : spacing.lg,
-              minHeight: `calc(100vh - ${layout.headerHeight}px)`,
-            }}
-          >
+          {/* ── Content ── */}
+          <div style={{
+            padding: isMobile ? spacing.sm : spacing.lg,
+            minHeight: `calc(100vh - ${layout.headerHeight}px)`,
+          }}>
             {renderSection()}
           </div>
         </div>
 
-        {/* ── Mobile bottom navigation bar ── */}
+        {/* ── Mobile Bottom Nav ── */}
         {isMobile && (
-          <div
-            style={{
-              position: 'fixed',
-              bottom: 0, left: 0, right: 0,
-              height: BOTTOM_NAV_HEIGHT,
-              background: colorPalette.neutral[950],
-              borderTop: `1px solid rgba(255,255,255,0.08)`,
-              display: 'flex',
-              alignItems: 'stretch',
-              zIndex: 50,
-              boxShadow: '0 -4px 20px rgba(0,0,0,0.3)',
-            }}
-          >
+          <div style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0,
+            height: BOTTOM_NAV_HEIGHT,
+            background: colorPalette.neutral[950],
+            borderTop: 'rgba(255,255,255,0.08) 1px solid',
+            display: 'flex', alignItems: 'stretch',
+            zIndex: 50, boxShadow: '0 -4px 20px rgba(0,0,0,0.3)',
+          }}>
             {BOTTOM_NAV_ITEMS.map((item) => {
-              // Last item ("More") opens the full drawer instead of navigating
-              const isMore = item.key === 'properties';
+              const isMore = item.key === '__more__';
               const active = !isMore && section === item.key;
               return (
                 <button
                   key={item.key}
                   onClick={() => isMore ? setMobileNavOpen(true) : handleSectionChange(item.key as SectionKey)}
                   style={{
-                    flex: 1,
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    flex: 1, background: 'none', border: 'none', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center',
                     gap: 3,
                     color: active ? colorPalette.primary[400] : colorPalette.neutral[500],
                     transition: 'color 0.15s',
-                    position: 'relative',
-                    padding: 0,
+                    position: 'relative', padding: 0,
                   }}
                 >
-                  {/* Active indicator dot */}
                   {active && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: 0, left: '50%',
-                        transform: 'translateX(-50%)',
-                        width: 24, height: 2,
-                        borderRadius: '0 0 2px 2px',
-                        background: colorPalette.primary[400],
-                        boxShadow: `0 0 6px ${colorPalette.primary[400]}`,
-                      }}
-                    />
+                    <div style={{
+                      position: 'absolute', top: 0, left: '50%',
+                      transform: 'translateX(-50%)',
+                      width: 28, height: 3,
+                      borderRadius: '0 0 3px 3px',
+                      background: colorPalette.primary[400],
+                      boxShadow: `0 0 8px ${colorPalette.primary[400]}`,
+                    }} />
                   )}
                   <span style={{ fontSize: 18 }}>{item.icon}</span>
-                  <span style={{ fontSize: 10, fontWeight: active ? 600 : 400, letterSpacing: 0.2 }}>
-                    {isMore ? 'More' : item.label}
+                  <span style={{ fontSize: 10, fontWeight: active ? 700 : 400, letterSpacing: 0.2 }}>
+                    {item.label}
                   </span>
                 </button>
               );

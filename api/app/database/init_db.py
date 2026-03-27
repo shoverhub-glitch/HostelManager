@@ -3,19 +3,22 @@ import os
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
+from app.config import settings
 from app.database.mongodb import db
 
 logger = logging.getLogger(__name__)
 
 async def ensure_mongodb_connection():
     """Return a concise startup error message if MongoDB is unreachable."""
-    mongo_url = os.getenv("MONGO_URL", "")
+    mongo_url = settings.MONGO_URL
 
     if not mongo_url:
         return "MongoDB startup check failed: MONGO_URL is not set. Configure it in api/.env before starting the API."
 
     try:
         await db.command("ping")
+        # Attempt to initiate replica set if possible (required for transactions)
+        await ensure_replica_set()
         return None
     except ServerSelectionTimeoutError:
         parsed = urlparse(mongo_url)
@@ -31,6 +34,30 @@ async def ensure_mongodb_connection():
     except Exception as exc:
         logger.error(f"MongoDB startup check failed: {exc}")
         return f"MongoDB startup check failed: {exc}"
+
+
+async def ensure_replica_set():
+    """
+    Attempt to initiate the replica set if the server is started with --replSet 
+    but not yet initiated. This is required for MongoDB transactions.
+    """
+    try:
+        # Check if the server is configured as a replica set member
+        status = await db.command("isMaster")
+        if "setName" in status:
+            # It's a replica set member. Check if it's already initiated.
+            try:
+                await db.command("replSetGetStatus")
+            except OperationFailure as e:
+                if e.code == 94:  # NotYetInitialized
+                    logger.info(f"MongoDB replica set '{status['setName']}' not yet initialized. Initiating...")
+                    await db.command("replSetInitiate")
+                    logger.info("MongoDB replica set initiated successfully.")
+                else:
+                    raise
+    except Exception as exc:
+        # Standalone servers or unauthorized users will fail here; we skip gracefully.
+        logger.debug(f"Replica set check/initiation skipped: {exc}")
 
 
 async def ensure_indexes():
@@ -83,6 +110,8 @@ async def ensure_indexes():
                 return
             raise
     
+    # FIX: Group indexes logically by collection (Medium #3)
+
     # ============ USERS COLLECTION ============
     await create_index_safe("users", "email", unique=True)
     await create_index_safe("users", "createdAt")
@@ -90,24 +119,31 @@ async def ensure_indexes():
     
     # ============ TOKEN BLACKLIST COLLECTION ============
     await create_index_safe("token_blacklist", "token")
-    await create_index_safe("token_blacklist", "createdAt", expireAfterSeconds=60*60*24*31)
+    await create_index_safe("token_blacklist", "tokenHash")
+    await create_index_safe("token_blacklist", "expiresAt", expireAfterSeconds=0)
     
     # ============ PROPERTIES COLLECTION ============
     await create_index_safe("properties", "ownerIds")
     await create_index_safe("properties", "createdAt")
     await create_index_safe("properties", "active")
     await create_index_safe("properties", [("ownerIds", 1), ("active", 1)])
-    
+    try:
+        await create_index_safe("properties", [("name", "text"), ("address", "text")])
+    except Exception:
+        pass
+
     # ============ ROOMS COLLECTION ============
     await create_index_safe("rooms", "propertyId")
     await create_index_safe("rooms", "active")
     await create_index_safe("rooms", [("propertyId", 1), ("active", 1)])
+    await create_index_safe("rooms", [("propertyId", 1), ("roomNumber", 1)])
     
     # ============ BEDS COLLECTION ============
     await create_index_safe("beds", "propertyId")
     await create_index_safe("beds", "roomId")
     await create_index_safe("beds", "status")
     await create_index_safe("beds", [("propertyId", 1), ("status", 1)])
+    await create_index_safe("beds", [("roomId", 1), ("status", 1)])
     
     # ============ TENANTS COLLECTION ============
     await create_index_safe("tenants", "propertyId")
@@ -115,6 +151,11 @@ async def ensure_indexes():
     await create_index_safe("tenants", "status")
     await create_index_safe("tenants", [("propertyId", 1), ("autoGeneratePayments", 1)])
     await create_index_safe("tenants", [("propertyId", 1), ("status", 1)])
+    await create_index_safe("tenants", [("propertyId", 1), ("billingConfig.status", 1)])
+    try:
+        await create_index_safe("tenants", [("name", "text"), ("phone", "text"), ("documentId", "text")])
+    except Exception:
+        pass  
     
     # ============ PAYMENTS COLLECTION ============
     await create_index_safe("payments", "propertyId")
@@ -122,20 +163,14 @@ async def ensure_indexes():
     await create_index_safe("payments", "status")
     await create_index_safe("payments", "dueDate")
     await create_index_safe("payments", [("propertyId", 1), ("status", 1)])
-    
-    await create_index_safe("tenants", [("propertyId", 1), ("billingConfig.status", 1)])
-    try:
-        await create_index_safe("tenants", [("name", "text"), ("phone", "text"), ("documentId", "text")])
-    except Exception:
-        pass  
     await create_index_safe("payments", [("tenantId", 1), ("dueDate", 1)], unique=True)
+    await create_index_safe("payments", [("propertyId", 1), ("dueDate", 1)])
     
     # ============ STAFF COLLECTION ============
     await create_index_safe("staff", "propertyId")
     await create_index_safe("staff", "role")
     await create_index_safe("staff", "status")
     await create_index_safe("staff", [("propertyId", 1), ("isDeleted", 1)])
-    await create_index_safe("payments", [("propertyId", 1), ("dueDate", 1)])
     
     # ============ SUBSCRIPTIONS COLLECTION ============
     await create_index_safe("subscriptions", [("ownerId", 1), ("plan", 1)], unique=True)
@@ -148,28 +183,22 @@ async def ensure_indexes():
     await create_index_safe("pending_subscriptions", "status")
     await create_index_safe("pending_subscriptions", "created_at_dt", expireAfterSeconds=7 * 24 * 60 * 60)
     
-    await create_index_safe("beds", [("roomId", 1), ("status", 1)])
-    
     # ============ EMAIL OTP COLLECTION ============
     await create_index_safe("email_otps", "email")
-    await create_index_safe("email_otps", "createdAt", expireAfterSeconds=60*10)
+    await create_index_safe("email_otps", "expires_at", expireAfterSeconds=0)
     
     # ============ PASSWORD RESET OTP COLLECTION ============
     await create_index_safe("password_reset_otps", "email")
     await create_index_safe("password_reset_otps", "createdAt", expireAfterSeconds=60*10)
     
     # ============ OTP ATTEMPTS COLLECTION ============
-    await create_index_safe("rooms", [("propertyId", 1), ("roomNumber", 1)])
     await create_index_safe("otp_attempts", "email")
-    await create_index_safe("otp_attempts", "createdAt", expireAfterSeconds=60*60)
+    await create_index_safe("otp_attempts", "updatedAt", expireAfterSeconds=60*60)
+    await create_index_safe("login_attempts", "updatedAt", expireAfterSeconds=60*60)
     
     # ============ RAZORPAY ORDERS COLLECTION ============
     await create_index_safe("razorpay_orders", "order_id", unique=True)
     await create_index_safe("razorpay_orders", "propertyId")
-    try:
-        await create_index_safe("properties", [("name", "text"), ("address", "text")])
-    except Exception:
-        pass
     await create_index_safe("razorpay_orders", "createdAt")
     
     # ============ COUPONS COLLECTION ============

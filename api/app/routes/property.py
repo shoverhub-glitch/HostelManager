@@ -9,10 +9,17 @@ router = APIRouter(prefix="/properties", tags=["properties"])
 property_service = PropertyService()
 logger = logging.getLogger(__name__)
 
+
+def _get_user_id_from_request(request: Request) -> str:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    return user_id
+
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=PropertyOut)
 async def create_property(request: Request, property: PropertyCreate):
     try:
-        user_id = getattr(request.state, "user_id", None)
+        user_id = _get_user_id_from_request(request)
         
         # Check subscription quota before creating property
         await SubscriptionEnforcement.ensure_can_create_property(user_id)
@@ -42,8 +49,8 @@ async def get_properties(
         page_size = min(100, max(1, page_size))  # Cap at 100 per page
         skip = (page - 1) * page_size
         
-        user_id = getattr(request.state, "user_id", None)
-        properties, total = await property_service._list_properties_paginated(user_id, skip=skip, limit=page_size)
+        user_id = _get_user_id_from_request(request)
+        properties, total = await property_service.list_properties_paginated(user_id, skip=skip, limit=page_size)
 
         logger.info(
             "property_route_list_success",
@@ -59,6 +66,8 @@ async def get_properties(
                 "hasMore": skip + page_size < total
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("property_route_list_failed", extra={"event": "property_route_list_failed", "error": str(e)})
         raise HTTPException(status_code=500, detail="Error retrieving properties. Please try again.")
@@ -66,7 +75,7 @@ async def get_properties(
 @router.patch("/{property_id}")
 async def update_property(request: Request, property_id: str, property_update: PropertyUpdate):
     try:
-        user_id = getattr(request.state, "user_id", None)
+        user_id = _get_user_id_from_request(request)
         
         # Check if property is archived
         await SubscriptionEnforcement.ensure_property_not_archived(property_id)
@@ -93,7 +102,7 @@ async def update_property(request: Request, property_id: str, property_update: P
 @router.delete("/{property_id}")
 async def delete_property(request: Request, property_id: str):
     try:
-        user_id = getattr(request.state, "user_id", None)
+        user_id = _get_user_id_from_request(request)
         
         # Check if property is archived
         await SubscriptionEnforcement.ensure_property_not_archived(property_id)

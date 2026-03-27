@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from dotenv import load_dotenv
 
+from app.config import settings
 from app.routes import (
     health, auth, property, room, tenant, bed, 
     subscription, dashboard, staff, payment, coupon, plan, admin
@@ -75,8 +76,7 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(UserContextMiddleware)
 
 # Security Middlewares
-enforce_https = os.getenv("ENFORCE_HTTPS", "False").lower() == "true"
-if enforce_https:
+if settings.ENFORCE_HTTPS:
     app.add_middleware(HTTPSRedirectMiddleware)
 
 # Rate Limiting
@@ -88,20 +88,16 @@ app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
 app.add_middleware(SlowAPIMiddleware)
 
 # CORS Configuration
-allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
-if not allowed_origins_env:
+if not settings.ALLOWED_ORIGINS:
     allowed_origins = ["*"]
 else:
-    allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+    allowed_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
     if not allowed_origins:
         allowed_origins = ["*"]
 
-allow_credentials = os.getenv("ALLOW_CREDENTIALS", "False").lower() == "true"
-allow_local_origins = os.getenv("ALLOW_LOCAL_ORIGINS", "True").lower() == "true"
-local_dev_origin_regex = os.getenv(
-    "LOCAL_DEV_ORIGIN_REGEX",
-    r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
-)
+allow_credentials = settings.ALLOW_CREDENTIALS
+allow_local_origins = settings.ALLOW_LOCAL_ORIGINS
+local_dev_origin_regex = settings.LOCAL_DEV_ORIGIN_REGEX
 
 cors_kwargs = {
     "allow_origins": allowed_origins,

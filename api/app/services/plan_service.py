@@ -283,7 +283,11 @@ class PlanService:
             logger.warning("plan_price_not_found", extra={"event": "plan_price_not_found", "plan_name": plan_name.lower(), "period": period})
             raise ValueError(f"Plan '{plan_name}' not found")
         
-        if period not in plan.periods:
+        # FIX: Normalize period to string for lookup since MongoDB stores keys as strings
+        period_str = str(period)
+        price = plan.periods.get(period_str) or plan.periods.get(period)
+        
+        if price is None:
             available = list(plan.periods.keys())
             logger.warning(
                 "plan_price_period_invalid",
@@ -294,7 +298,7 @@ class PlanService:
                 f"Available periods: {available}"
             )
         
-        return plan.periods[period]
+        return price
 
     @staticmethod
     async def get_available_periods(plan_name: str) -> List[int]:
@@ -331,58 +335,14 @@ class PlanService:
         if existing_count > 0:
             return 0  # Plans already exist
         
-        default_plans = [
-            {
-                "name": "free",
-                "display_name": "Free Plan",
-                "description": "Perfect for getting started with basic features",
-                "properties": 1,
-                "tenants": 80,
-                "rooms": 20,
-                "staff": 3,
-                "periods": {"0": 0},  # Free forever
-                "is_active": True,
-                "sort_order": 0,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
-            },
-            {
-                "name": "pro",
-                "display_name": "Pro Plan",
-                "description": "For growing businesses with multiple properties",
-                "properties": 3,
-                "tenants": 100,
-                "rooms": 40,
-                "staff": 5,
-                "periods": {
-                    "1": 7900,    # ₹79/month
-                    "3": 20000,   # ₹66.67/month (15% savings)
-                    "12": 60000   # ₹50/month (37% savings)
-                },
-                "is_active": True,
-                "sort_order": 1,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
-            },
-            {
-                "name": "premium",
-                "display_name": "Premium Plan",
-                "description": "For large operations with unlimited resources",
-                "properties": 5,
-                "tenants": 120,
-                "rooms": 60,
-                "staff": 8,
-                "periods": {
-                    "1": 15900,   # ₹159/month
-                    "3": 40000,   # ₹133.33/month (16% savings)
-                    "12": 120000  # ₹100/month (37% savings)
-                },
-                "is_active": True,
-                "sort_order": 2,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
-            }
-        ]
+        from app.config.default_plans import get_all_default_plans
+        default_plans = get_all_default_plans()
+        
+        # Add timestamps which are usually not in the config dict
+        now = datetime.now(timezone.utc)
+        for plan in default_plans:
+            plan["created_at"] = now
+            plan["updated_at"] = now
         
         result = await db.plans.insert_many(default_plans)
         logger.info("plan_defaults_created", extra={"event": "plan_defaults_created", "created_count": len(result.inserted_ids)})

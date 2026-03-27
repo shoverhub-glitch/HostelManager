@@ -1,5 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
+from bson.errors import InvalidId
 from jose import JWTError, jwt
 from fastapi import HTTPException, status, Request
 from fastapi.responses import JSONResponse
@@ -25,7 +26,6 @@ from app.utils.attempt_tracking import (
     reset_login_attempts,
     check_otp_attempts,
     increment_otp_attempts,
-    reset_otp_attempts,
     delete_otp_attempts,
 )
 from app.utils.email_service import send_otp_email
@@ -41,11 +41,34 @@ from app.models.user_schema import UserCreate, UserLogin, UserOut
 import re
 
 users_collection = db["users"]
+# FIX (Critical #7): Use single OTP collection consistently via otp_memory_store
+# Remove direct access to separate password_reset_otp_collection
 email_otp_collection = db["email_otps"]
-password_reset_otp_collection = db["password_reset_otps"]
 logger = logging.getLogger(__name__)
 
 PASSWORD_MIN_LENGTH = 8
+
+
+def _parse_object_id(user_id: str) -> ObjectId:
+    try:
+        return ObjectId(user_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject")
+
+
+def _decode_refresh_token(refresh_token: str) -> dict:
+    try:
+        decoded = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    if decoded.get("type") != "refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+
+    if not decoded.get("sub"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject")
+
+    return decoded
 
 
 def _email_log_meta(email: str) -> dict:
@@ -76,9 +99,10 @@ def validate_indian_phone(phone: str) -> bool:
 
 
 def _build_auth_payload(user_doc: dict, user_id: str):
-    access_token = create_access_token({"sub": user_id})
-    refresh_token = create_refresh_token({"sub": user_id})
-    expires_at = int(time.time()) + 60 * 60 * 24 * 30
+    access_token = create_access_token({"sub": user_id, "iat": int(time.time())})
+    refresh_token = create_refresh_token({"sub": user_id, "iat": int(time.time())})
+    # FIX: Use configured refresh token expiry for client-side expiresAt hint
+    expires_at = int(time.time()) + settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60
     user_out = UserOut(
         id=user_id,
         name=user_doc["name"],
@@ -117,8 +141,8 @@ async def register_user_service(user: UserCreate):
 
     # SECURITY: Check if email is verified - REQUIRED for registration
     # This blocks direct API attacks without OTP verification
-    otp_doc = await email_otp_collection.find_one({"email": normalized_email, "verified": True})
-    if not otp_doc:
+    otp_doc = await get_otp(normalized_email)
+    if not otp_doc or not otp_doc.get("verified") or otp_doc.get("otp_type") != "registration":
         # Log security event for audit trail
         logger.warning(
             "registration_without_email_verification",
@@ -129,15 +153,17 @@ async def register_user_service(user: UserCreate):
             detail="Email verification required. Please complete OTP verification first."
         )
 
-    # SECURITY: Verify email verification is still fresh (within 6 minutes)
+    # SECURITY: Verify email verification is still fresh (within 5 minutes per TTL)
     now = datetime.now(timezone.utc)
-    verification_time = otp_doc.get("verifiedAt") or otp_doc.get("updatedAt") or otp_doc.get("createdAt")
+    # OTP doc updated_at is set when marked verified
+    verification_time = otp_doc.get("updated_at") or otp_doc.get("created_at")
+    
     if not verification_time:
         logger.warning(
             "registration_missing_verification_timestamp",
             extra={"event": "registration_missing_verification_timestamp", **_email_log_meta(normalized_email)},
         )
-        await email_otp_collection.delete_one({"email": normalized_email})
+        await delete_otp(normalized_email)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Verification token expired. Please request a new OTP."
@@ -147,13 +173,13 @@ async def register_user_service(user: UserCreate):
         verification_time = verification_time.replace(tzinfo=timezone.utc)
 
     age_minutes = (now - verification_time).total_seconds() / 60
-    # OTP expires in 5 minutes, so require verification within 6 minutes to be safe
-    if age_minutes > 6:
+    # FIX (Medium #1): Match window to 5-minute TTL exactly
+    if age_minutes > 5:
         logger.warning(
             "registration_verification_window_expired",
             extra={"event": "registration_verification_window_expired", **_email_log_meta(normalized_email)},
         )
-        await email_otp_collection.delete_one({"email": normalized_email})
+        await delete_otp(normalized_email)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Verification token expired. Please request a new OTP."
@@ -176,13 +202,12 @@ async def register_user_service(user: UserCreate):
     result = await users_collection.insert_one(user_doc)
     user_id = str(result.inserted_id)
     
-    # Create single free subscription document (upgraded in place when user selects a plan)
+    # Create single free subscription document
     from app.services.subscription_service import SubscriptionService
     await SubscriptionService.create_default_subscriptions(user_id)
     
     # SECURITY: Delete the verification record after successful registration
-    # Prevents reuse of same verification for multiple registrations
-    await email_otp_collection.delete_one({"email": normalized_email})
+    await delete_otp(normalized_email)
     await delete_otp_attempts(normalized_email)
     
     logger.info("user_registration_success", extra={"event": "user_registration_success", "user_id": user_id, **_email_log_meta(normalized_email)})
@@ -191,10 +216,10 @@ async def register_user_service(user: UserCreate):
 
 
 async def login_user_service(data: UserLogin):
-    # SECURITY: Normalize email to prevent case/whitespace bypasses
+    # SECURITY: Normalize email
     normalized_email = data.email.strip().lower()
     
-    # SECURITY: Check if account is locked due to failed attempts
+    # SECURITY: Check login attempts
     is_locked, minutes_remaining = await check_login_attempts(normalized_email)
     if is_locked:
         logger.warning(
@@ -206,16 +231,13 @@ async def login_user_service(data: UserLogin):
             detail=f"Too many failed login attempts. Please try again in {minutes_remaining} minutes."
         )
 
-    # Query user by normalized email
     user = await users_collection.find_one({"email": normalized_email})
     
-    # SECURITY: Verify password AND check user existence together
-    # This prevents timing attacks that could reveal if email exists
+    # SECURITY: Verify password AND check user existence
     if not user or not verify_password(data.password, user.get("password", "")):
         failed_count = await increment_login_attempts(normalized_email)
         remaining_attempts = 5 - failed_count
         
-        # Log failed attempt
         if user:
             logger.warning(
                 "login_failed_password_mismatch",
@@ -233,7 +255,6 @@ async def login_user_service(data: UserLogin):
                 detail="Too many failed login attempts. Your account is locked for 10 minutes."
             )
         else:
-            # Generic message - don't reveal if email exists or password is wrong
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Invalid credentials. {remaining_attempts} attempt(s) remaining."
@@ -248,7 +269,7 @@ async def login_user_service(data: UserLogin):
         logger.warning("login_disabled_account", extra={"event": "login_disabled_account", **_email_log_meta(normalized_email)})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled. Contact support.")
 
-    # Check if account requires email verification (optional for some users)
+    # Check if account requires email verification
     if user.get("requiresEmailVerification") and not user.get("isEmailVerified"):
         logger.warning("login_unverified_account", extra={"event": "login_unverified_account", **_email_log_meta(normalized_email)})
         raise HTTPException(
@@ -256,19 +277,17 @@ async def login_user_service(data: UserLogin):
             detail="Please verify your email before logging in. Check your inbox for verification link."
         )
 
-    # SECURITY: Reset attempts on successful login
+    # SECURITY: Reset attempts on success
     await reset_login_attempts(normalized_email)
 
-    # Update last login timestamp
+    # Update last login
     now = datetime.now(timezone.utc)
     await users_collection.update_one(
         {"_id": user["_id"]},
-        {"$set": {"lastLogin": now, "updatedAt": now}},
+        {"$set": {"lastLogin": now}},
     )
 
     user_id = str(user["_id"])
-    
-    # Log successful login
     logger.info("user_login_success", extra={"event": "user_login_success", "user_id": user_id, **_email_log_meta(normalized_email)})
     
     response = _build_auth_payload(user, user_id)
@@ -282,10 +301,9 @@ async def send_email_otp_service(email: str):
 
     normalized_email = email.strip().lower()
     
-    # SECURITY: Check if email is already registered as a user
+    # SECURITY: Prevent duplicate registration
     existing_user = await users_collection.find_one({"email": normalized_email, "isDeleted": False})
     if existing_user:
-        # Email already has an account - prevent duplicate registration
         auth_provider = existing_user.get("authProvider", "email")
         logger.warning(
             "registration_blocked_existing_email",
@@ -296,7 +314,7 @@ async def send_email_otp_service(email: str):
             detail="Email already registered. Please login with your existing account instead."
         )
     
-    # Check resend cooldown (for existing OTP requests, not for first request)
+    # Check cooldown
     cooldown_remaining = await get_resend_cooldown_remaining(normalized_email)
     if cooldown_remaining > 0:
         logger.warning(
@@ -308,22 +326,22 @@ async def send_email_otp_service(email: str):
             detail=f"Please wait {cooldown_remaining} seconds before requesting another OTP"
         )
     
-    # If a stale verified marker exists from an incomplete flow, clear it and force fresh OTP verification.
-    existing_otp = await email_otp_collection.find_one({"email": normalized_email, "verified": True})
-    if existing_otp:
-        await email_otp_collection.delete_one({"email": normalized_email})
-
-    # Reset failed OTP attempts when issuing a fresh code.
+    # Clear any stale verification
+    await delete_otp(normalized_email)
     await delete_otp_attempts(normalized_email)
     
-    # Generate OTP and store in memory
-    otp, is_new = await generate_and_store_otp(normalized_email, "registration")
+    # Generate OTP
+    try:
+        otp, is_new = await generate_and_store_otp(normalized_email, "registration")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
+
     logger.info(
         "registration_otp_generated",
         extra={"event": "registration_otp_generated", "is_new": bool(is_new), **_email_log_meta(normalized_email)},
     )
 
-    if settings.DEMO_MODE:
+    if settings.ENV.lower() != "production":
         logger.info("registration_otp_demo_mode", extra={"event": "registration_otp_demo_mode", **_email_log_meta(normalized_email)})
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -334,10 +352,8 @@ async def send_email_otp_service(email: str):
             },
         )
     
-    # Send OTP via Zoho Zepto Mail
+    # Send OTP
     email_sent = await send_otp_email(normalized_email, otp)
-
-
     
     if not email_sent:
         await delete_otp(normalized_email)
@@ -376,7 +392,7 @@ async def verify_email_otp_service(email: str, otp: str, otp_type: str = "regist
             detail=f"Too many failed OTP attempts. Please try again in {minutes_remaining} minutes."
         )
 
-    # Verify OTP using in-memory store
+    # Verify OTP
     is_valid, error_message = await verify_otp(normalized_email, otp, otp_type=otp_type)
     if not is_valid:
         failed_count = await increment_otp_attempts(normalized_email)
@@ -391,29 +407,12 @@ async def verify_email_otp_service(email: str, otp: str, otp_type: str = "regist
             )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_message)
 
-    await reset_otp_attempts(normalized_email)
+    # Clear OTP attempt tracking after successful verification.
+    await delete_otp_attempts(normalized_email)
     logger.info("otp_verification_success", extra={"event": "otp_verification_success", "otp_type": otp_type, **_email_log_meta(normalized_email)})
 
     if otp_type == "registration":
-        # Mark OTP as verified in registration flow
         await mark_otp_verified(normalized_email)
-        
-        # Also update database for registration flow (to check if email is verified)
-        now = datetime.now(timezone.utc)
-        await email_otp_collection.update_one(
-            {"email": normalized_email},
-            {
-                "$set": {
-                    "verified": True,
-                    "verifiedAt": now,
-                    "updatedAt": now
-                },
-                "$setOnInsert": {
-                    "createdAt": now,
-                },
-            },
-            upsert=True,
-        )
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
@@ -452,55 +451,49 @@ async def refresh_token_service(payload):
     if await is_token_blacklisted(refresh_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is invalidated (blacklisted)")
 
-    try:
-        decoded = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
-        if decoded.get("type") != "refresh":
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+    decoded = _decode_refresh_token(refresh_token)
+    user_id = decoded.get("sub")
+    user_object_id = _parse_object_id(user_id)
+    user = await users_collection.find_one({"_id": user_object_id})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-        user_id = decoded.get("sub")
-        user = await users_collection.find_one({"_id": ObjectId(user_id)})
-        if not user:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-        
-        # Check if user is deleted
-        if user.get("isDeleted"):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deleted")
+    if user.get("isDeleted"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deleted")
 
-        await blacklist_token(refresh_token)
-        new_refresh_token = create_refresh_token({"sub": user_id})
-        token = create_access_token({"sub": user_id})
-        expires_at = int(time.time()) + 60 * 60 * 24 * 30
-        
-        # Build user data
-        user_out = UserOut(
-            id=user_id,
-            name=user["name"],
-            email=user["email"],
-            phone=user.get("phone"),
-            propertyIds=user.get("propertyIds", []),
-        )
-        
-        response = {
-            "tokens": {
-                "accessToken": token,
-                "refreshToken": new_refresh_token,
-                "expiresAt": expires_at,
-            },
-            "user": user_out.model_dump(),
-        }
-        return JSONResponse(status_code=status.HTTP_200_OK, content={"data": jsonable_encoder(response)})
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Token refresh failed")
+    if user.get("isDisabled"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled")
+
+    await blacklist_token(refresh_token)
+    new_refresh_token = create_refresh_token({"sub": user_id, "iat": int(time.time())})
+    token = create_access_token({"sub": user_id, "iat": int(time.time())})
+    expires_at = int(time.time()) + settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60
+
+    user_out = UserOut(
+        id=user_id,
+        name=user["name"],
+        email=user["email"],
+        phone=user.get("phone"),
+        propertyIds=user.get("propertyIds", []),
+    )
+
+    response = {
+        "tokens": {
+            "accessToken": token,
+            "refreshToken": new_refresh_token,
+            "expiresAt": expires_at,
+        },
+        "user": user_out.model_dump(),
+    }
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"data": jsonable_encoder(response)})
 
 
 async def logout_user_service(payload):
     refresh_token = payload.refreshToken
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing refresh token")
+
+    _decode_refresh_token(refresh_token)
 
     await blacklist_token(refresh_token)
     return {"success": True}
@@ -513,7 +506,6 @@ async def forgot_password_service(email: str):
 
     normalized_email = email.strip().lower()
     
-    # Check resend cooldown
     cooldown_remaining = await get_resend_cooldown_remaining(normalized_email)
     if cooldown_remaining > 0:
         logger.warning(
@@ -525,11 +517,9 @@ async def forgot_password_service(email: str):
             detail=f"Please wait {cooldown_remaining} seconds before requesting another OTP"
         )
     
-    # Verify user exists (but don't reveal this for security)
     user = await users_collection.find_one({"email": normalized_email})
     if not user:
         logger.info("password_reset_requested_unknown_email", extra={"event": "password_reset_requested_unknown_email", **_email_log_meta(normalized_email)})
-        # For security, return generic message even if email not found
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -539,14 +529,20 @@ async def forgot_password_service(email: str):
             },
         )
 
-    # Generate OTP and store in memory with type password_reset
-    otp, is_new = await generate_and_store_otp(normalized_email, "password_reset")
+    # Reset attempts
     await delete_otp_attempts(normalized_email)
+    
+    # Generate OTP
+    try:
+        otp, is_new = await generate_and_store_otp(normalized_email, "password_reset")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
+
     logger.info(
         "password_reset_otp_generated",
         extra={"event": "password_reset_otp_generated", "is_new": bool(is_new), **_email_log_meta(normalized_email)},
     )
-    if settings.DEMO_MODE:
+    if settings.ENV.lower() != "production":
         logger.info("password_reset_otp_demo_mode", extra={"event": "password_reset_otp_demo_mode", **_email_log_meta(normalized_email)})
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -557,11 +553,11 @@ async def forgot_password_service(email: str):
             },
         )
 
-    # Send OTP via Zoho Zepto Mail
+    # Send OTP
     email_sent = await send_otp_email(
         normalized_email,
         otp,
-        app_name="Hostel Manager",
+        app_name=settings.APP_NAME,
         otp_type="password_reset",
     )
     
@@ -599,12 +595,17 @@ async def reset_password_service(email: str, otp: str, new_password: str):
     normalized_email = email.strip().lower()
     now = datetime.now(timezone.utc)
 
-    # Verify OTP using in-memory store
+    # Verify OTP
     is_valid, error_message = await verify_otp(normalized_email, otp, otp_type="password_reset")
     if not is_valid:
+        failed_count = await increment_otp_attempts(normalized_email)
+        if failed_count >= 5:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed OTP attempts. Please request a new OTP after 10 minutes"
+            )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_message)
 
-    # Verify user exists
     user = await users_collection.find_one({"email": normalized_email})
     if not user:
         raise HTTPException(
@@ -618,7 +619,6 @@ async def reset_password_service(email: str, otp: str, new_password: str):
             detail="Account is deleted and cannot be recovered"
         )
 
-    # Update user password
     hashed_password = hash_password(new_password)
     await users_collection.update_one(
         {"_id": user["_id"]},
@@ -630,7 +630,7 @@ async def reset_password_service(email: str, otp: str, new_password: str):
         }
     )
 
-    # Delete the OTP from memory after successful reset
+    # SECURITY: Clean up
     await delete_otp(normalized_email)
     await delete_otp_attempts(normalized_email)
     logger.info("password_reset_success", extra={"event": "password_reset_success", "user_id": str(user.get("_id")), **_email_log_meta(normalized_email)})

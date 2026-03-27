@@ -207,10 +207,17 @@ class RazorpayWebhookService:
             if not subscription_id:
                 return {"status": "skipped", "message": "No subscription_id"}
 
-            # Idempotency
+            # FIX: Write idempotency record BEFORE work to prevent race on crash (High #14)
             idem_key = f"{subscription_id}_cancelled"
             if await processed_events_collection.find_one({"idempotencyKey": idem_key}):
                 return {"status": "skipped", "message": "Already processed"}
+            
+            await processed_events_collection.insert_one({
+                "idempotencyKey": idem_key,
+                "event": event,
+                "subscriptionId": subscription_id,
+                "processedAt": datetime.now(timezone.utc).isoformat(),
+            })
 
             sub_doc = await db["subscriptions"].find_one({"razorpaySubscriptionId": subscription_id})
             if not sub_doc:
@@ -221,6 +228,16 @@ class RazorpayWebhookService:
             if sub_doc:
                 owner_id = sub_doc.get("ownerId")
                 old_plan = str(sub_doc.get("plan", "free")).lower()
+
+                # FIX: Before downgrading, verify that this is still the CURRENT active subscription (Medium #24)
+                # If user already upgraded to a new plan, don't downgrade based on an old cancellation webhook.
+                current_active = await db["subscriptions"].find_one({"ownerId": owner_id, "status": "active", "plan": {"$ne": "free"}})
+                if current_active and str(current_active.get("razorpaySubscriptionId")) != subscription_id:
+                    logger.info(
+                        "razorpay_webhook_downgrade_skipped_new_sub_exists",
+                        extra={"event": "razorpay_webhook_downgrade_skipped_new_sub_exists", "owner_id": owner_id, "cancelled_sub": subscription_id, "active_sub": current_active.get("razorpaySubscriptionId")}
+                    )
+                    return {"status": "skipped", "message": "User has a newer active subscription"}
 
                 if owner_id and old_plan != "free":
                     downgrade_result = await SubscriptionLifecycle.handle_downgrade(owner_id, old_plan, "free")
@@ -241,13 +258,6 @@ class RazorpayWebhookService:
                             "updatedAt": datetime.now(timezone.utc).isoformat(),
                         }}
                     )
-
-                await processed_events_collection.insert_one({
-                    "idempotencyKey": idem_key,
-                    "event": event,
-                    "subscriptionId": subscription_id,
-                    "processedAt": datetime.now(timezone.utc).isoformat(),
-                })
 
         elif event == "subscription.halted":
             # Razorpay gave up retrying payment; mark as past_due and clear auto-renewal

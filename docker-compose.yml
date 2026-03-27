@@ -34,7 +34,6 @@ services:
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb          # persist config too
-      - ./mongo-keyfile:/etc/mongo-keyfile:ro  # replica-set auth key (see README)
     env_file:
       - .env
     environment:
@@ -48,7 +47,6 @@ services:
       mongod
       --replSet rs0
       --bind_ip_all
-      --keyFile /etc/mongo-keyfile
     healthcheck:
       test:
         - "CMD"
@@ -206,7 +204,5 @@ volumes:
     driver: local
     labels:
       com.project.description: "MongoDB config data"
-  letsencrypt_data:
-    driver: local
     labels:
       com.project.description: "Let's Encrypt TLS certificates"

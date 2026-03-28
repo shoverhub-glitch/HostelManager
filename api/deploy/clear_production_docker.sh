@@ -4,4 +4,4 @@ docker-compose -f ./deploy/docker-compose.yml down -v --rmi all --remove-orphans
 # Usage: ./clear_production_docker.sh
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-docker-compose -f "$DIR/docker-compose.yml" down -v --rmi all --remove-orphans
+docker-compose --env-file "$DIR/../.env" -f "$DIR/docker-compose.yml" down -v --rmi all --remove-orphans

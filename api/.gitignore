@@ -1,28 +1,43 @@
 # Logs
-logs
+logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments
+.env
+deploy/.env
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
 *.local
 
 # Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+.vscode/
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-*node_modules
-__pycache__/
-*.pyc
-.env
+
+# Docker
+deploy/docker-compose.dev.yml
+
+# Misc
+*.bak
+*.tmp

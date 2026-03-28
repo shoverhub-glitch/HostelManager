@@ -1,4 +1,35 @@
+
+# HostelManager API
+
+This is the backend API for HostelManager, built with FastAPI and MongoDB. All deployment-related files (Docker Compose, Nginx config, scripts) are now inside the `api/` directory. This structure is ready for splitting into a standalone API repository.
+
+## Deployment Structure
+
+- `deploy/`: Docker Compose files and deployment scripts
+- `nginx/`: Nginx configuration for reverse proxy
+- `Dockerfile`, `Dockerfile.dev`: API Docker build files
+- `.env.example`: Example environment variables
+
+### Usage
+
+**Production:**
+```bash
+cd deploy
+./deploy.sh
+```
+
+**Development:**
+```bash
+cd deploy
+docker-compose -f docker-compose.dev.yml up --build
+```
+
+Nginx config for containerized deployment is in `nginx/nginx.conf`.
+
+---
+
 # FastAPI + MongoDB Backend
+
 
 ## Structure
 

@@ -204,5 +204,3 @@ volumes:
     driver: local
     labels:
       com.project.description: "MongoDB config data"
-    labels:
-      com.project.description: "Let's Encrypt TLS certificates"

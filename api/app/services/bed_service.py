@@ -2,11 +2,10 @@ import uuid
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
+from bson import ObjectId
 from bson.errors import InvalidId
 from app.database.mongodb import db
 from app.models.bed_schema import BedCreate, BedUpdate, BedOut
-from bson import ObjectId
-
 logger = logging.getLogger(__name__)
 
 class BedService:
@@ -117,7 +116,7 @@ class BedService:
         return beds
 
     async def _get_beds_with_rooms(self, property_id: str, available_only: bool = False) -> List[dict]:
-        """FIX: Helper to DRY up bed listing with room info (Low #27)"""
+        """Get beds grouped by room with room info - format matches frontend expectations"""
         match_query = {"propertyId": property_id, "isDeleted": {"$ne": True}}
         if available_only:
             match_query["status"] = "available"
@@ -140,24 +139,46 @@ class BedService:
             {"$unwind": "$room"},
             {
                 "$project": {
-                    "id": {"$toString": "$_id"},
+                    "bedId": {"$toString": "$_id"},
                     "bedNumber": 1,
                     "status": 1,
                     "tenantId": 1,
-                    "roomId": 1,
+                    "roomId": {"$toString": "$room._id"},
                     "propertyId": 1,
-                    "room": {
-                        "id": {"$toString": "$room._id"},
-                        "roomNumber": 1,
-                        "floor": 1
-                    }
+                    "roomNumber": "$room.roomNumber",
+                    "roomFloor": "$room.floor",
+                    "roomPrice": "$room.price"
                 }
             }
         ]
         
         result = await self.db["beds"].aggregate(pipeline).to_list(None)
-        # Sort by room number
-        result.sort(key=lambda x: x["room"]["roomNumber"])
+        
+        # Group beds by room
+        rooms_dict = {}
+        for bed in result:
+            room_id = bed.pop("roomId")
+            if room_id not in rooms_dict:
+                rooms_dict[room_id] = {
+                    "room": {
+                        "id": room_id,
+                        "roomNumber": bed.pop("roomNumber"),
+                        "floor": bed.pop("roomFloor"),
+                        "price": bed.pop("roomPrice")
+                    },
+                    "availableBeds": []
+                }
+            # Convert bed ObjectIds to strings
+            for key, value in list(bed.items()):
+                if isinstance(value, ObjectId):
+                    bed[key] = str(value)
+            bed["id"] = bed.pop("bedId")
+            rooms_dict[room_id]["availableBeds"].append(bed)
+        
+        # Sort rooms by room number and beds by bed number
+        result = sorted(rooms_dict.values(), key=lambda x: x["room"]["roomNumber"])
+        for room_data in result:
+            room_data["availableBeds"].sort(key=lambda x: x["bedNumber"])
         
         event_name = "beds_available_grouped" if available_only else "beds_all_grouped"
         logger.info(

@@ -32,12 +32,19 @@ is_true() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# ── Pick compose binary (v2 plugin preferred) ─────────────────────────────────
+
+# ── Check for .env in main root ───────────────────────────────────────────────
+if [ ! -f "$SCRIPT_DIR/.env" ]; then
+  printf '[deploy] ERROR: .env file not found in project root (%s)\n' "$SCRIPT_DIR" >&2
+  exit 1
+fi
+
+# ── Pick compose binary (v2 plugin preferred) ────────────────────────────────
 if docker compose version &>/dev/null 2>&1; then
-  COMPOSE=(docker compose --project-directory "$SCRIPT_DIR" --env-file ./api/.env)
+  COMPOSE=(docker compose --project-directory "$SCRIPT_DIR")
 elif command -v docker-compose &>/dev/null; then
   log "Warning: 'docker compose' plugin not found, falling back to 'docker-compose'"
-  COMPOSE=(docker-compose --project-directory "$SCRIPT_DIR" --env-file ./api/.env)
+  COMPOSE=(docker-compose --project-directory "$SCRIPT_DIR")
 else
   printf '[deploy] ERROR: neither "docker compose" nor "docker-compose" found\n' >&2
   exit 1
